@@ -5,6 +5,7 @@ import MapView, { Marker } from "react-native-maps";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useTheme } from "@/hooks/useTheme";
 import { theme } from "@/constants/theme";
@@ -32,6 +33,7 @@ export default function MapTab() {
 
   const [region, setRegion] = useState<Region | null>(null);
   const [selectedFarmId, setSelectedFarmId] = useState<number | null>(null);
+  const [recentFarmIds, setRecentFarmIds] = useState<number[]>([]);
 
   const { coords: userCoords, locationText } = useCurrentLocation();
   const { data: farms = [], isLoading: farmsLoading, error: farmsError } = useFarms();
@@ -62,6 +64,7 @@ export default function MapTab() {
     const farm = farms.find((f) => f.id === farmId);
     if (!farm) return;
 
+    addRecentFarm(farmId);
     setSelectedFarmId(farmId);
 
     const next: Region = {
@@ -91,31 +94,74 @@ export default function MapTab() {
     mapRef.current?.animateToRegion(next, 600);
   };
 
-  const handleFarmPress = (farmId: number) => {
+  useEffect(() => {
+    const loadRecentFarms = async () => {
+      try {
+        const raw = await AsyncStorage.getItem("recentFarmIds");
+        if (!raw) return;
+
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) {
+          setRecentFarmIds(parsed.filter((id) => typeof id === "number"));
+        }
+      } catch (error) {
+        console.log("Could not load recent farms", error);
+      }
+    };
+
+    loadRecentFarms();
+  }, []);
+
+  const persistRecentFarms = async (farmIds: number[]) => {
+    try {
+      await AsyncStorage.setItem("recentFarmIds", JSON.stringify(farmIds));
+    } catch (error) {
+      console.log("Could not save recent farms", error);
+    }
+  };
+
+  const addRecentFarm = async (farmId: number) => {
+    setRecentFarmIds((prev) => {
+      const next = [farmId, ...prev.filter((id) => id !== farmId)].slice(0, 5);
+      persistRecentFarms(next);
+      return next;
+    });
+  };
+
+  const handleFarmPress = async (farmId: number) => {
+    await addRecentFarm(farmId);
     router.push(`/farm/${farmId}`);
   };
 
   const handleDirectionPress = async (farmId: number) => {
-  const farm = farms.find((f) => f.id === farmId);
-  if (!farm) return;
+    const farm = farms.find((f) => f.id === farmId);
+    if (!farm) return;
 
-  const hasRealAddress =
-    !!farm.street?.trim() && (!!farm.city?.trim() || !!farm.postal_code?.trim());
+    const hasRealAddress =
+      !!farm.street?.trim() && (!!farm.city?.trim() || !!farm.postal_code?.trim());
 
-  const finalDest = hasRealAddress
-    ? formatAddress(farm)
-    : `${farm.latitude},${farm.longitude}`;
+    const finalDest = hasRealAddress
+      ? formatAddress(farm)
+      : `${farm.latitude},${farm.longitude}`;
 
-  try {
-    await openDirections(finalDest);
-  } catch (e) {
-    console.log("Could not open directions", e);
-  }
-};
+    try {
+      await openDirections(finalDest);
+    } catch (e) {
+      console.log("Could not open directions", e);
+    }
+  };
 
   const handleSharePress = (farmId: number) => {
     console.log("Share pressed:", farmId);
   };
+
+  const recentFarms = useMemo(
+    () =>
+      recentFarmIds
+        .map((id) => farms.find((farm) => farm.id === id))
+        .filter((farm): farm is typeof farms[number] => !!farm),
+    [recentFarmIds, farms]
+  );
 
   if (!region) return <Text>Loading map…</Text>;
 
@@ -182,9 +228,39 @@ export default function MapTab() {
           contentContainerStyle={styles.sheetContentContainer}
           showsVerticalScrollIndicator={false}
         >
-          {/* RECENTS */}
-          <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Recents</Text>
-          <View style={[styles.recentsBox, { backgroundColor: colors.card }]} />
+          {recentFarms.length > 0 && (
+            <>
+              {/* RECENTS */}
+              <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Recents</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.recentsScroll}
+                contentContainerStyle={styles.recentsScrollContent}
+              >
+                {recentFarms.map((farm) => (
+                  <Pressable
+                    key={farm.id}
+                    style={[
+                      styles.recentItem,
+                      {
+                        backgroundColor: colors.surface,
+                        borderColor: colors.border.light,
+                      },
+                    ]}
+                    onPress={() => focusFarm(farm.id)}
+                  >
+                    <Text style={[styles.recentTitle, { color: colors.text.primary }]} numberOfLines={1}>
+                      {farm.name}
+                    </Text>
+                    <Text style={[styles.recentSubtitle, { color: colors.text.tertiary }]} numberOfLines={1}>
+                      {farm.products}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </>
+          )}
 
           {/* FARMS NEAR YOU */}
           <View style={styles.sectionHeader}>
@@ -294,9 +370,44 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.xs,
     marginTop: theme.spacing.lg,
   },
+  recentsScroll: {
+    marginTop: theme.spacing.sm,
+  },
+
+  recentsScrollContent: {
+    paddingVertical: theme.spacing.xs,
+    gap: theme.spacing.sm,
+  },
+
+  recentItem: {
+    minWidth: 160,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    padding: theme.spacing.md,
+    marginRight: theme.spacing.sm,
+  },
+
+  recentTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: theme.spacing.xs,
+  },
+
+  recentSubtitle: {
+    fontSize: 12,
+  },
+
   recentsBox: {
     height: 80,
     borderRadius: 30,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: theme.spacing.md,
+  },
+
+  recentsEmpty: {
+    fontSize: 13,
+    textAlign: "center",
   },
 
   // Edge-to-edge scroller: pull to edges; padding on content container
