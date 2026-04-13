@@ -99,14 +99,14 @@ export default function ListingsScreen() {
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
-      edges={["bottom"]}
     >
+    <View style={{ height: insets.top, backgroundColor: "#F7E5BF", position: "absolute", top: 0, left: 0, right: 0 }} />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
         {/* ── Hero Header ── */}
-        <View style={[styles.hero, { paddingTop: insets.top + theme.spacing.lg }]}>
+        <View style={[styles.hero, { paddingTop: theme.spacing.lg + insets.top }]}>
           {/* Decorative blobs */}
           <View style={styles.blobLarge} />
           <View style={styles.blobSmall} />
@@ -273,7 +273,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    paddingBottom: theme.spacing["4xl"] ?? 48,
+    paddingBottom: theme.spacing.sm,
   },
 
   // ── Hero ──
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
     borderRadius: 110,
     backgroundColor: "#F0C26A",
     opacity: 0.45,
-    top: -50,
+    top: 10,
     right: -50,
   },
   blobSmall: {
