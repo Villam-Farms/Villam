@@ -44,6 +44,15 @@ export default function TabLayout() {
         />
 
         <Tabs.Screen
+          name="listings"
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons size={28} name={focused ? "pricetags" : "pricetags-outline"} color={color} />
+            ),
+          }}
+        />
+
+        <Tabs.Screen
           name="create"
           options={{
             tabBarButton: (props) => <CreateTabButton {...props} />,
