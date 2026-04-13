@@ -57,4 +57,5 @@ const styles = StyleSheet.create({
   subtitle: {
     marginTop: 8,
   },
+  
 });
