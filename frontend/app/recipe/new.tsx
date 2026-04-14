@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   StyleSheet,
   TouchableOpacity,
@@ -10,6 +10,7 @@ import {
   FlatList,
   Alert,
   Animated,
+  ActivityIndicator,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
@@ -21,12 +22,14 @@ import DraggableFlatList, { type RenderItemParams } from "react-native-draggable
 import { ThemedView } from "@/components/themed-view";
 import { useTheme } from "@/hooks/useTheme";
 import { theme } from "@/constants/theme";
+import { supabase } from "@/lib/supabase";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Ingredient {
   id: string;
   quantity: string;
+  unit: string;
   name: string;
 }
 
@@ -36,13 +39,13 @@ interface Step {
   photoUris: string[];
 }
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const uid = () => Math.random().toString(36).slice(2, 9);
+const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+const onlyDigits = (value: string) => value.replace(/[^0-9]/g, "");
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
-/** A single time input pill */
 function TimeField({
   label,
   value,
@@ -59,10 +62,11 @@ function TimeField({
       <Text style={[timeStyles.label, { color: colors.text.tertiary }]}>{label}</Text>
       <TextInput
         value={value}
-        onChangeText={onChange}
+        onChangeText={(v) => onChange(onlyDigits(v))}
         placeholder="—"
         placeholderTextColor={colors.text.tertiary}
-        keyboardType="numeric"
+        keyboardType="number-pad"
+        returnKeyType="done"
         style={[timeStyles.input, { color: colors.text.primary, borderBottomColor: theme.brand.primary }]}
       />
       <Text style={[timeStyles.unit, { color: colors.text.tertiary }]}>min</Text>
@@ -73,11 +77,17 @@ function TimeField({
 const timeStyles = StyleSheet.create({
   pill: { alignItems: "center", flex: 1 },
   label: { fontSize: 10, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 },
-  input: { fontSize: 18, fontWeight: "700", textAlign: "center", borderBottomWidth: 2, minWidth: 40, paddingBottom: 2 },
+  input: {
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+    borderBottomWidth: 2,
+    minWidth: 40,
+    paddingBottom: 2,
+  },
   unit: { fontSize: 10, marginTop: 3 },
 });
 
-/** Ingredient row */
 function IngredientRow({
   item,
   onUpdate,
@@ -85,7 +95,7 @@ function IngredientRow({
   colors,
 }: {
   item: Ingredient;
-  onUpdate: (id: string, field: "quantity" | "name", val: string) => void;
+  onUpdate: (id: string, field: "quantity" | "unit" | "name", val: string) => void;
   onDelete: (id: string) => void;
   colors: any;
 }) {
@@ -94,10 +104,24 @@ function IngredientRow({
       <TextInput
         value={item.quantity}
         onChangeText={(v) => onUpdate(item.id, "quantity", v)}
-        placeholder="Qty"
+        placeholder="1"
         placeholderTextColor={colors.text.tertiary}
         style={[
           ingStyles.qtyInput,
+          {
+            backgroundColor: colors.input.background,
+            borderColor: colors.border.default,
+            color: colors.text.primary,
+          },
+        ]}
+      />
+      <TextInput
+        value={item.unit}
+        onChangeText={(v) => onUpdate(item.id, "unit", v)}
+        placeholder="cup"
+        placeholderTextColor={colors.text.tertiary}
+        style={[
+          ingStyles.unitInput,
           {
             backgroundColor: colors.input.background,
             borderColor: colors.border.default,
@@ -129,13 +153,23 @@ function IngredientRow({
 const ingStyles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 8, width: "100%" },
   qtyInput: {
-    width: 64,
+    width: 54,
     height: 40,
     borderRadius: 10,
     borderWidth: 1.5,
     paddingHorizontal: 8,
     fontSize: 14,
     fontWeight: "600",
+    textAlign: "center",
+  },
+  unitInput: {
+    width: 74,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 8,
+    fontSize: 14,
+    fontWeight: "500",
     textAlign: "center",
   },
   nameInput: {
@@ -148,7 +182,6 @@ const ingStyles = StyleSheet.create({
   },
 });
 
-/** Step card with drag handle, instruction input, and inline photo strip */
 function StepCard({
   step,
   index,
@@ -181,81 +214,72 @@ function StepCard({
   }, [isActive, scaleValue]);
 
   return (
-    <Animated.View
-      style={{
-        transform: [{ scale: scaleValue }],
-      }}
-      pointerEvents="box-none"
-    >
+    <Animated.View style={{ transform: [{ scale: scaleValue }] }} pointerEvents="box-none">
       <View
         style={[
           stepStyles.card,
           { backgroundColor: colors.input.background, borderColor: colors.border.default },
         ]}
       >
-      {/* Header row */}
-      <View style={stepStyles.header}>
-        <View style={[stepStyles.stepBadge, { backgroundColor: theme.brand.primary }]}>
-          <Text style={stepStyles.stepNum}>{index + 1}</Text>
-        </View>
-        <Text style={[stepStyles.stepLabel, { color: colors.text.secondary }]}>Step</Text>
-
-        {/* Drag handle */}
-        <TouchableOpacity
-          onLongPress={onDragStart}
-          delayLongPress={120}
-          style={[
-            stepStyles.dragHandleButton,
-            { backgroundColor: colors.background, borderColor: colors.border.default },
-          ]}
-          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-        >
-          <Ionicons name="reorder-three-outline" size={20} color={colors.text.secondary} />
-        </TouchableOpacity>
-
-        {/* Delete step */}
-        <TouchableOpacity onPress={() => onDelete(step.id)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-          <Ionicons name="trash-outline" size={18} color={colors.text.tertiary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Instruction */}
-      <TextInput
-        value={step.instruction}
-        onChangeText={(v) => onUpdate(step.id, v)}
-        placeholder="Describe this step…"
-        placeholderTextColor={colors.text.tertiary}
-        multiline
-        style={[stepStyles.textArea, { color: colors.text.primary }]}
-      />
-
-      {/* Photo strip */}
-      <View style={stepStyles.photoRow}>
-        {step.photoUris.map((uri, pi) => (
-          <View key={pi} style={stepStyles.photoThumbWrapper}>
-            <Image source={{ uri }} style={stepStyles.photoThumb} resizeMode="cover" />
-            <TouchableOpacity
-              style={stepStyles.photoDeleteBtn}
-              onPress={() => onDeletePhoto(step.id, pi)}
-              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-            >
-              <Ionicons name="close" size={11} color="#fff" />
-            </TouchableOpacity>
+        <View style={stepStyles.header}>
+          <View style={[stepStyles.stepBadge, { backgroundColor: theme.brand.primary }]}>
+            <Text style={stepStyles.stepNum}>{index + 1}</Text>
           </View>
-        ))}
-        {/* Add photo button */}
-        <TouchableOpacity
-          style={[
-            stepStyles.addPhotoBtn,
-            { backgroundColor: colors.background, borderColor: theme.brand.primary },
-          ]}
-          onPress={() => onAddPhoto(step.id)}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="camera-outline" size={22} color={theme.brand.primary} />
-          <Text style={[stepStyles.addPhotoLabel, { color: theme.brand.primary }]}>Photo</Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={[stepStyles.stepLabel, { color: colors.text.secondary }]}>Step</Text>
+
+          <TouchableOpacity
+            onLongPress={onDragStart}
+            delayLongPress={120}
+            style={[
+              stepStyles.dragHandleButton,
+              { backgroundColor: colors.background, borderColor: colors.border.default },
+            ]}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+          >
+            <Ionicons name="reorder-three-outline" size={20} color={colors.text.secondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => onDelete(step.id)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+            <Ionicons name="trash-outline" size={18} color={colors.text.tertiary} />
+          </TouchableOpacity>
+        </View>
+
+        <TextInput
+          value={step.instruction}
+          onChangeText={(v) => onUpdate(step.id, v)}
+          placeholder="Describe this step..."
+          placeholderTextColor={colors.text.tertiary}
+          multiline
+          textAlignVertical="top"
+          style={[stepStyles.textArea, { color: colors.text.primary }]}
+        />
+
+        <View style={stepStyles.photoRow}>
+          {step.photoUris.map((uri, pi) => (
+            <View key={`${step.id}-photo-${pi}`} style={stepStyles.photoThumbWrapper}>
+              <Image source={{ uri }} style={stepStyles.photoThumb} resizeMode="cover" />
+              <TouchableOpacity
+                style={stepStyles.photoDeleteBtn}
+                onPress={() => onDeletePhoto(step.id, pi)}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+              >
+                <Ionicons name="close" size={11} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          <TouchableOpacity
+            style={[
+              stepStyles.addPhotoBtn,
+              { backgroundColor: colors.background, borderColor: theme.brand.primary },
+            ]}
+            onPress={() => onAddPhoto(step.id)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="camera-outline" size={22} color={theme.brand.primary} />
+            <Text style={[stepStyles.addPhotoLabel, { color: theme.brand.primary }]}>Photo</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </Animated.View>
   );
@@ -335,12 +359,8 @@ const stepStyles = StyleSheet.create({
   addPhotoLabel: { fontSize: 10, fontWeight: "600" },
 });
 
-// ─── Section Header ───────────────────────────────────────────────────────────
-
 function SectionHeader({ title, colors }: { title: string; colors: any }) {
-  return (
-    <Text style={[sectionStyles.title, { color: colors.text.primary }]}>{title}</Text>
-  );
+  return <Text style={[sectionStyles.title, { color: colors.text.primary }]}>{title}</Text>;
 }
 
 const sectionStyles = StyleSheet.create({
@@ -356,47 +376,90 @@ const sectionStyles = StyleSheet.create({
 export default function NewRecipeScreen() {
   const { colors } = useTheme();
   const [isDraggingStep, setIsDraggingStep] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Cover media
   const [mediaUris, setMediaUris] = useState<string[]>([]);
-  const [extraMediaUris, setExtraMediaUris] = useState<string[]>([]);
-
-  // Basic info
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-
-  // Time (in minutes)
   const [prepTime, setPrepTime] = useState("");
   const [cookTime, setCookTime] = useState("");
   const [additionalTime, setAdditionalTime] = useState("");
   const [servings, setServings] = useState("");
 
-  // Ingredients
-  const [ingredients, setIngredients] = useState<Ingredient[]>([{ id: uid(), quantity: "", name: "" }]);
+  const [ingredients, setIngredients] = useState<Ingredient[]>([
+    { id: uid(), quantity: "", unit: "", name: "" },
+  ]);
 
-  // Steps
   const [steps, setSteps] = useState<Step[]>([{ id: uid(), instruction: "", photoUris: [] }]);
 
-  // ── Total time derived
   const totalMins =
-    (parseInt(prepTime) || 0) + (parseInt(cookTime) || 0) + (parseInt(additionalTime) || 0);
+    (parseInt(prepTime, 10) || 0) +
+    (parseInt(cookTime, 10) || 0) +
+    (parseInt(additionalTime, 10) || 0);
+
   const totalDisplay = totalMins > 0 ? `${totalMins} min` : "—";
 
-  // ── Cover media handlers
-  const pickMediaFromLibrary = async () => {
+  const hasValidIngredient = useMemo(
+    () => ingredients.some((ing) => ing.name.trim().length > 0),
+    [ingredients]
+  );
+
+  const hasValidStep = useMemo(
+    () => steps.some((step) => step.instruction.trim().length > 0),
+    [steps]
+  );
+
+  const canPublish = title.trim().length > 0 && hasValidIngredient && hasValidStep && !isSaving;
+
+  const isDirty = useMemo(() => {
+    const hasMedia = mediaUris.length > 0;
+    const hasBasicInfo = title.trim().length > 0 || description.trim().length > 0;
+    const hasTimeInfo =
+      prepTime.length > 0 || cookTime.length > 0 || additionalTime.length > 0 || servings.length > 0;
+    const hasIngredientData = ingredients.some(
+      (ing) => ing.quantity.trim() || ing.unit.trim() || ing.name.trim()
+    );
+    const hasStepData = steps.some(
+      (step) => step.instruction.trim().length > 0 || step.photoUris.length > 0
+    );
+
+    return hasMedia || hasBasicInfo || hasTimeInfo || hasIngredientData || hasStepData;
+  }, [mediaUris, title, description, prepTime, cookTime, additionalTime, servings, ingredients, steps]);
+
+  const confirmLeave = () => {
+    if (isSaving) return;
+
+    if (!isDirty) {
+      router.back();
+      return;
+    }
+
+    Alert.alert(
+      "Discard recipe?",
+      "You have unsaved changes. If you go back now, your recipe will be lost.",
+      [
+        { text: "Keep editing", style: "cancel" },
+        { text: "Discard", style: "destructive", onPress: () => router.back() },
+      ]
+    );
+  };
+
+  const pickPhotosFromLibrary = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return [];
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       quality: 0.8,
     });
+
     if (result.canceled) return [];
     return result.assets.map((a) => a.uri);
   };
 
   const handleMediaUpload = async () => {
-    const uris = await pickMediaFromLibrary();
+    const uris = await pickPhotosFromLibrary();
     if (uris.length === 0) return;
     setMediaUris((prev) => [...prev, ...uris]);
   };
@@ -405,17 +468,15 @@ export default function NewRecipeScreen() {
     setMediaUris((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // ── Ingredient handlers
   const addIngredient = () =>
-    setIngredients((prev) => [...prev, { id: uid(), quantity: "", name: "" }]);
+    setIngredients((prev) => [...prev, { id: uid(), quantity: "", unit: "", name: "" }]);
 
-  const updateIngredient = (id: string, field: "quantity" | "name", val: string) =>
+  const updateIngredient = (id: string, field: "quantity" | "unit" | "name", val: string) =>
     setIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, [field]: val } : ing)));
 
   const deleteIngredient = (id: string) =>
     setIngredients((prev) => (prev.length > 1 ? prev.filter((i) => i.id !== id) : prev));
 
-  // ── Step handlers
   const addStep = () =>
     setSteps((prev) => [...prev, { id: uid(), instruction: "", photoUris: [] }]);
 
@@ -428,11 +489,13 @@ export default function NewRecipeScreen() {
   const addStepPhoto = async (stepId: string) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return;
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       quality: 0.8,
     });
+
     if (!result.canceled) {
       const uris = result.assets.map((a) => a.uri);
       setSteps((prev) =>
@@ -453,6 +516,110 @@ export default function NewRecipeScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   };
 
+  const handlePublish = async () => {
+    try {
+      if (!title.trim()) {
+        Alert.alert("Missing title", "Please give your recipe a title.");
+        return;
+      }
+
+      const validIngredients = ingredients
+        .map((ing, index) => ({
+          id: ing.id,
+          position: index,
+          quantity: ing.quantity.trim(),
+          unit: ing.unit.trim(),
+          name: ing.name.trim(),
+        }))
+        .filter((ing) => ing.name.length > 0);
+
+      const validSteps = steps
+        .map((step, index) => ({
+          id: step.id,
+          position: index,
+          instruction: step.instruction.trim(),
+        }))
+        .filter((step) => step.instruction.length > 0);
+
+      if (validIngredients.length === 0) {
+        Alert.alert("Missing ingredients", "Please add at least one ingredient.");
+        return;
+      }
+
+      if (validSteps.length === 0) {
+        Alert.alert("Missing steps", "Please add at least one step.");
+        return;
+      }
+
+      setIsSaving(true);
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+
+      if (!user) {
+        Alert.alert("Not signed in", "Please sign in before publishing.");
+        return;
+      }
+
+      const payload = {
+        user_id: user.id,
+        title: title.trim(),
+        description: description.trim() || null,
+        prep_time_minutes: Number(prepTime || 0),
+        cook_time_minutes: Number(cookTime || 0),
+        additional_time_minutes: Number(additionalTime || 0),
+        total_time_minutes:
+          Number(prepTime || 0) +
+          Number(cookTime || 0) +
+          Number(additionalTime || 0),
+        servings: servings ? Number(servings) : null,
+        ingredients: validIngredients,
+        steps: validSteps,
+      };
+
+      console.log("Publishing recipe payload:", payload);
+
+      const { data, error } = await supabase
+        .from("recipes")
+        .insert(payload)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Recipe insert error:", error);
+        throw error;
+      }
+
+      Alert.alert(
+        "Recipe saved!",
+        mediaUris.length > 0
+          ? "The recipe was saved. Photos are still local only in this version."
+          : "Your recipe was published successfully.",
+        [
+          {
+            text: "OK",
+            onPress: () => router.replace("/"),
+          },
+        ]
+      );
+
+      console.log("Saved recipe:", data);
+    } catch (error: any) {
+      console.error("Recipe publish failed:", error);
+      Alert.alert(
+        "Save failed",
+        error?.message ??
+          "Something went wrong while saving. Double-check that the recipes table exists and matches the SQL."
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <>
       <Stack.Screen
@@ -460,16 +627,28 @@ export default function NewRecipeScreen() {
           headerShown: true,
           headerTitle: "",
           headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={confirmLeave} disabled={isSaving}>
               <Ionicons name="arrow-back" size={28} color={colors.text.primary} />
             </TouchableOpacity>
           ),
           headerRight: () => (
             <TouchableOpacity
-              style={[styles.publishBtn, { backgroundColor: theme.brand.primary }]}
-              onPress={() => Alert.alert("Recipe saved!")}
+              style={[
+                styles.publishBtn,
+                {
+                  backgroundColor: canPublish ? theme.brand.primary : colors.border.default,
+                  opacity: canPublish ? 1 : 0.75,
+                },
+              ]}
+              onPress={handlePublish}
+              activeOpacity={0.85}
+              disabled={!canPublish}
             >
-              <Text style={styles.publishBtnText}>Publish</Text>
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.publishBtnText}>Publish</Text>
+              )}
             </TouchableOpacity>
           ),
           headerStyle: { backgroundColor: colors.background },
@@ -487,19 +666,22 @@ export default function NewRecipeScreen() {
           scrollEnabled={!isDraggingStep}
         >
           <ThemedView style={styles.container}>
+            <Text style={[styles.pageTitle, { color: colors.text.primary }]}>New Recipe</Text>
 
-            {/* ── Page Title */}
-            <Text style={[styles.pageTitle, { color: colors.text.primary }]}>Make a New Recipe</Text>
-
-            {/* ── Cover Media */}
             {mediaUris.length === 0 ? (
               <TouchableOpacity
-                style={[styles.uploadBox, { backgroundColor: colors.input.background, borderColor: theme.brand.primary }]}
+                style={[
+                  styles.uploadBox,
+                  { backgroundColor: colors.input.background, borderColor: theme.brand.primary },
+                ]}
                 onPress={handleMediaUpload}
                 activeOpacity={0.7}
               >
-                <Ionicons name="add-circle" size={48} color={theme.brand.primary} />
-                <Text style={[styles.uploadText, { color: colors.text.primary }]}>Add photos / video</Text>
+                <Ionicons name="images-outline" size={44} color={theme.brand.primary} />
+                <Text style={[styles.uploadText, { color: colors.text.primary }]}>Add photos</Text>
+                <Text style={[styles.uploadSubtext, { color: colors.text.tertiary }]}>
+                  Photos are preview-only for now and are not uploaded yet
+                </Text>
               </TouchableOpacity>
             ) : (
               <View style={styles.mediaPreviewContainer}>
@@ -545,35 +727,47 @@ export default function NewRecipeScreen() {
               </View>
             )}
 
-            {/* ── Title */}
-            <View style={[styles.inputWrapper, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
+            <View
+              style={[
+                styles.inputWrapper,
+                { backgroundColor: colors.input.background, borderColor: colors.border.default },
+              ]}
+            >
               <TextInput
                 value={title}
                 onChangeText={setTitle}
                 placeholder="Title"
                 placeholderTextColor={colors.text.tertiary}
-                style={[styles.input, { color: colors.text.primary }]}
+                returnKeyType="next"
+                style={[styles.titleInput, { color: colors.text.primary }]}
               />
             </View>
 
-            {/* ── Description */}
-            <View style={[styles.inputWrapper, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
+            <View
+              style={[
+                styles.descriptionWrapper,
+                { backgroundColor: colors.input.background, borderColor: colors.border.default },
+              ]}
+            >
               <TextInput
                 value={description}
                 onChangeText={setDescription}
                 placeholder="Description (Recommended)"
                 placeholderTextColor={colors.text.tertiary}
-                style={[styles.input, { color: colors.text.primary }]}
+                multiline
+                textAlignVertical="top"
+                style={[styles.descriptionInput, { color: colors.text.primary }]}
               />
             </View>
 
-            {/* ═══════════════════════════════════════
-                ── Time & Servings
-            ═══════════════════════════════════════ */}
-            <View style={[styles.timingCard, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
+            <View
+              style={[
+                styles.timingCard,
+                { backgroundColor: colors.input.background, borderColor: colors.border.default },
+              ]}
+            >
               <SectionHeader title="Time & Servings" colors={colors} />
 
-              {/* Time row */}
               <View style={styles.timeRow}>
                 <TimeField label="Prep" value={prepTime} onChange={setPrepTime} colors={colors} />
                 <View style={[styles.timeDivider, { backgroundColor: colors.border.default }]} />
@@ -581,23 +775,21 @@ export default function NewRecipeScreen() {
                 <View style={[styles.timeDivider, { backgroundColor: colors.border.default }]} />
                 <TimeField label="Additional" value={additionalTime} onChange={setAdditionalTime} colors={colors} />
                 <View style={[styles.timeDivider, { backgroundColor: colors.border.default }]} />
-                {/* Total — derived, read-only */}
                 <View style={{ alignItems: "center", flex: 1 }}>
                   <Text style={[timeStyles.label, { color: colors.text.tertiary }]}>Total</Text>
-                  <Text style={[{ fontSize: 18, fontWeight: "700", color: theme.brand.primary }]}>{totalDisplay}</Text>
+                  <Text style={[styles.totalTimeText, { color: theme.brand.primary }]}>{totalDisplay}</Text>
                 </View>
               </View>
 
-              {/* Servings row */}
               <View style={styles.servingsRow}>
                 <Ionicons name="people-outline" size={18} color={colors.text.tertiary} />
                 <Text style={[styles.servingsLabel, { color: colors.text.secondary }]}>Servings</Text>
                 <TextInput
                   value={servings}
-                  onChangeText={setServings}
+                  onChangeText={(v) => setServings(onlyDigits(v))}
                   placeholder="e.g. 4"
                   placeholderTextColor={colors.text.tertiary}
-                  keyboardType="numeric"
+                  keyboardType="number-pad"
                   style={[
                     styles.servingsInput,
                     {
@@ -610,11 +802,16 @@ export default function NewRecipeScreen() {
               </View>
             </View>
 
-            {/* ═══════════════════════════════════════
-                ── Ingredients
-            ═══════════════════════════════════════ */}
-            <View style={[styles.section, { borderColor: colors.border.default }]}>
+            <View
+              style={[
+                styles.sectionCard,
+                { backgroundColor: colors.input.background, borderColor: colors.border.default },
+              ]}
+            >
               <SectionHeader title="Ingredients" colors={colors} />
+              <Text style={[styles.helperText, { color: colors.text.tertiary }]}>
+                Add quantity, unit, and ingredient name for each item
+              </Text>
 
               {ingredients.map((ing) => (
                 <IngredientRow
@@ -626,19 +823,24 @@ export default function NewRecipeScreen() {
                 />
               ))}
 
-              <TouchableOpacity style={[styles.addRowBtn, { borderColor: theme.brand.primary }]} onPress={addIngredient}>
+              <TouchableOpacity
+                style={[styles.addRowBtn, { borderColor: theme.brand.primary }]}
+                onPress={addIngredient}
+              >
                 <Ionicons name="add" size={18} color={theme.brand.primary} />
                 <Text style={[styles.addRowLabel, { color: theme.brand.primary }]}>Add ingredient</Text>
               </TouchableOpacity>
             </View>
 
-            {/* ═══════════════════════════════════════
-                ── Steps
-            ═══════════════════════════════════════ */}
-            <View style={styles.section}>
+            <View
+              style={[
+                styles.sectionCard,
+                { backgroundColor: colors.input.background, borderColor: colors.border.default },
+              ]}
+            >
               <SectionHeader title="Steps" colors={colors} />
               <Text style={[styles.stepsHint, { color: colors.text.tertiary }]}>
-                Long press and drag to reorder • Tap &quot;Photo&quot; inside a step to attach images
+                Long press and drag to reorder • Step photos are preview-only for now
               </Text>
 
               <DraggableFlatList
@@ -691,7 +893,6 @@ export default function NewRecipeScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Bottom padding */}
             <View style={{ height: 40 }} />
           </ThemedView>
         </ScrollView>
@@ -720,39 +921,47 @@ const styles = StyleSheet.create({
   },
   uploadBox: {
     width: "100%",
-    height: 104,
+    minHeight: 116,
     borderRadius: theme.borderRadius.xl,
     borderWidth: 1.5,
     borderStyle: "dashed",
     alignItems: "center",
     justifyContent: "center",
     gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
   },
   uploadText: {
     fontSize: theme.typography.fontSizes.h5,
     fontWeight: theme.typography.fontWeights.semibold,
   },
+  uploadSubtext: {
+    fontSize: 12,
+    textAlign: "center",
+  },
   inputWrapper: {
     width: "100%",
-    height: 45,
+    minHeight: 52,
     borderRadius: theme.borderRadius.lg,
     borderWidth: 2,
     paddingHorizontal: theme.spacing.sm,
     justifyContent: "center",
   },
-  input: {
-    fontSize: theme.typography.fontSizes.h4,
-    fontWeight: theme.typography.fontWeights.regular,
-  },
-  addMoreBox: {
+  descriptionWrapper: {
     width: "100%",
-    height: 104,
-    borderRadius: theme.borderRadius.xl,
-    borderWidth: 1.5,
-    borderStyle: "dashed",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.spacing.xs,
+    minHeight: 110,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 2,
+    paddingHorizontal: theme.spacing.sm,
+    paddingTop: theme.spacing.sm,
+  },
+  titleInput: {
+    fontSize: 20,
+    fontWeight: theme.typography.fontWeights.semibold,
+  },
+  descriptionInput: {
+    fontSize: 15,
+    lineHeight: 21,
+    minHeight: 86,
   },
   mediaPreviewContainer: { width: "100%", gap: theme.spacing.sm },
   mainImageWrapper: {
@@ -793,7 +1002,6 @@ const styles = StyleSheet.create({
   },
   thumbnail: { width: "100%", height: "100%" },
 
-  // Timing card
   timingCard: {
     width: "100%",
     borderRadius: 16,
@@ -807,6 +1015,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   timeDivider: { width: 1, height: 36, marginHorizontal: 4 },
+  totalTimeText: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
   servingsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -828,12 +1040,16 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Sections
-  section: {
+  sectionCard: {
     width: "100%",
     borderRadius: 16,
-    borderWidth: 0,
+    borderWidth: 1.5,
+    padding: 16,
     gap: 12,
+  },
+  helperText: {
+    fontSize: 12,
+    marginTop: -2,
   },
   addRowBtn: {
     flexDirection: "row",
@@ -853,12 +1069,14 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xs,
   },
 
-  // Header publish button
   publishBtn: {
+    minWidth: 92,
     paddingHorizontal: 18,
     paddingVertical: 7,
     borderRadius: 20,
     marginRight: 4,
+    alignItems: "center",
+    justifyContent: "center",
   },
   publishBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 });
