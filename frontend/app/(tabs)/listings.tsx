@@ -1,20 +1,21 @@
-import React, { useMemo, useState} from "react";
+import React, { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, View, TouchableOpacity } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery } from "@tanstack/react-query";
 
 import { useTheme } from "@/hooks/useTheme";
 import { theme } from "@/constants/theme";
 import { ThemedText } from "@/components/themed-text";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
-import { addDistanceAndSort } from "@/lib/location";
+import { addDistanceAndSort, type Coords } from "@/lib/location";
 import { useFarms } from "@/hooks/useFarms";
 import { openDirections } from "@/lib/directions";
 import { formatAddress } from "@/lib/address";
-import { getMockFarmProfile } from "@/lib/mock-farms";
+import { fetchMarketplaceListings, type MarketplaceListing } from "@/lib/marketplace";
 
-type ListingCategory = "All" | "Vegetables" | "Fruit" | "Herbs" | "Eggs & Dairy";
+type ListingCategory = "All" | string;
 
 type ListingRow = {
   id: string;
@@ -30,9 +31,77 @@ type ListingRow = {
   icon: "leaf-outline" | "nutrition-outline" | "flower-outline" | "sunny-outline";
   farmId: number;
   farmName: string;
+  latitude: number;
+  longitude: number;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
 };
 
-const FILTERS: ListingCategory[] = ["All", "Vegetables", "Fruit", "Herbs", "Eggs & Dairy"];
+function getListingVisuals(category: string) {
+  const normalizedCategory = category.trim().toLowerCase();
+
+  if (normalizedCategory.includes("fruit")) {
+    return {
+      color: "#FFE5C4",
+      icon: "sunny-outline" as const,
+      badgeColor: "#FAD7A0",
+    };
+  }
+
+  if (normalizedCategory.includes("herb")) {
+    return {
+      color: "#E6F6E1",
+      icon: "flower-outline" as const,
+      badgeColor: "#CAE7A5",
+    };
+  }
+
+  if (normalizedCategory.includes("egg") || normalizedCategory.includes("dairy")) {
+    return {
+      color: "#FFF0C9",
+      icon: "sunny-outline" as const,
+      badgeColor: "#F2DEA2",
+    };
+  }
+
+  return {
+    color: "#E0F1D8",
+    icon: "leaf-outline" as const,
+    badgeColor: "#C0DD97",
+  };
+}
+
+function addDistanceToListings(listings: MarketplaceListing[], userCoords: Coords | null) {
+  const farmsWithDistance = addDistanceAndSort(
+    listings.map((listing) => ({
+      id: listing.farmId,
+      name: listing.farmName,
+      rating: 0,
+      reviews: 0,
+      products: "",
+      latitude: listing.latitude,
+      longitude: listing.longitude,
+      city: listing.city,
+      state: listing.state,
+      postal_code: listing.postal_code,
+      country: listing.country,
+      street: null,
+    })),
+    userCoords
+  );
+
+  const distanceMap = new Map<number, number | null>(
+    farmsWithDistance.map((farm) => [farm.id, farm.distanceMi])
+  );
+
+  return [...listings].sort(
+    (left, right) =>
+      (distanceMap.get(left.farmId) ?? Number.POSITIVE_INFINITY) -
+      (distanceMap.get(right.farmId) ?? Number.POSITIVE_INFINITY)
+  );
+}
 
 export default function ListingsScreen() {
   const { colors } = useTheme();
@@ -40,33 +109,50 @@ export default function ListingsScreen() {
   const { coords: userCoords, locationText } = useCurrentLocation();
   const { data: farms = [], isLoading, error } = useFarms();
   const [activeFilter, setActiveFilter] = useState<ListingCategory>("All");
-
-  const farmsWithDistance = useMemo(
-    () => addDistanceAndSort(farms, userCoords),
-    [farms, userCoords]
-  );
+  const {
+    data: marketplaceListings = [],
+    isLoading: listingsLoading,
+    error: listingsError,
+  } = useQuery({
+    queryKey: ["marketplace-listings"],
+    queryFn: fetchMarketplaceListings,
+  });
 
   const listings = useMemo<ListingRow[]>(
     () =>
-      farmsWithDistance.flatMap((farm) => {
-        const profile = getMockFarmProfile(farm.id, farm);
-        return profile.produceListings.map((listing) => ({
+      addDistanceToListings(marketplaceListings, userCoords).map((listing) => {
+        const visuals = getListingVisuals(listing.category);
+
+        return {
           id: listing.id,
-          name: listing.name,
-          price: listing.price,
-          unit: listing.unit,
-          note: listing.note,
-          color: listing.color,
-          icon: listing.icon,
-          badgeColor: "#C0DD97",
+          name: listing.produceItemName,
+          price: `${listing.currency} ${listing.price.toFixed(2)}`,
+          unit: `Sold by ${listing.soldBy}`,
+          note:
+            listing.varietyDescription?.trim() ||
+            `Variety: ${listing.varietyName}`,
+          color: visuals.color,
+          icon: visuals.icon,
+          badgeColor: visuals.badgeColor,
           badgeTextColor: "#27500A",
           farmDotColor: "#639922",
-          category: "Vegetables" as ListingCategory,
-          farmId: farm.id,
-          farmName: farm.name,
-        }));
+          category: listing.category,
+          farmId: listing.farmId,
+          farmName: listing.farmName,
+          latitude: listing.latitude,
+          longitude: listing.longitude,
+          city: listing.city,
+          state: listing.state,
+          postal_code: listing.postal_code,
+          country: listing.country,
+        };
       }),
-    [farmsWithDistance]
+    [marketplaceListings, userCoords]
+  );
+
+  const filters = useMemo<ListingCategory[]>(
+    () => ["All", ...Array.from(new Set(listings.map((listing) => listing.category))).sort()],
+    [listings]
   );
 
   const filteredListings = useMemo(
@@ -83,12 +169,24 @@ export default function ListingsScreen() {
 
   const handleDirectionPress = async (farmId: number) => {
     const farm = farms.find((f) => f.id === farmId);
+    const listing = listings.find((item) => item.farmId === farmId);
+    const fallbackAddress = listing
+      ? formatAddress({
+          city: listing.city,
+          state: listing.state,
+          postal_code: listing.postal_code,
+          country: listing.country,
+        })
+      : "";
+
     if (!farm) return;
-    const hasRealAddress =
-      !!farm.street?.trim() && (!!farm.city?.trim() || !!farm.postal_code?.trim());
-    const finalDest = hasRealAddress
-      ? formatAddress(farm)
-      : `${farm.latitude},${farm.longitude}`;
+
+    const formattedFarmAddress = formatAddress(farm);
+    const finalDest =
+      formattedFarmAddress.trim() || fallbackAddress.trim()
+        ? formattedFarmAddress.trim() || fallbackAddress.trim()
+        : `${farm.latitude},${farm.longitude}`;
+
     try {
       await openDirections(finalDest);
     } catch (e) {
@@ -118,6 +216,30 @@ export default function ListingsScreen() {
               Browse farm produce by item, price, and source.
             </ThemedText>
 
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity
+                style={styles.createListingButton}
+                onPress={() => router.push("/listing/new")}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                <ThemedText style={styles.createListingButtonText}>
+                  List your produce
+                </ThemedText>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.manageListingButton}
+                onPress={() => router.push("/listing/manage")}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="settings-outline" size={18} color="#2E2A1F" />
+                <ThemedText style={styles.manageListingButtonText}>
+                  Manage listings
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.locationPill}>
               <View style={styles.locationDot} />
               <ThemedText style={styles.locationText}>{locationText}</ThemedText>
@@ -132,7 +254,7 @@ export default function ListingsScreen() {
           contentContainerStyle={styles.filterRow}
           style={styles.filterScroll}
         >
-          {FILTERS.map((filter) => (
+          {filters.map((filter) => (
             <TouchableOpacity
               key={filter}
               style={[
@@ -157,11 +279,11 @@ export default function ListingsScreen() {
         </ScrollView>
 
         {/* ── Listings ── */}
-        {isLoading ? (
+        {isLoading || listingsLoading ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
             Loading listings…
           </ThemedText>
-        ) : error ? (
+        ) : error || listingsError ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
             Could not load listings.
           </ThemedText>
@@ -338,6 +460,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     marginTop: theme.spacing.sm,
+  },
+  createListingButton: {
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: "#3D6B2F",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  createListingButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  actionButtonsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginTop: theme.spacing.md,
+  },
+  manageListingButton: {
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: "rgba(255,255,255,0.72)",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "rgba(46,42,31,0.08)",
+  },
+  manageListingButtonText: {
+    color: "#2E2A1F",
+    fontSize: 13,
+    fontWeight: "700",
   },
   locationDot: {
     width: 7,

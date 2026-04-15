@@ -38,6 +38,8 @@ export type FarmWithCoords = {
   state?: string | null;
   postal_code?: string | null;
   country?: string | null;
+  website?: string | null;
+  description?: string | null;
 };
 
 
