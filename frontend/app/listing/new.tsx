@@ -13,7 +13,7 @@ import MapView, { Marker } from "react-native-maps";
 import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { router, Stack } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/themed-text";
@@ -53,6 +53,7 @@ function formatLocationSummary(address: AddressParts) {
 
 export default function NewListingScreen() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { session } = useAuth();
   const { coords: userCoords, refresh: refreshLocation } = useCurrentLocation();
@@ -353,7 +354,15 @@ export default function NewListingScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.hero, { backgroundColor: "#F7E5BF" }]}>
+        <View
+          style={[
+            styles.hero,
+            {
+              backgroundColor: "#F7E5BF",
+              paddingTop: theme.spacing.lg + insets.top - 12,
+            },
+          ]}
+        >
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: "rgba(255,255,255,0.92)" }]}
             onPress={() => router.back()}
@@ -690,7 +699,6 @@ const styles = StyleSheet.create({
   },
   hero: {
     paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.lg,
     paddingBottom: theme.spacing.xl,
     gap: theme.spacing.sm,
   },
