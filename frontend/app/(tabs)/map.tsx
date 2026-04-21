@@ -1,6 +1,6 @@
 // app/(tabs)/map.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,6 +34,7 @@ export default function MapTab() {
   const [region, setRegion] = useState<Region | null>(null);
   const [selectedFarmId, setSelectedFarmId] = useState<number | null>(null);
   const [recentFarmIds, setRecentFarmIds] = useState<number[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { coords: userCoords, locationText } = useCurrentLocation();
   const { data: farms = [], isLoading: farmsLoading, error: farmsError } = useFarms();
@@ -41,6 +42,36 @@ export default function MapTab() {
   const farmsWithDistance = useMemo(
     () => addDistanceAndSort(farms, userCoords),
     [farms, userCoords]
+  );
+
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+
+  const filteredFarms = useMemo(() => {
+    if (!normalizedSearchQuery) return farms;
+
+    return farms.filter((farm) =>
+      [
+        farm.name,
+        farm.products,
+        farm.description,
+        farm.city,
+        farm.state,
+        farm.postal_code,
+        farm.country,
+      ]
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .some((value) => value.toLowerCase().includes(normalizedSearchQuery))
+    );
+  }, [farms, normalizedSearchQuery]);
+
+  const filteredFarmIds = useMemo(
+    () => new Set(filteredFarms.map((farm) => farm.id)),
+    [filteredFarms]
+  );
+
+  const filteredFarmsWithDistance = useMemo(
+    () => farmsWithDistance.filter((farm) => filteredFarmIds.has(farm.id)),
+    [farmsWithDistance, filteredFarmIds]
   );
 
   const fallbackCenter = useMemo(() => {
@@ -155,12 +186,18 @@ export default function MapTab() {
     console.log("Share pressed:", farmId);
   };
 
+  const handleSearchSubmit = () => {
+    if (filteredFarms.length === 0) return;
+
+    focusFarm(filteredFarms[0].id);
+  };
+
   const recentFarms = useMemo(
     () =>
       recentFarmIds
-        .map((id) => farms.find((farm) => farm.id === id))
+        .map((id) => filteredFarms.find((farm) => farm.id === id))
         .filter((farm): farm is typeof farms[number] => !!farm),
-    [recentFarmIds, farms]
+    [recentFarmIds, filteredFarms]
   );
 
   if (!region) return <Text>Loading map…</Text>;
@@ -169,7 +206,7 @@ export default function MapTab() {
     <View style={{ flex: 1 }}>
       {/* MAP */}
       <MapView ref={mapRef} style={{ flex: 1 }} region={region} showsUserLocation>
-        {farms.map((farm) => (
+        {filteredFarms.map((farm) => (
           <Marker
             key={farm.id}
             coordinate={{ latitude: farm.latitude, longitude: farm.longitude }}
@@ -195,7 +232,7 @@ export default function MapTab() {
       </Pressable>
 
       {/* FLOATING SEARCH BAR */}
-      <Pressable
+      <View
         style={[
           styles.floatingSearch,
           {
@@ -203,18 +240,33 @@ export default function MapTab() {
             borderColor: colors.border.light,
           },
         ]}
-        onPress={() => sheetRef.current?.snapToIndex(1)}
       >
         <Ionicons
           name="search"
-          size={30}
+          size={22}
           color={colors.text.tertiary}
           style={styles.searchIcon}
         />
-        <Text style={[styles.searchPlaceholder, { color: colors.input.placeholder }]}>
-          Search farms, recipes…
-        </Text>
-      </Pressable>
+        <TextInput
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          onFocus={() => sheetRef.current?.snapToIndex(1)}
+          onSubmitEditing={handleSearchSubmit}
+          placeholder="Search farms or location…"
+          placeholderTextColor={colors.input.placeholder}
+          returnKeyType="search"
+          style={[styles.searchInput, { color: colors.text.primary }]}
+        />
+        {searchQuery.trim().length > 0 && (
+          <Pressable
+            onPress={() => setSearchQuery("")}
+            hitSlop={8}
+            style={styles.clearSearchButton}
+          >
+            <Ionicons name="close-circle" size={18} color={colors.text.tertiary} />
+          </Pressable>
+        )}
+      </View>
 
       {/* BOTTOM SHEET */}
       <BottomSheet
@@ -265,7 +317,7 @@ export default function MapTab() {
           {/* FARMS NEAR YOU */}
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-              Farms Near You
+              {normalizedSearchQuery ? "Search Results" : "Farms Near You"}
             </Text>
             <Button
               variant="primary"
@@ -284,8 +336,10 @@ export default function MapTab() {
             <Text style={{ color: colors.text.tertiary }}>Loading farms…</Text>
           ) : farmsError ? (
             <Text style={{ color: colors.text.tertiary }}>Could not load farms.</Text>
-          ) : farmsWithDistance.length === 0 ? (
-            <Text style={{ color: colors.text.tertiary }}>No farms available yet.</Text>
+          ) : filteredFarmsWithDistance.length === 0 ? (
+            <Text style={{ color: colors.text.tertiary }}>
+              No farms matched your search.
+            </Text>
           ) : (
             <ScrollView
               horizontal
@@ -293,7 +347,7 @@ export default function MapTab() {
               style={styles.farmsScroll}
               contentContainerStyle={styles.farmsScrollContent}
             >
-              {farmsWithDistance.map((farm) => (
+              {filteredFarmsWithDistance.map((farm) => (
                 <View key={farm.id} style={styles.farmCardWrapper}>
                   <FarmCard
                     name={farm.name}
@@ -334,9 +388,13 @@ const styles = StyleSheet.create({
   searchIcon: {
     marginRight: theme.spacing.sm,
   },
-  searchPlaceholder: {
+  searchInput: {
+    flex: 1,
     fontSize: theme.typography.fontSizes.h4,
     fontFamily: theme.typography.fontFamily,
+  },
+  clearSearchButton: {
+    marginLeft: theme.spacing.xs,
   },
   recenterBtn: {
     position: "absolute",

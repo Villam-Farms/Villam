@@ -1,13 +1,19 @@
 import React, { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, View, TouchableOpacity } from "react-native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import {
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { router, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 
-import { useTheme } from "@/hooks/useTheme";
-import { theme } from "@/constants/theme";
 import { ThemedText } from "@/components/themed-text";
+import { theme } from "@/constants/theme";
+import { useTheme } from "@/hooks/useTheme";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useFarms } from "@/hooks/useFarms";
 import { openDirections } from "@/lib/directions";
@@ -21,12 +27,14 @@ import {
   type ListingRow,
 } from "@/lib/listing-browser";
 
-export default function ListingsScreen() {
+export default function ListingSearchScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { coords: userCoords, locationText } = useCurrentLocation();
+  const { coords: userCoords } = useCurrentLocation();
   const { data: farms = [], isLoading, error } = useFarms();
   const [activeFilter, setActiveFilter] = useState<ListingCategory>("All");
+  const [searchQuery, setSearchQuery] = useState("");
+
   const {
     data: marketplaceListings = [],
     isLoading: listingsLoading,
@@ -47,8 +55,8 @@ export default function ListingsScreen() {
   );
 
   const filteredListings = useMemo(
-    () => filterListingRows(listings, activeFilter, ""),
-    [listings, activeFilter]
+    () => filterListingRows(listings, activeFilter, searchQuery),
+    [listings, activeFilter, searchQuery]
   );
 
   const getFilterColors = (filter: ListingCategory) => {
@@ -100,76 +108,49 @@ export default function ListingsScreen() {
   };
 
   return (
-    <SafeAreaView
-      style={[styles.container, { backgroundColor: colors.background }]}
-        edges={["bottom", "left", "right"]}
-    >
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["bottom"]}>
+      <Stack.Screen
+        options={{
+          headerShown: false,
+          animation: "fade_from_bottom",
+        }}
+      />
+
+      <View style={[styles.header, { paddingTop: insets.top + theme.spacing.sm }]}>
+        <View
+          style={[
+            styles.searchBar,
+            {
+              backgroundColor: colors.input.background,
+              borderColor: colors.border.light,
+            },
+          ]}
+        >
+          <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
+            <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
+          </TouchableOpacity>
+          <Ionicons name="search" size={18} color={colors.text.tertiary} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search produce, farm, or category"
+            placeholderTextColor={colors.input.placeholder}
+            autoFocus
+            returnKeyType="search"
+            style={[styles.searchInput, { color: colors.text.primary }]}
+          />
+          {searchQuery.trim().length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={colors.text.tertiary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Hero Header ── */}
-        <View style={[styles.hero, { paddingTop: theme.spacing.lg + insets.top }]}>
-          {/* Decorative blobs */}
-          <View style={styles.blobLarge} />
-          <View style={styles.blobSmall} />
-
-          <View style={styles.heroInner}>
-            <ThemedText style={styles.heroEyebrow}>Nearby produce</ThemedText>
-            <ThemedText style={styles.heroTitle}>Listings</ThemedText>
-            <ThemedText style={styles.heroSubtitle}>
-              Browse farm produce by item, price, and source.
-            </ThemedText>
-
-            <View style={styles.actionButtonsRow}>
-              <TouchableOpacity
-                style={styles.createListingButton}
-                onPress={() => router.push("/listing/new")}
-                activeOpacity={0.88}
-              >
-                <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
-                <ThemedText style={styles.createListingButtonText}>
-                  List your produce
-                </ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.manageListingButton}
-                onPress={() => router.push("/listing/manage")}
-                activeOpacity={0.88}
-              >
-                <Ionicons name="settings-outline" size={18} color="#2E2A1F" />
-                <ThemedText style={styles.manageListingButtonText}>
-                  Manage listings
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.locationPill}>
-              <View style={styles.locationDot} />
-              <ThemedText style={styles.locationText}>{locationText}</ThemedText>
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.searchBar,
-                {
-                  backgroundColor: "rgba(255,255,255,0.78)",
-                  borderColor: "rgba(46,42,31,0.08)",
-                },
-              ]}
-              onPress={() => router.push("/listing/search")}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="search" size={18} color={colors.text.tertiary} />
-              <ThemedText style={[styles.searchInput, { color: colors.input.placeholder }]}>
-                Search produce, farm, or category
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* ── Filter Pills ── */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -205,7 +186,6 @@ export default function ListingsScreen() {
           ))}
         </ScrollView>
 
-        {/* ── Listings ── */}
         {isLoading || listingsLoading ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
             Loading listings…
@@ -216,7 +196,7 @@ export default function ListingsScreen() {
           </ThemedText>
         ) : filteredListings.length === 0 ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
-            No listings in this category yet.
+            No listings matched your search.
           </ThemedText>
         ) : (
           <View style={styles.listingsStack}>
@@ -230,26 +210,16 @@ export default function ListingsScreen() {
                 activeOpacity={0.88}
                 onPress={() => handleFarmPress(item.farmId)}
               >
-                {/* Thumb */}
                 <View style={[styles.cardThumb, { backgroundColor: item.color }]}>
                   <Ionicons name={item.icon} size={30} color={theme.brand.primary} />
-                  <View
-                    style={[
-                      styles.categoryBadge,
-                      { backgroundColor: item.badgeColor },
-                    ]}
-                  >
-                    <ThemedText
-                      style={[styles.categoryBadgeText, { color: item.badgeTextColor }]}
-                    >
+                  <View style={[styles.categoryBadge, { backgroundColor: item.badgeColor }]}>
+                    <ThemedText style={[styles.categoryBadgeText, { color: item.badgeTextColor }]}>
                       {item.category === "Eggs & Dairy" ? "Eggs" : item.category}
                     </ThemedText>
                   </View>
                 </View>
 
-                {/* Body */}
                 <View style={styles.cardBody}>
-                  {/* Top row: name + price */}
                   <View style={styles.cardTopRow}>
                     <ThemedText
                       style={[styles.itemName, { color: colors.text.primary }]}
@@ -264,12 +234,10 @@ export default function ListingsScreen() {
                     </View>
                   </View>
 
-                  {/* Unit */}
                   <ThemedText style={[styles.itemUnit, { color: colors.text.secondary }]}>
                     {item.unit}
                   </ThemedText>
 
-                  {/* Note */}
                   <ThemedText
                     style={[styles.itemNote, { color: colors.text.secondary }]}
                     numberOfLines={2}
@@ -277,12 +245,9 @@ export default function ListingsScreen() {
                     {item.note}
                   </ThemedText>
 
-                  {/* Footer: farm + directions */}
                   <View style={styles.cardFooter}>
                     <View style={styles.farmTag}>
-                      <View
-                        style={[styles.farmDot, { backgroundColor: item.farmDotColor }]}
-                      />
+                      <View style={[styles.farmDot, { backgroundColor: item.farmDotColor }]} />
                       <ThemedText
                         style={[styles.farmName, { color: colors.text.secondary }]}
                         numberOfLines={1}
@@ -300,9 +265,7 @@ export default function ListingsScreen() {
                       hitSlop={8}
                     >
                       <Ionicons name="navigate-outline" size={12} color={colors.text.primary} />
-                      <ThemedText
-                        style={[styles.dirButtonText, { color: colors.text.primary }]}
-                      >
+                      <ThemedText style={[styles.dirButtonText, { color: colors.text.primary }]}>
                         Directions
                       </ThemedText>
                     </TouchableOpacity>
@@ -321,122 +284,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
+  header: {
+    paddingHorizontal: theme.spacing.lg,
     paddingBottom: theme.spacing.sm,
   },
-
-  // ── Hero ──
-  hero: {
-    backgroundColor: "#F7E5BF",
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
-    overflow: "hidden",
-    position: "relative",
-  },
-  blobLarge: {
-    position: "absolute",
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: "#F0C26A",
-    opacity: 0.45,
-    top: 10,
-    right: -50,
-  },
-  blobSmall: {
-    position: "absolute",
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "#DCC16C",
-    opacity: 0.35,
-    bottom: -24,
-    left: -24,
-  },
-  heroInner: {
-    position: "relative",
-    gap: theme.spacing.xs,
-  },
-  heroEyebrow: {
-    fontSize: 11,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: "#6E7B37",
-    fontWeight: "600",
-  },
-  heroTitle: {
-    fontSize: 34,
-    fontWeight: "700",
-    color: "#2E2A1F",
-    lineHeight: 40,
-  },
-  heroSubtitle: {
-    fontSize: 14,
-    color: "#5A564B",
-    lineHeight: 20,
-    maxWidth: "85%",
-  },
-  locationPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.72)",
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginTop: theme.spacing.sm,
-  },
-  createListingButton: {
-    borderRadius: theme.borderRadius.full,
-    backgroundColor: "#3D6B2F",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  createListingButtonText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  actionButtonsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginTop: theme.spacing.md,
-  },
-  manageListingButton: {
-    borderRadius: theme.borderRadius.full,
-    backgroundColor: "rgba(255,255,255,0.72)",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 1,
-    borderColor: "rgba(46,42,31,0.08)",
-  },
-  manageListingButtonText: {
-    color: "#2E2A1F",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  locationDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "#6E7B37",
-  },
-  locationText: {
-    fontSize: 12,
-    color: "#5A564B",
-    fontWeight: "500",
+  content: {
+    paddingBottom: theme.spacing.lg,
   },
   searchBar: {
-    marginTop: theme.spacing.md,
     borderRadius: theme.borderRadius.full,
     borderWidth: 1,
     paddingHorizontal: 14,
@@ -448,12 +303,9 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: "#2E2A1F",
   },
-
-  // ── Filters ──
   filterScroll: {
-    marginTop: theme.spacing.md,
+    marginTop: theme.spacing.xs,
   },
   filterRow: {
     paddingHorizontal: theme.spacing.lg,
@@ -469,8 +321,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
   },
-
-  // ── Listings ──
   listingsStack: {
     gap: 12,
     paddingHorizontal: theme.spacing.lg,
@@ -479,10 +329,8 @@ const styles = StyleSheet.create({
   statusText: {
     fontSize: 14,
     paddingHorizontal: theme.spacing.lg,
-    marginTop: theme.spacing.sm,
+    marginTop: theme.spacing.md,
   },
-
-  // ── Card ──
   card: {
     flexDirection: "row",
     borderWidth: 1,
