@@ -20,8 +20,73 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@/context/auth-context";
 import { getMe, uploadMyAvatar, updateMyDescription, type ProfileRow } from "@/lib/follows";
 import { useFocusEffect } from "@react-navigation/native";
-import { RecipeCard } from '@/components/ui/recipes/recipecard';
-import { recipes } from "@/lib/recipes";
+import { supabase } from "@/lib/supabase";
+import { RecipeCard } from "@/components/ui/recipes/recipecard";
+
+const RECIPE_BUCKET = "recipes";
+const FALLBACK_RECIPE_IMAGE = "https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=1200&auto=format&fit=crop";
+
+type RecipeRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  cover_image_url: string | null;
+  cover_image_path: string | null;
+  cover_media: Array<{ path?: string; url?: string; type?: string; position?: number }> | null;
+  prep_time_minutes: number;
+  cook_time_minutes: number;
+  additional_time_minutes: number;
+  total_time_minutes: number;
+  servings: number | null;
+  ingredients: unknown[];
+  steps: unknown[];
+  created_at: string;
+};
+
+type ProfileRecipeCardData = {
+  id: string;
+  title: string;
+  rating: number;
+  ratingsCount: number;
+  duration: string;
+  imageUrl?: string;
+};
+
+function formatRecipeDuration(totalMinutes: number) {
+  if (!totalMinutes || totalMinutes <= 0) return "No time set";
+  return `${totalMinutes} min`;
+}
+
+function getFirstCoverUrl(recipe: RecipeRow) {
+  if (recipe.cover_image_url) return recipe.cover_image_url;
+
+  const media = Array.isArray(recipe.cover_media) ? recipe.cover_media : [];
+  const firstMediaWithUrl = media.find((item) => typeof item?.url === "string" && item.url.length > 0);
+  return firstMediaWithUrl?.url ?? null;
+}
+
+async function resolveRecipeImageUrl(recipe: RecipeRow) {
+  const media = Array.isArray(recipe.cover_media) ? recipe.cover_media : [];
+  const fallbackPath =
+    recipe.cover_image_path ||
+    media.find((item) => typeof item?.path === "string" && item.path.length > 0)?.path;
+
+  // Prefer a signed URL when we have a storage path.
+  // This works for private buckets and also works fine for public buckets.
+  if (fallbackPath) {
+    const { data, error } = await supabase.storage.from(RECIPE_BUCKET).createSignedUrl(fallbackPath, 60 * 60);
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+  }
+
+  const directUrl = getFirstCoverUrl(recipe);
+  if (directUrl) return directUrl;
+
+  return FALLBACK_RECIPE_IMAGE;
+}
 
 export default function ProfileScreen() {
   const { colors } = useTheme();
@@ -32,6 +97,8 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [counts, setCounts] = useState({ followers: 0, following: 0 });
   const [loading, setLoading] = useState(false);
+  const [recipesLoading, setRecipesLoading] = useState(false);
+  const [myRecipes, setMyRecipes] = useState<ProfileRecipeCardData[]>([]);
   const [editDescOpen, setEditDescOpen] = useState(false);
   const [descDraft, setDescDraft] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
@@ -40,7 +107,6 @@ export default function ProfileScreen() {
   const currentDescription = useMemo(() => profile?.description ?? "", [profile?.description]);
 
   const handleAddFriends = () => {
-    console.log("Going to Find People screen");
     router.navigate("/(profile)/addfriends");
   };
 
@@ -108,32 +174,63 @@ export default function ProfileScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (!accessToken) return;
+      if (!accessToken || !userId) return;
       let isActive = true;
       setLoading(true);
+      setRecipesLoading(true);
 
       (async () => {
         try {
-          const me = await getMe(accessToken);
+          const [meResult, recipesResult] = await Promise.all([
+            getMe(accessToken),
+            supabase
+              .from("recipes")
+              .select(
+                "id, user_id, title, description, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, created_at"
+              )
+              .eq("user_id", userId)
+              .order("created_at", { ascending: false })
+              .limit(12),
+          ]);
+
           if (!isActive) return;
 
-          setProfile(me.profile);
-          setCounts(me.counts);
+          setProfile(meResult.profile);
+          setCounts(meResult.counts);
+
+          if (recipesResult.error) {
+            throw recipesResult.error;
+          }
+
+          const rows = (recipesResult.data ?? []) as RecipeRow[];
+          const hydratedRecipes = await Promise.all(
+            rows.map(async (recipe) => ({
+              id: recipe.id,
+              title: recipe.title,
+              rating: 0,
+              ratingsCount: 0,
+              duration: formatRecipeDuration(recipe.total_time_minutes ?? 0),
+              imageUrl: await resolveRecipeImageUrl(recipe),
+            }))
+          );
+
+          if (!isActive) return;
+          setMyRecipes(hydratedRecipes);
         } catch (e) {
           if (!isActive) return;
-          const message =
-            e instanceof Error ? e.message : "Unable to load profile";
+          const message = e instanceof Error ? e.message : "Unable to load profile";
           Alert.alert("Error", message);
         } finally {
           if (!isActive) return;
           setLoading(false);
+          setRecipesLoading(false);
         }
       })();
 
       return () => {
         isActive = false;
       };
-    }, [accessToken]),
+    }, [accessToken, userId])
   );
 
   return (
@@ -142,7 +239,6 @@ export default function ProfileScreen() {
       edges={["bottom"]}
     >
       <ScrollView style={styles.container}>
-        {/* Header Background */}
         <View
           style={[
             styles.headerBackground,
@@ -150,43 +246,38 @@ export default function ProfileScreen() {
           ]}
         />
 
-        {/* Profile Section */}
-	        <View style={styles.profileSection}>
-	          {/* Profile Image */}
-	          <Pressable
-	            style={[
-	              styles.profileImageContainer,
-	              { backgroundColor: colors.background },
-	            ]}
-	            onPress={pickAndUploadAvatar}
-	            disabled={uploadingAvatar}
-	          >
-	            {profile?.avatar_url ? (
-	              <Image
-	                source={{ uri: profile.avatar_url }}
-	                style={styles.profileImage}
-	                contentFit="cover"
-	              />
-	            ) : (
-	              <View style={[styles.profileImage, { backgroundColor: theme.neutral[400] }]} />
-	            )}
+        <View style={styles.profileSection}>
+          <Pressable
+            style={[
+              styles.profileImageContainer,
+              { backgroundColor: colors.background },
+            ]}
+            onPress={pickAndUploadAvatar}
+            disabled={uploadingAvatar}
+          >
+            {profile?.avatar_url ? (
+              <Image
+                source={{ uri: profile.avatar_url }}
+                style={styles.profileImage}
+                contentFit="cover"
+              />
+            ) : (
+              <View style={[styles.profileImage, { backgroundColor: theme.neutral[400] }]} />
+            )}
 
-	            <View style={styles.avatarBadge}>
-	              {uploadingAvatar ? (
-	                <ThemedText style={{ color: theme.neutral.white, fontSize: 12 }}>
-	                  …
-	                </ThemedText>
-	              ) : (
-	                <Ionicons name="camera" size={16} color={theme.neutral.white} />
-	              )}
-	            </View>
-	          </Pressable>
+            <View style={styles.avatarBadge}>
+              {uploadingAvatar ? (
+                <ThemedText style={{ color: theme.neutral.white, fontSize: 12 }}>
+                  …
+                </ThemedText>
+              ) : (
+                <Ionicons name="camera" size={16} color={theme.neutral.white} />
+              )}
+            </View>
+          </Pressable>
 
-          {/* Stats and Button Section */}
-        <View style={styles.userFollowSection}>
-            {/* Left side: Name, Username, and Description */}
+          <View style={styles.userFollowSection}>
             <View style={styles.leftSection}>
-              {/* Name and Username */}
               <View style={styles.userInfo}>
                 <ThemedText type="title" style={styles.userName}>
                   {profile?.full_name ?? profile?.username ?? "Your profile"}
@@ -198,37 +289,36 @@ export default function ProfileScreen() {
                 </ThemedText>
               </View>
 
-	              {/* Description */}
-	              <View style={styles.descriptionContainer}>
-                  <View style={styles.descriptionHeader}>
-                    <ThemedText
-                      type="defaultSemiBold"
-                      style={styles.descriptionTitle}
-                    >
-                      Description
-                    </ThemedText>
-                    <Pressable onPress={openEditDescription} hitSlop={8}>
-                      <Ionicons name="pencil" size={16} color={colors.text.secondary} />
-                    </Pressable>
-                  </View>
-                  <Pressable onPress={openEditDescription}>
-                    <ThemedText
-                      style={[
-                        styles.descriptionText,
-                        { color: colors.text.secondary },
-                      ]}
-                    >
-                      {loading
-                        ? "Loading..."
-                        : (profile?.description?.trim().length ? profile.description : "Tap to add a description.")}
-                    </ThemedText>
+              <View style={styles.descriptionContainer}>
+                <View style={styles.descriptionHeader}>
+                  <ThemedText
+                    type="defaultSemiBold"
+                    style={styles.descriptionTitle}
+                  >
+                    Description
+                  </ThemedText>
+                  <Pressable onPress={openEditDescription} hitSlop={8}>
+                    <Ionicons name="pencil" size={16} color={colors.text.secondary} />
                   </Pressable>
-	              </View>
-	            </View>
+                </View>
+                <Pressable onPress={openEditDescription}>
+                  <ThemedText
+                    style={[
+                      styles.descriptionText,
+                      { color: colors.text.secondary },
+                    ]}
+                  >
+                    {loading
+                      ? "Loading..."
+                      : profile?.description?.trim().length
+                        ? profile.description
+                        : "Tap to add a description."}
+                  </ThemedText>
+                </Pressable>
+              </View>
+            </View>
 
-            {/* Right side: Stats and Button */}
             <View style={styles.statsButtonSection}>
-              {/* Stats */}
               <View style={styles.statsContainer}>
                 <Pressable
                   style={styles.statItem}
@@ -258,20 +348,18 @@ export default function ProfileScreen() {
                 </Pressable>
               </View>
 
-            {/* Find People Button */}
-            <Button
-              variant="primary"
-              onPress={handleAddFriends}
-              style={styles.addFriendsButton}
-              disabled={loading}
-            >
-              {loading ? "Loading..." : "Find People"}
-            </Button>
+              <Button
+                variant="primary"
+                onPress={handleAddFriends}
+                style={styles.addFriendsButton}
+                disabled={loading}
+              >
+                {loading ? "Loading..." : "Find People"}
+              </Button>
             </View>
           </View>
         </View>
 
-        {/* My Recipes Section */}
         <View style={styles.recipesHeader}>
           <ThemedText type="title" style={styles.recipesTitle}>
             My Recipes
@@ -285,27 +373,43 @@ export default function ProfileScreen() {
           </Button>
         </View>
 
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          style={styles.recipesScroll}
-          contentContainerStyle={styles.recipesScrollContent}
-          pagingEnabled={false}
-        >
-          {recipes.slice(0, 4).map((recipe) => (
-            <RecipeCard
-              key={recipe.id}
-              {...recipe}
-              onPress={() => {
-                router.push(`/recipe/${recipe.id}`);
-              }}
-              onEditPress={() => {
-                console.log('Edit recipe:', recipe.id);
-                // Navigate to recipe edit
-              }}
-            />
-          ))}
-        </ScrollView>
+        {recipesLoading ? (
+          <View style={styles.emptyRecipesState}>
+            <ThemedText style={{ color: colors.text.secondary }}>Loading your recipes...</ThemedText>
+          </View>
+        ) : myRecipes.length === 0 ? (
+          <View style={styles.emptyRecipesState}>
+            <Ionicons name="restaurant-outline" size={28} color={colors.text.secondary} />
+            <ThemedText style={[styles.emptyRecipesTitle, { color: colors.text.primary }]}>No recipes yet</ThemedText>
+            <ThemedText style={[styles.emptyRecipesText, { color: colors.text.secondary }]}>Recipes you publish will appear here.</ThemedText>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.recipesScroll}
+            contentContainerStyle={styles.recipesScrollContent}
+            pagingEnabled={false}
+          >
+            {myRecipes.slice(0, 4).map((recipe) => (
+              <RecipeCard
+                key={recipe.id}
+                id={recipe.id}
+                title={recipe.title}
+                rating={recipe.rating}
+                ratingsCount={recipe.ratingsCount}
+                duration={recipe.duration}
+                imageUrl={recipe.imageUrl}
+                onPress={() => {
+                  router.push(`/recipe/${recipe.id}`);
+                }}
+                onEditPress={() => {
+                  console.log("Edit recipe:", recipe.id);
+                }}
+              />
+            ))}
+          </ScrollView>
+        )}
       </ScrollView>
 
       <Modal
@@ -362,9 +466,9 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   userFollowSection: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-    },
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
   container: {
     flex: 1,
   },
@@ -500,6 +604,23 @@ const styles = StyleSheet.create({
   },
   recipesScrollContent: {
     paddingRight: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+
+  emptyRecipesState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.xl,
+    gap: 8,
+  },
+  emptyRecipesTitle: {
+    fontSize: theme.typography.fontSizes.h4,
+    fontWeight: theme.typography.fontWeights.bold,
+  },
+  emptyRecipesText: {
+    fontSize: theme.typography.fontSizes.body,
+    textAlign: "center",
   },
   recipeModalBackdrop: {
     flex: 1,
