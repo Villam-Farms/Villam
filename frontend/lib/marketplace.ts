@@ -1,3 +1,4 @@
+import { apiBaseUrl } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 
 export const SOLD_BY_OPTIONS = ["lb", "pint", "bunch", "each"] as const;
@@ -46,6 +47,7 @@ export type MarketplaceListing = {
   currency: string;
   soldBy: string;
   available: boolean;
+  imageUrl: string | null;
 };
 
 type FarmRow = {
@@ -67,6 +69,7 @@ type ListingRow = {
   currency: string;
   sold_by: string;
   available: boolean;
+  image_url: string | null;
 };
 
 function uniqueValues<T>(values: T[]) {
@@ -143,6 +146,7 @@ async function hydrateMarketplaceListings(listings: ListingRow[]): Promise<Marke
         currency: listing.currency,
         soldBy: listing.sold_by,
         available: listing.available,
+        imageUrl: listing.image_url ?? null,
       } satisfies MarketplaceListing;
     })
     .filter((listing): listing is MarketplaceListing => listing !== null)
@@ -174,7 +178,7 @@ export async function fetchProduceCatalog(): Promise<ProduceCatalog> {
 export async function fetchMarketplaceListings(): Promise<MarketplaceListing[]> {
   const { data: listingRows, error: listingError } = await supabase
     .from("farm_listings")
-    .select("id,farm_id,produce_variety_id,price,currency,sold_by,available")
+    .select("id,farm_id,produce_variety_id,price,currency,sold_by,available,image_url")
     .eq("available", true)
     .order("id", { ascending: false });
 
@@ -185,7 +189,7 @@ export async function fetchMarketplaceListings(): Promise<MarketplaceListing[]> 
 export async function fetchFarmListingsByFarmId(farmId: number): Promise<MarketplaceListing[]> {
   const { data, error } = await supabase
     .from("farm_listings")
-    .select("id,farm_id,produce_variety_id,price,currency,sold_by,available")
+    .select("id,farm_id,produce_variety_id,price,currency,sold_by,available,image_url")
     .eq("farm_id", farmId)
     .order("id", { ascending: false });
 
@@ -226,16 +230,21 @@ function formatSupabaseError(error: unknown) {
 }
 
 export async function createFarmListing(input: CreateFarmListingInput) {
-  const { error } = await supabase.from("farm_listings").insert({
-    farm_id: input.farm_id,
-    produce_variety_id: input.produce_variety_id,
-    price: input.price,
-    currency: input.currency,
-    sold_by: input.sold_by,
-    available: input.available,
-  });
+  const { data, error } = await supabase
+    .from("farm_listings")
+    .insert({
+      farm_id: input.farm_id,
+      produce_variety_id: input.produce_variety_id,
+      price: input.price,
+      currency: input.currency,
+      sold_by: input.sold_by,
+      available: input.available,
+    })
+    .select("id")
+    .single();
 
   if (error) throw new Error(formatSupabaseError(error));
+  return data;
 }
 
 export type UpdateFarmListingInput = {
@@ -260,4 +269,56 @@ export async function updateFarmListing(input: UpdateFarmListingInput) {
     .eq("id", input.id);
 
   if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function uploadFarmListingImage(
+  accessToken: string,
+  listingId: string,
+  file: { uri: string; name: string; type: string },
+) {
+  const form = new FormData();
+  form.append("file", file as any);
+
+  const res = await fetch(`${apiBaseUrl}/listings/${encodeURIComponent(listingId)}/image`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: form,
+  });
+
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const data = (await res.json()) as { detail?: string };
+      if (data?.detail) detail = data.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  return (await res.json()) as { id: string; image_url: string | null };
+}
+
+export async function clearFarmListingImage(accessToken: string, listingId: string) {
+  const res = await fetch(`${apiBaseUrl}/listings/${encodeURIComponent(listingId)}/image`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    let detail = `Request failed (${res.status})`;
+    try {
+      const data = (await res.json()) as { detail?: string };
+      if (data?.detail) detail = data.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  return (await res.json()) as { id: string; image_url: string | null };
 }

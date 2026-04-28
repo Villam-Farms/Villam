@@ -1,6 +1,7 @@
 import { ScrollView, StyleSheet, TouchableOpacity, TextInput, View } from 'react-native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
+import { Image } from 'expo-image';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -24,6 +25,8 @@ import { formatAddress } from '@/lib/address';
 import { shareFarm } from '@/lib/share-farm';
 
 import { supabase } from '@/lib/supabase'; // <-- adjust path if different
+import { useMyProfile } from '@/hooks/useMyProfile';
+import { getProfileDisplay } from '@/lib/profile-display';
 
 type ProduceItem = {
   id: string;
@@ -35,6 +38,7 @@ type ProduceItem = {
 export default function HomeScreen() {
   const { colors } = useTheme();
   const { session } = useAuth();
+  const { data: profile } = useMyProfile();
   const [searchQuery, setSearchQuery] = useState('');
 
   const { coords: userCoords, locationText } = useCurrentLocation();
@@ -48,20 +52,11 @@ export default function HomeScreen() {
   const metadata = session?.user?.user_metadata as
     | { name?: string; full_name?: string; username?: string }
     | undefined;
-
-  const displayName =
-    metadata?.name?.trim() ||
-    metadata?.full_name?.trim() ||
-    metadata?.username?.trim() ||
-    session?.user?.email?.split('@')[0] ||
-    'there';
-
-  const initials = displayName
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('');
+  const { avatarUrl, displayName, initials } = getProfileDisplay(
+    profile,
+    metadata,
+    session?.user?.email
+  );
 
   const farmsWithDistance = addDistanceAndSort(farms, userCoords);
 
@@ -197,7 +192,11 @@ export default function HomeScreen() {
             style={[styles.avatar, { backgroundColor: theme.brand.primary }]}
             onPress={() => router.push('/settings')}
           >
-            <ThemedText style={styles.aiText}>{initials || 'U'}</ThemedText>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} contentFit="cover" />
+            ) : (
+              <ThemedText style={styles.aiText}>{initials}</ThemedText>
+            )}
           </TouchableOpacity>
           <ThemedText type="defaultSemiBold" style={[styles.welcome, { color: colors.text.primary }]}>
             {`Welcome ${displayName}!`}
@@ -361,6 +360,11 @@ const styles = StyleSheet.create({
     marginRight: theme.spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   welcome: {
     flex: 1,

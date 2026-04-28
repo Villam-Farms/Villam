@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 
 import { supabase } from '@/lib/supabase'; // adjust if needed
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,6 +46,7 @@ type ListingRow = {
   currency: string;
   sold_by: string;
   available: boolean;
+  image_url: string | null;
   start_date: string | null;
   end_date: string | null;
   farms: Farm;
@@ -115,6 +117,7 @@ export default function ProduceDetailScreen() {
           currency,
           sold_by,
           available,
+          image_url,
           start_date,
           end_date,
           farms:farms!farm_listings_farm_id_fkey (
@@ -168,6 +171,7 @@ export default function ProduceDetailScreen() {
             currency: r.currency,
             sold_by: r.sold_by,
             available: r.available,
+            image_url: r.image_url ?? null,
             start_date: r.start_date ?? null,
             end_date: r.end_date ?? null,
             farms: farm,
@@ -261,6 +265,9 @@ export default function ProduceDetailScreen() {
                       { borderColor: colors.border.light, backgroundColor: colors.input.background },
                     ]}
                   >
+                    {l.image_url ? (
+                      <Image source={{ uri: l.image_url }} style={styles.listingImage} contentFit="cover" />
+                    ) : null}
                     <View style={{ flex: 1 }}>
                       <ThemedText style={[styles.farmName, { color: colors.text.primary }]}>
                         {l.farms.name}
@@ -351,6 +358,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: theme.spacing.md,
     alignItems: 'center',
+  },
+  listingImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
   },
   farmName: {
     fontSize: theme.typography.fontSizes.h4,
