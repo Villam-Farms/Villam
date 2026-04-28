@@ -1,20 +1,184 @@
-import React, { useMemo } from 'react';
-import { Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { ThemedText } from '@/components/themed-text';
 import { theme } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
-import { recipes } from '@/lib/recipes';
+import { supabase } from '@/lib/supabase';
+
+const RECIPE_BUCKET = 'recipes';
+const FALLBACK_RECIPE_IMAGE =
+  'https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=1200&auto=format&fit=crop';
+
+type RecipeMediaItem = {
+  path?: string;
+  url?: string;
+  type?: string;
+  position?: number;
+};
+
+type IngredientItem = {
+  id?: string;
+  position?: number;
+  quantity?: string;
+  unit?: string;
+  name?: string;
+};
+
+type StepItem = {
+  id?: string;
+  position?: number;
+  instruction?: string;
+  photo_paths?: string[];
+  photo_urls?: string[];
+};
+
+type RecipeRow = {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  cover_image_url: string | null;
+  cover_image_path: string | null;
+  cover_media: RecipeMediaItem[] | null;
+  prep_time_minutes: number;
+  cook_time_minutes: number;
+  additional_time_minutes: number;
+  total_time_minutes: number;
+  servings: number | null;
+  ingredients: IngredientItem[] | null;
+  steps: StepItem[] | null;
+  created_at: string;
+};
+
+function formatIngredientLine(item: IngredientItem) {
+  return [item.quantity, item.unit, item.name].filter(Boolean).join(' ').trim();
+}
+
+function getIngredientNames(ingredients: IngredientItem[]) {
+  return ingredients
+    .map((item) => item.name?.trim())
+    .filter((name): name is string => Boolean(name && name.length > 0));
+}
+
+async function resolveRecipeImageUrl(recipe: RecipeRow) {
+  const media = Array.isArray(recipe.cover_media) ? recipe.cover_media : [];
+  const path =
+    recipe.cover_image_path ||
+    media.find((item) => typeof item?.path === 'string' && item.path.length > 0)?.path;
+
+  if (path) {
+    const { data, error } = await supabase.storage
+      .from(RECIPE_BUCKET)
+      .createSignedUrl(path, 60 * 60);
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+  }
+
+  if (recipe.cover_image_url) return recipe.cover_image_url;
+
+  const urlFromMedia = media.find(
+    (item) => typeof item?.url === 'string' && item.url.length > 0
+  )?.url;
+
+  return urlFromMedia || FALLBACK_RECIPE_IMAGE;
+}
 
 export default function RecipeDetailScreen() {
   const { colors } = useTheme();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const insets = useSafeAreaInsets();
 
-  const recipe = useMemo(() => recipes.find((item) => item.id === id), [id]);
+  const [recipe, setRecipe] = useState<RecipeRow | null>(null);
+  const [imageUrl, setImageUrl] = useState<string>(FALLBACK_RECIPE_IMAGE);
+  const [loading, setLoading] = useState(true);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!id || typeof id !== 'string') {
+        setRecipe(null);
+        setLoading(false);
+        return;
+      }
+
+      let isActive = true;
+      setLoading(true);
+
+      (async () => {
+        try {
+          const { data, error } = await supabase
+            .from('recipes')
+            .select(
+              'id, user_id, title, description, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, created_at'
+            )
+            .eq('id', id)
+            .single();
+
+          if (error) throw error;
+          if (!isActive) return;
+
+          const row = data as RecipeRow;
+          setRecipe(row);
+
+          const resolvedImageUrl = await resolveRecipeImageUrl(row);
+          if (!isActive) return;
+
+          setImageUrl(resolvedImageUrl);
+        } catch (e) {
+          if (!isActive) return;
+          console.error('Recipe detail load failed:', e);
+
+          const message = e instanceof Error ? e.message : 'Unable to load recipe';
+          Alert.alert('Error', message);
+          setRecipe(null);
+        } finally {
+          if (!isActive) return;
+          setLoading(false);
+        }
+      })();
+
+      return () => {
+        isActive = false;
+      };
+    }, [id])
+  );
+
+  const ingredients = useMemo(() => {
+    if (!recipe || !Array.isArray(recipe.ingredients)) return [];
+    return [...recipe.ingredients].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  }, [recipe]);
+
+  const steps = useMemo(() => {
+    if (!recipe || !Array.isArray(recipe.steps)) return [];
+    return [...recipe.steps].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  }, [recipe]);
+
+  const ingredientNames = useMemo(() => getIngredientNames(ingredients), [ingredients]);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={styles.loadingState}>
+          <ActivityIndicator size="large" color={theme.brand.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!recipe) {
     return (
@@ -32,7 +196,7 @@ export default function RecipeDetailScreen() {
             Recipe not found
           </ThemedText>
           <ThemedText style={[styles.missingBody, { color: colors.text.secondary }]}>
-            That recipe page does not exist yet. Pick another recipe from the browse screen.
+            This recipe could not be loaded.
           </ThemedText>
         </View>
       </SafeAreaView>
@@ -42,24 +206,12 @@ export default function RecipeDetailScreen() {
   const descriptionLength = recipe.description?.length ?? 0;
   const descriptionOffset = descriptionLength > 120 ? Math.min((descriptionLength - 120) / 8, 24) : 0;
 
-  const ingredients = recipe.produce.map((item, index) => ({
-    id: `${recipe.id}-ingredient-${index}`,
-    amount: index === 0 ? '2 cups' : index === 1 ? '1 handful' : 'to taste',
-    name: item,
-  }));
-
-  const steps = [
-    `Wash and prep the ${recipe.produce.join(', ').toLowerCase()} so everything is ready before cooking.`,
-    `Build the base of the dish and cook for about ${recipe.duration.toLowerCase()} while adjusting seasoning as needed.`,
-    `Finish with a fresh garnish and plate immediately for the best texture and flavor.`,
-  ];
-
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.hero}>
-          <Image source={{ uri: recipe.imageUrl }} style={styles.heroImage} />
+          <Image source={{ uri: imageUrl }} style={styles.heroImage} />
           <View style={styles.heroOverlay} />
 
           <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}>
@@ -93,73 +245,93 @@ export default function RecipeDetailScreen() {
           <View style={[styles.heroContent, { paddingTop: insets.top + 72 }]}>
             <View style={styles.tagRow}>
               <View style={styles.heroTag}>
-                <ThemedText style={styles.heroTagText}>{recipe.category}</ThemedText>
+                <ThemedText style={styles.heroTagText}>Recipe</ThemedText>
               </View>
-              <View style={[styles.heroTag, styles.heroTagAlt]}>
-                <ThemedText style={styles.heroTagText}>{recipe.difficulty}</ThemedText>
-              </View>
+              {recipe.servings ? (
+                <View style={[styles.heroTag, styles.heroTagAlt]}>
+                  <ThemedText style={styles.heroTagText}>{recipe.servings} servings</ThemedText>
+                </View>
+              ) : null}
             </View>
 
             <ThemedText style={styles.heroTitle}>{recipe.title}</ThemedText>
-            <ThemedText style={styles.heroDescription}>{recipe.description}</ThemedText>
+            <ThemedText style={styles.heroDescription}>
+              {recipe.description?.trim() || 'A homemade recipe from your collection.'}
+            </ThemedText>
           </View>
         </View>
 
         <View style={[styles.metaRow, { marginTop: -(theme.spacing.lg * 2) + descriptionOffset }]}>
           <View style={[styles.metaCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
             <Ionicons name="time-outline" size={18} color={theme.brand.primary} />
-            <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>{recipe.duration}</ThemedText>
-            <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>Cook time</ThemedText>
-          </View>
-          <View style={[styles.metaCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
-            <Ionicons name="star" size={18} color={theme.brand.red} />
-            <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>{recipe.rating}</ThemedText>
-            <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>
-              {recipe.ratingsCount.toLocaleString()} ratings
+            <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>
+              {recipe.total_time_minutes > 0 ? `${recipe.total_time_minutes} min` : '—'}
             </ThemedText>
+            <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>Total time</ThemedText>
+          </View>
+
+          <View style={[styles.metaCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+            <Ionicons name="restaurant-outline" size={18} color={theme.brand.red} />
+            <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>
+              {ingredients.length}
+            </ThemedText>
+            <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>Ingredients</ThemedText>
           </View>
         </View>
 
         <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
           <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Ingredients</ThemedText>
           <View style={styles.ingredientList}>
-            {ingredients.map((ingredient) => (
-              <View key={ingredient.id} style={styles.ingredientRow}>
-                <View style={styles.ingredientDot} />
-                <View style={styles.ingredientCopy}>
-                  <ThemedText style={[styles.ingredientAmount, { color: theme.brand.tertiary }]}>
-                    {ingredient.amount}
-                  </ThemedText>
-                  <ThemedText style={[styles.ingredientName, { color: colors.text.primary }]}>
-                    {ingredient.name}
-                  </ThemedText>
+            {ingredients.length === 0 ? (
+              <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>
+                No ingredients added yet.
+              </ThemedText>
+            ) : (
+              ingredients.map((ingredient, index) => (
+                <View key={ingredient.id ?? `${recipe.id}-ingredient-${index}`} style={styles.ingredientRow}>
+                  <View style={styles.ingredientDot} />
+                  <View style={styles.ingredientCopy}>
+                    <ThemedText style={[styles.ingredientAmount, { color: theme.brand.tertiary }]}>
+                      {ingredient.quantity || ingredient.unit ? `${[ingredient.quantity, ingredient.unit].filter(Boolean).join(' ')}` : '—'}
+                    </ThemedText>
+                    <ThemedText style={[styles.ingredientName, { color: colors.text.primary }]}>
+                      {ingredient.name || 'Untitled ingredient'}
+                    </ThemedText>
+                  </View>
                 </View>
-              </View>
-            ))}
+              ))
+            )}
           </View>
         </View>
 
         <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
           <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Directions</ThemedText>
           <View style={styles.stepsList}>
-            {steps.map((step, index) => (
-              <View key={`${recipe.id}-step-${index}`} style={styles.stepRow}>
-                <View style={styles.stepBadge}>
-                  <ThemedText style={styles.stepBadgeText}>{index + 1}</ThemedText>
+            {steps.length === 0 ? (
+              <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>
+                No steps added yet.
+              </ThemedText>
+            ) : (
+              steps.map((step, index) => (
+                <View key={step.id ?? `${recipe.id}-step-${index}`} style={styles.stepRow}>
+                  <View style={styles.stepBadge}>
+                    <ThemedText style={styles.stepBadgeText}>{index + 1}</ThemedText>
+                  </View>
+                  <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>
+                    {step.instruction?.trim() || 'No instruction provided.'}
+                  </ThemedText>
                 </View>
-                <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>
-                  {step}
-                </ThemedText>
-              </View>
-            ))}
+              ))
+            )}
           </View>
         </View>
 
         <View style={[styles.sectionCard, { backgroundColor: '#FFF7E7', borderColor: '#F2D39B' }]}>
           <ThemedText style={[styles.sectionTitle, { color: '#6F4B00' }]}>Market note</ThemedText>
           <ThemedText style={[styles.marketNote, { color: '#7A5A18' }]}>
-            This recipe works best when you buy the produce ripe and in season. Start with {recipe.produce[0]}
-            {recipe.produce[1] ? ` and ${recipe.produce[1]}` : ''} from your local farm list.
+            {ingredientNames.length > 0
+              ? `This recipe works best with fresh ingredients, especially ${ingredientNames.slice(0, 2).join(' and ')}.`
+              : 'This recipe works best when made with fresh, seasonal ingredients.'}
           </ThemedText>
         </View>
       </ScrollView>
@@ -349,6 +521,11 @@ const styles = StyleSheet.create({
   missingState: {
     flex: 1,
     paddingHorizontal: theme.spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingState: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },

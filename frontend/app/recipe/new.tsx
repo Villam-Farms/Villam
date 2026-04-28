@@ -24,6 +24,10 @@ import { useTheme } from "@/hooks/useTheme";
 import { theme } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 
+// Assumes you already created a Supabase Storage bucket named "recipes".
+// If the bucket is private, keep using the stored `path` values and generate signed URLs when rendering.
+const STORAGE_BUCKET = "recipes";
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Ingredient {
@@ -36,13 +40,120 @@ interface Ingredient {
 interface Step {
   id: string;
   instruction: string;
-  photoUris: string[];
+  photoUris: string[]; // local URIs while editing
+}
+
+interface StoredMediaItem {
+  path: string;
+  url: string;
+  type: "image";
+  position: number;
+}
+
+interface StoredStep {
+  id: string;
+  position: number;
+  instruction: string;
+  photo_paths: string[];
+  photo_urls: string[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const onlyDigits = (value: string) => value.replace(/[^0-9]/g, "");
+
+const getFileExtension = (uri: string) => {
+  const cleanUri = uri.split("?")[0];
+  const ext = cleanUri.split(".").pop()?.toLowerCase();
+  return ext || "jpg";
+};
+
+const getMimeType = (ext: string) => {
+  switch (ext) {
+    case "png":
+      return "image/png";
+    case "webp":
+      return "image/webp";
+    case "heic":
+      return "image/heic";
+    case "jpeg":
+    case "jpg":
+    default:
+      return "image/jpeg";
+  }
+};
+
+const buildStoragePath = ({
+  userId,
+  recipeId,
+  ext,
+  kind,
+  index,
+  stepId,
+}: {
+  userId: string;
+  recipeId: string;
+  ext: string;
+  kind: "gallery" | "step";
+  index: number;
+  stepId?: string;
+}) => {
+  const fileName = `${Date.now()}-${index}-${uid()}.${ext}`;
+
+  if (kind === "gallery") {
+    return `${userId}/${recipeId}/gallery/${fileName}`;
+  }
+
+  return `${userId}/${recipeId}/steps/${stepId}/${fileName}`;
+};
+
+async function requestLibraryPermission() {
+  const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+  if (status !== "granted") {
+    Alert.alert("Permission needed", "Please allow photo library access to add recipe images.");
+    return false;
+  }
+
+  return true;
+}
+
+async function pickPhotosFromLibrary() {
+  const hasPermission = await requestLibraryPermission();
+  if (!hasPermission) return [];
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsMultipleSelection: true,
+    quality: 0.8,
+  });
+
+  if (result.canceled) return [];
+  return result.assets.map((asset) => asset.uri);
+}
+
+async function uploadImageToStorage(uri: string, path: string) {
+  const ext = getFileExtension(uri);
+  const contentType = getMimeType(ext);
+
+  const response = await fetch(uri);
+  const arrayBuffer = await response.arrayBuffer();
+
+  const { data, error } = await supabase.storage.from(STORAGE_BUCKET).upload(path, arrayBuffer, {
+    contentType,
+    upsert: false,
+  });
+
+  if (error) throw error;
+
+  const { data: publicUrlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(data.path);
+
+  return {
+    path: data.path,
+    url: publicUrlData.publicUrl,
+  };
+}
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -444,20 +555,6 @@ export default function NewRecipeScreen() {
     );
   };
 
-  const pickPhotosFromLibrary = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") return [];
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-    });
-
-    if (result.canceled) return [];
-    return result.assets.map((a) => a.uri);
-  };
-
   const handleMediaUpload = async () => {
     const uris = await pickPhotosFromLibrary();
     if (uris.length === 0) return;
@@ -487,21 +584,12 @@ export default function NewRecipeScreen() {
     setSteps((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== id) : prev));
 
   const addStepPhoto = async (stepId: string) => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") return;
+    const uris = await pickPhotosFromLibrary();
+    if (uris.length === 0) return;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      const uris = result.assets.map((a) => a.uri);
-      setSteps((prev) =>
-        prev.map((s) => (s.id === stepId ? { ...s, photoUris: [...s.photoUris, ...uris] } : s))
-      );
-    }
+    setSteps((prev) =>
+      prev.map((s) => (s.id === stepId ? { ...s, photoUris: [...s.photoUris, ...uris] } : s))
+    );
   };
 
   const deleteStepPhoto = (stepId: string, photoIndex: number) => {
@@ -533,11 +621,12 @@ export default function NewRecipeScreen() {
         }))
         .filter((ing) => ing.name.length > 0);
 
-      const validSteps = steps
+      const rawSteps = steps
         .map((step, index) => ({
           id: step.id,
           position: index,
           instruction: step.instruction.trim(),
+          localPhotoUris: step.photoUris,
         }))
         .filter((step) => step.instruction.length > 0);
 
@@ -546,7 +635,7 @@ export default function NewRecipeScreen() {
         return;
       }
 
-      if (validSteps.length === 0) {
+      if (rawSteps.length === 0) {
         Alert.alert("Missing steps", "Please add at least one step.");
         return;
       }
@@ -565,55 +654,132 @@ export default function NewRecipeScreen() {
         return;
       }
 
-      const payload = {
+      const initialPayload = {
         user_id: user.id,
         title: title.trim(),
         description: description.trim() || null,
+        cover_image_url: null,
+        cover_image_path: null,
+        cover_media: [],
         prep_time_minutes: Number(prepTime || 0),
         cook_time_minutes: Number(cookTime || 0),
         additional_time_minutes: Number(additionalTime || 0),
         total_time_minutes:
-          Number(prepTime || 0) +
-          Number(cookTime || 0) +
-          Number(additionalTime || 0),
+          Number(prepTime || 0) + Number(cookTime || 0) + Number(additionalTime || 0),
         servings: servings ? Number(servings) : null,
         ingredients: validIngredients,
-        steps: validSteps,
+        steps: rawSteps.map((step) => ({
+          id: step.id,
+          position: step.position,
+          instruction: step.instruction,
+          photo_paths: [],
+          photo_urls: [],
+        })),
       };
 
-      console.log("Publishing recipe payload:", payload);
-
-      const { data, error } = await supabase
+      const { data: recipe, error: insertError } = await supabase
         .from("recipes")
-        .insert(payload)
+        .insert(initialPayload)
         .select()
         .single();
 
-      if (error) {
-        console.error("Recipe insert error:", error);
-        throw error;
+      if (insertError) {
+        console.error("Recipe insert error:", insertError);
+        throw insertError;
       }
 
-      Alert.alert(
-        "Recipe saved!",
-        mediaUris.length > 0
-          ? "The recipe was saved. Photos are still local only in this version."
-          : "Your recipe was published successfully.",
-        [
-          {
-            text: "OK",
-            onPress: () => router.replace("/"),
-          },
-        ]
-      );
+      const recipeId = recipe.id as string;
 
-      console.log("Saved recipe:", data);
+      const uploadedCoverMedia: StoredMediaItem[] = [];
+      let coverImagePath: string | null = null;
+      let coverImageUrl: string | null = null;
+
+      for (let i = 0; i < mediaUris.length; i++) {
+        const uri = mediaUris[i];
+        const ext = getFileExtension(uri);
+        const path = buildStoragePath({
+          userId: user.id,
+          recipeId,
+          ext,
+          kind: "gallery",
+          index: i,
+        });
+
+        const uploaded = await uploadImageToStorage(uri, path);
+
+        uploadedCoverMedia.push({
+          path: uploaded.path,
+          url: uploaded.url,
+          type: "image",
+          position: i,
+        });
+
+        if (i === 0) {
+          coverImagePath = uploaded.path;
+          coverImageUrl = uploaded.url;
+        }
+      }
+
+      const uploadedSteps: StoredStep[] = [];
+
+      for (const step of rawSteps) {
+        const photoPaths: string[] = [];
+        const photoUrls: string[] = [];
+
+        for (let i = 0; i < step.localPhotoUris.length; i++) {
+          const uri = step.localPhotoUris[i];
+          const ext = getFileExtension(uri);
+          const path = buildStoragePath({
+            userId: user.id,
+            recipeId,
+            ext,
+            kind: "step",
+            index: i,
+            stepId: step.id,
+          });
+
+          const uploaded = await uploadImageToStorage(uri, path);
+          photoPaths.push(uploaded.path);
+          photoUrls.push(uploaded.url);
+        }
+
+        uploadedSteps.push({
+          id: step.id,
+          position: step.position,
+          instruction: step.instruction,
+          photo_paths: photoPaths,
+          photo_urls: photoUrls,
+        });
+      }
+
+      const { error: updateError } = await supabase
+        .from("recipes")
+        .update({
+          cover_image_path: coverImagePath,
+          cover_image_url: coverImageUrl,
+          cover_media: uploadedCoverMedia,
+          steps: uploadedSteps,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", recipeId);
+
+      if (updateError) {
+        console.error("Recipe update error:", updateError);
+        throw updateError;
+      }
+
+      Alert.alert("Recipe saved!", "Your recipe and images were uploaded successfully.", [
+        {
+          text: "OK",
+          onPress: () => router.replace("/"),
+        },
+      ]);
     } catch (error: any) {
       console.error("Recipe publish failed:", error);
       Alert.alert(
         "Save failed",
         error?.message ??
-          "Something went wrong while saving. Double-check that the recipes table exists and matches the SQL."
+          "Something went wrong while saving. Double-check your Storage bucket name, policies, and recipes table."
       );
     } finally {
       setIsSaving(false);
@@ -679,9 +845,7 @@ export default function NewRecipeScreen() {
               >
                 <Ionicons name="images-outline" size={44} color={theme.brand.primary} />
                 <Text style={[styles.uploadText, { color: colors.text.primary }]}>Add photos</Text>
-                <Text style={[styles.uploadSubtext, { color: colors.text.tertiary }]}>
-                  Photos are preview-only for now and are not uploaded yet
-                </Text>
+                <Text style={[styles.uploadSubtext, { color: colors.text.tertiary }]}>Photos upload when you publish</Text>
               </TouchableOpacity>
             ) : (
               <View style={styles.mediaPreviewContainer}>
@@ -809,9 +973,7 @@ export default function NewRecipeScreen() {
               ]}
             >
               <SectionHeader title="Ingredients" colors={colors} />
-              <Text style={[styles.helperText, { color: colors.text.tertiary }]}>
-                Add quantity, unit, and ingredient name for each item
-              </Text>
+              <Text style={[styles.helperText, { color: colors.text.tertiary }]}>Add quantity, unit, and ingredient name for each item</Text>
 
               {ingredients.map((ing) => (
                 <IngredientRow
@@ -839,9 +1001,7 @@ export default function NewRecipeScreen() {
               ]}
             >
               <SectionHeader title="Steps" colors={colors} />
-              <Text style={[styles.stepsHint, { color: colors.text.tertiary }]}>
-                Long press and drag to reorder • Step photos are preview-only for now
-              </Text>
+              <Text style={[styles.stepsHint, { color: colors.text.tertiary }]}>Long press and drag to reorder • Step photos upload when you publish</Text>
 
               <DraggableFlatList
                 data={steps}
