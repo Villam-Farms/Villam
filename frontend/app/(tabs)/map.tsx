@@ -18,6 +18,7 @@ import { useFarms } from "@/hooks/useFarms";
 
 import { openDirections } from "@/lib/directions";
 import { formatAddress } from "@/lib/address";
+import { shareFarm } from "@/lib/share-farm";
 
 type Region = {
   latitude: number;
@@ -182,8 +183,15 @@ export default function MapTab() {
     }
   };
 
-  const handleSharePress = (farmId: number) => {
-    console.log("Share pressed:", farmId);
+  const handleSharePress = async (farmId: number) => {
+    const farm = farms.find((f) => f.id === farmId);
+    if (!farm) return;
+
+    try {
+      await shareFarm(farm);
+    } catch (e) {
+      console.log("Could not share farm", e);
+    }
   };
 
   const handleSearchSubmit = () => {
