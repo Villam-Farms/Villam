@@ -13,6 +13,7 @@ import { addDistanceAndSort } from '@/lib/location';
 import { formatAddress } from '@/lib/address';
 import { openDirections } from '@/lib/directions';
 import { getMockFarmProfile } from '@/lib/mock-farms';
+import { shareFarmLink } from '@/lib/share-farm';
 
 function splitProducts(products: string | null | undefined) {
   if (!products?.trim()) return [];
@@ -45,6 +46,27 @@ export default function FarmDetailScreen() {
   const mockProfile = useMemo(() => getMockFarmProfile(farmId, farm), [farm, farmId]);
   const produceItems = mockProfile.produce.length > 0 ? mockProfile.produce : splitProducts(farm?.products);
   const address = mockProfile.addressOverride ?? (farm ? formatAddress(farm) : '');
+
+  const handleShareFarm = async () => {
+    if (!Number.isFinite(farmId)) return;
+
+    const farmName = farm?.name ?? mockProfile.title;
+    const farmLocation = address.trim().length
+      ? address
+      : farm
+        ? `${farm.latitude}, ${farm.longitude}`
+        : null;
+
+    try {
+      await shareFarmLink({
+        id: farmId,
+        name: farmName,
+        location: farmLocation,
+      });
+    } catch (e) {
+      console.log('Could not share farm', e);
+    }
+  };
 
   const handleDirections = async () => {
     const hasRealAddress =
@@ -107,13 +129,23 @@ export default function FarmDetailScreen() {
               <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.iconButton, { backgroundColor: theme.brand.primary }]}
-              onPress={handleDirections}
-              activeOpacity={0.88}
-            >
-              <Ionicons name="navigate" size={18} color={theme.neutral.white} />
-            </TouchableOpacity>
+            <View style={styles.heroActionRow}>
+              <TouchableOpacity
+                style={[styles.iconButton, { backgroundColor: 'rgba(255,255,255,0.92)' }]}
+                onPress={handleShareFarm}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="share-outline" size={18} color={colors.text.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.iconButton, { backgroundColor: theme.brand.primary }]}
+                onPress={handleDirections}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="navigate" size={18} color={theme.neutral.white} />
+              </TouchableOpacity>
+            </View>
           </View>
 
           {isLoading && !farm ? (
@@ -474,6 +506,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  heroActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
   },
   heroBody: {
     marginTop: theme.spacing.xl,

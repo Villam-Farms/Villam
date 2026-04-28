@@ -21,6 +21,7 @@ import { mockGroceryLists } from '@/mockdata/GroceryList';
 
 import { openDirections } from '@/lib/directions';
 import { formatAddress } from '@/lib/address';
+import { shareFarm } from '@/lib/share-farm';
 
 import { supabase } from '@/lib/supabase'; // <-- adjust path if different
 
@@ -164,9 +165,15 @@ export default function HomeScreen() {
   }
 };
 
-  const handleSharePress = (farmId: number) => {
-    console.log('Share pressed:', farmId);
-    // TODO: Share farm details
+  const handleSharePress = async (farmId: number) => {
+    const farm = farms.find((f) => f.id === farmId);
+    if (!farm) return;
+
+    try {
+      await shareFarm(farm);
+    } catch (e) {
+      console.log('Could not share farm', e);
+    }
   };
 
   const handleRecipePress = (recipeId: string) => {
