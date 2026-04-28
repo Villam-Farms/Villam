@@ -5,15 +5,27 @@ import { theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
 import React from 'react';
+import { Image } from 'expo-image';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/context/auth-context';
+import { useMyProfile } from '@/hooks/useMyProfile';
+import { getProfileDisplay } from '@/lib/profile-display';
 
 export default function SettingsScreen() {
   const { colors } = useTheme();
-  const { signOut } = useAuth();
+  const { signOut, session } = useAuth();
+  const { data: profile } = useMyProfile();
+  const metadata = session?.user?.user_metadata as
+    | { name?: string; full_name?: string; username?: string }
+    | undefined;
+  const { avatarUrl, fullName, username, displayName, initials } = getProfileDisplay(
+    profile,
+    metadata,
+    session?.user?.email
+  );
 
   const handleBack = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -22,8 +34,7 @@ export default function SettingsScreen() {
 
   const handleEditProfile = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    console.log('Edit profile picture pressed');
-    // Add your image picker logic here
+    router.push('/(tabs)/profile');
   };
 
   const handleLogout = () => {
@@ -91,10 +102,22 @@ export default function SettingsScreen() {
           onPress={handleEditProfile}
         >
           <View style={[styles.profileImage, { backgroundColor: theme.neutral[400] }]}>
-            {/* Placeholder for profile image */}
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.profileImageAsset} contentFit="cover" />
+            ) : (
+              <ThemedText style={styles.profileInitials}>{initials}</ThemedText>
+            )}
           </View>
+          <ThemedText type="subtitle" style={[styles.profileName, { color: colors.text.primary }]}>
+            {fullName ?? displayName}
+          </ThemedText>
+          {!!username && (
+            <ThemedText style={[styles.profileUsername, { color: colors.text.secondary }]}>
+              @{username}
+            </ThemedText>
+          )}
           <ThemedText style={{ paddingTop: 7, color: '#0088FF'}}>
-            Edit profile picture
+            Open profile
           </ThemedText>
         </TouchableOpacity>
 
@@ -161,6 +184,26 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  profileImageAsset: {
+    width: '100%',
+    height: '100%',
+  },
+  profileInitials: {
+    color: theme.neutral.white,
+    fontSize: theme.typography.fontSizes.h2,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  profileName: {
+    marginTop: theme.spacing.md,
+    fontWeight: theme.typography.fontWeights.bold,
+  },
+  profileUsername: {
+    marginTop: theme.spacing.xs,
   },
   optionsContainer: {
     borderRadius: theme.borderRadius.lg,

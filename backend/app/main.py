@@ -91,6 +91,11 @@ class MeOut(BaseModel):
     counts: CountsOut
 
 
+class ListingImageOut(BaseModel):
+    id: str
+    image_url: str | None = None
+
+
 class UpdateMeIn(BaseModel):
     description: str | None = Field(default=None, max_length=280)
     avatar_url: str | None = Field(default=None, max_length=2048)
@@ -194,7 +199,7 @@ def update_me(body: UpdateMeIn, user_id: str = Depends(get_current_user_id)) -> 
     return get_me(user_id)
 
 
-def _compress_avatar_to_jpeg(
+def _compress_image_to_jpeg(
     image_bytes: bytes,
     *,
     max_size_bytes: int = 500 * 1024,
@@ -232,6 +237,42 @@ def _compress_avatar_to_jpeg(
             quality = 75
 
 
+def _get_listing_owner(listing_id: str) -> tuple[str, str | None]:
+    listing_resp = (
+        supabase.table("farm_listings")
+        .select("id,image_url,farms!inner(user_id)")
+        .eq("id", listing_id)
+        .maybe_single()
+        .execute()
+    )
+
+    listing_data = getattr(listing_resp, "data", None)
+    if not isinstance(listing_data, dict):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+
+    farm_data = listing_data.get("farms")
+    if isinstance(farm_data, list):
+        farm_data = farm_data[0] if farm_data else None
+
+    owner_id = farm_data.get("user_id") if isinstance(farm_data, dict) else None
+    if not owner_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing owner not found")
+
+    return str(owner_id), listing_data.get("image_url")
+
+
+def _ensure_listing_owner(listing_id: str, user_id: str) -> str | None:
+    owner_id, image_url = _get_listing_owner(listing_id)
+    if owner_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this listing")
+    return image_url
+
+
+def _set_listing_image_url(listing_id: str, image_url: str | None) -> ListingImageOut:
+    supabase.table("farm_listings").update({"image_url": image_url}).eq("id", listing_id).execute()
+    return ListingImageOut(id=listing_id, image_url=image_url)
+
+
 @app.post("/me/avatar", response_model=MeOut)
 async def upload_avatar(
     file: UploadFile = File(...), user_id: str = Depends(get_current_user_id)
@@ -244,7 +285,7 @@ async def upload_avatar(
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large")
 
     try:
-        compressed = _compress_avatar_to_jpeg(raw)
+        compressed = _compress_image_to_jpeg(raw)
     except Exception:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to process image")
 
@@ -258,6 +299,43 @@ async def upload_avatar(
     public_url = supabase.storage.from_("avatars").get_public_url(object_path)
     supabase.table("profiles").upsert({"id": user_id, "avatar_url": public_url}, on_conflict="id").execute()
     return get_me(user_id)
+
+
+@app.post("/listings/{listing_id}/image", response_model=ListingImageOut)
+async def upload_listing_image(
+    listing_id: str, file: UploadFile = File(...), user_id: str = Depends(get_current_user_id)
+) -> ListingImageOut:
+    _ensure_listing_owner(listing_id, user_id)
+
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type")
+
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large")
+
+    try:
+        compressed = _compress_image_to_jpeg(raw, max_dim=960)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to process image")
+
+    object_path = f"{user_id}/{listing_id}_{int.from_bytes(os.urandom(4), 'big')}.jpg"
+    supabase.storage.from_("listing-images").upload(
+        object_path,
+        compressed,
+        {"content-type": "image/jpeg", "cache-control": "3600"},
+    )
+
+    public_url = supabase.storage.from_("listing-images").get_public_url(object_path)
+    return _set_listing_image_url(listing_id, public_url)
+
+
+@app.delete("/listings/{listing_id}/image", response_model=ListingImageOut)
+def delete_listing_image(
+    listing_id: str, user_id: str = Depends(get_current_user_id)
+) -> ListingImageOut:
+    _ensure_listing_owner(listing_id, user_id)
+    return _set_listing_image_url(listing_id, None)
 
 
 @app.get("/followers", response_model=list[SearchUserOut])

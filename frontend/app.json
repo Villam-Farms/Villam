@@ -39,7 +39,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Villam to access your photos to set a profile picture."
+          "photosPermission": "Allow Villam to access your photos to set profile pictures and produce listing photos."
         }
       ],
       [

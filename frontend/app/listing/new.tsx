@@ -11,8 +11,10 @@ import {
 } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import * as Location from "expo-location";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { router, Stack } from "expo-router";
+import { Image } from "expo-image";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -27,6 +29,7 @@ import {
   CURRENCY_OPTIONS,
   fetchProduceCatalog,
   SOLD_BY_OPTIONS,
+  uploadFarmListingImage,
 } from "@/lib/marketplace";
 
 type PickerField = "produceItem" | "variety" | "soldBy" | "currency" | null;
@@ -36,6 +39,12 @@ type AddressParts = {
   state: string | null;
   postal_code: string | null;
   country: string | null;
+};
+
+type PickedListingImage = {
+  uri: string;
+  name: string;
+  type: string;
 };
 
 const DEFAULT_REGION = {
@@ -56,6 +65,7 @@ export default function NewListingScreen() {
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
   const { session } = useAuth();
+  const accessToken = session?.access_token ?? null;
   const { coords: userCoords, refresh: refreshLocation } = useCurrentLocation();
 
   const [farmName, setFarmName] = useState("");
@@ -80,6 +90,7 @@ export default function NewListingScreen() {
   const [activePicker, setActivePicker] = useState<PickerField>(null);
   const [submittingFarm, setSubmittingFarm] = useState(false);
   const [submittingListing, setSubmittingListing] = useState(false);
+  const [listingImage, setListingImage] = useState<PickedListingImage | null>(null);
 
   const { data: produceCatalog, isLoading: catalogLoading, error: catalogError } = useQuery({
     queryKey: ["produce-catalog"],
@@ -262,7 +273,7 @@ export default function NewListingScreen() {
     setSubmittingListing(true);
 
     try {
-      await createFarmListing({
+      const createdListing = await createFarmListing({
         farm_id: ownedFarm.id,
         produce_variety_id: selectedVarietyId,
         price: parsedPrice,
@@ -271,7 +282,12 @@ export default function NewListingScreen() {
         available,
       });
 
+      if (accessToken && listingImage) {
+        await uploadFarmListingImage(accessToken, createdListing.id, listingImage);
+      }
+
       await queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] });
+      await queryClient.invalidateQueries({ queryKey: ["owned-marketplace-listings", ownedFarm.id] });
       Alert.alert("Listing created", "Your produce listing is now live.", [
         {
           text: "Done",
@@ -288,6 +304,35 @@ export default function NewListingScreen() {
     } finally {
       setSubmittingListing(false);
     }
+  };
+
+  const handlePickListingImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Please allow photo library access to upload listing photos.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const asset = result.assets[0];
+    if (asset.fileSize != null && asset.fileSize > 10 * 1024 * 1024) {
+      Alert.alert("Too large", "Please choose an image under 10MB.");
+      return;
+    }
+
+    setListingImage({
+      uri: asset.uri,
+      name: "listing.jpg",
+      type: asset.mimeType ?? "image/jpeg",
+    });
   };
 
   const pickerOptions = useMemo(() => {
@@ -578,6 +623,62 @@ export default function NewListingScreen() {
                 colors={colors}
               />
 
+              <View style={styles.fieldGroup}>
+                <ThemedText style={[styles.fieldLabel, { color: colors.text.primary }]}>
+                  Listing photo
+                </ThemedText>
+                <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>
+                  Optional. If you skip this, the current placeholder artwork stays in place.
+                </ThemedText>
+
+                {listingImage ? (
+                  <View style={[styles.imagePreviewCard, { borderColor: colors.border.light }]}>
+                    <Image source={{ uri: listingImage.uri }} style={styles.imagePreview} contentFit="cover" />
+                  </View>
+                ) : (
+                  <View
+                    style={[
+                      styles.imagePlaceholderCard,
+                      {
+                        backgroundColor: colors.input.background,
+                        borderColor: colors.border.light,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="image-outline" size={24} color={colors.text.tertiary} />
+                    <ThemedText style={{ color: colors.text.secondary }}>
+                      No listing image selected
+                    </ThemedText>
+                  </View>
+                )}
+
+                <View style={styles.imageActionsRow}>
+                  <TouchableOpacity
+                    style={[styles.secondaryButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
+                    onPress={handlePickListingImage}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="images-outline" size={16} color={colors.text.primary} />
+                    <ThemedText style={[styles.secondaryButtonText, { color: colors.text.primary }]}>
+                      {listingImage ? "Change photo" : "Add photo"}
+                    </ThemedText>
+                  </TouchableOpacity>
+
+                  {listingImage ? (
+                    <TouchableOpacity
+                      style={[styles.secondaryButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
+                      onPress={() => setListingImage(null)}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.text.primary} />
+                      <ThemedText style={[styles.secondaryButtonText, { color: colors.text.primary }]}>
+                        Remove
+                      </ThemedText>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
+
               <View style={[styles.availabilityRow, { borderColor: colors.border.light }]}>
                 <View style={{ flex: 1 }}>
                   <ThemedText style={[styles.fieldLabel, { color: colors.text.primary }]}>
@@ -767,6 +868,31 @@ const styles = StyleSheet.create({
   },
   multilineInput: {
     minHeight: 110,
+  },
+  imagePreviewCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  imagePreview: {
+    width: "100%",
+    height: 180,
+  },
+  imagePlaceholderCard: {
+    minHeight: 140,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    padding: theme.spacing.md,
+  },
+  imageActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: theme.spacing.sm,
+    flexWrap: "wrap",
   },
   selectorField: {
     borderWidth: 1,

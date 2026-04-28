@@ -10,6 +10,7 @@ import { router, Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
+import { Image } from "expo-image";
 
 import { ThemedText } from "@/components/themed-text";
 import { theme } from "@/constants/theme";
@@ -211,7 +212,11 @@ export default function ListingSearchScreen() {
                 onPress={() => handleFarmPress(item.farmId)}
               >
                 <View style={[styles.cardThumb, { backgroundColor: item.color }]}>
-                  <Ionicons name={item.icon} size={30} color={theme.brand.primary} />
+                  {item.imageUrl ? (
+                    <Image source={{ uri: item.imageUrl }} style={styles.cardThumbImage} contentFit="cover" />
+                  ) : (
+                    <Ionicons name={item.icon} size={30} color={theme.brand.primary} />
+                  )}
                   <View style={[styles.categoryBadge, { backgroundColor: item.badgeColor }]}>
                     <ThemedText style={[styles.categoryBadgeText, { color: item.badgeTextColor }]}>
                       {item.category === "Eggs & Dairy" ? "Eggs" : item.category}
@@ -344,11 +349,17 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 14,
     paddingHorizontal: 8,
+    position: "relative",
+    overflow: "hidden",
+  },
+  cardThumbImage: {
+    ...StyleSheet.absoluteFillObject,
   },
   categoryBadge: {
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 3,
+    zIndex: 1,
   },
   categoryBadgeText: {
     fontSize: 10,
