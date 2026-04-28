@@ -278,7 +278,7 @@ export default function ProfileScreen() {
           </ThemedText>
           <Button
             variant="primary"
-            onPress={() => console.log("See All")}
+            onPress={() => router.push("/recipe/my-recipes")}
             style={styles.seeAllButton}
           >
             See All
@@ -500,5 +500,137 @@ const styles = StyleSheet.create({
   },
   recipesScrollContent: {
     paddingRight: theme.spacing.lg,
+  },
+  recipeModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "flex-end",
+  },
+  recipeModalSheet: {
+    maxHeight: "88%",
+    borderTopLeftRadius: theme.borderRadius.xl,
+    borderTopRightRadius: theme.borderRadius.xl,
+    paddingTop: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.md,
+  },
+  recipeModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+  },
+  recipeModalTitle: {
+    fontSize: theme.typography.fontSizes.h2,
+  },
+  recipeModalCount: {
+    fontSize: theme.typography.fontSizes.h5,
+    marginTop: 2,
+  },
+  recipeModalClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  recipeSearchBox: {
+    minHeight: 46,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    marginTop: theme.spacing.md,
+  },
+  recipeSearchInput: {
+    flex: 1,
+    fontSize: theme.typography.fontSizes.h4,
+    fontFamily: theme.typography.fontFamily,
+    paddingVertical: theme.spacing.sm,
+  },
+  recipeModalList: {
+    marginTop: theme.spacing.md,
+  },
+  recipeModalListContent: {
+    gap: theme.spacing.sm,
+    paddingBottom: theme.spacing.xl,
+  },
+  recipeListItem: {
+    minHeight: 124,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    flexDirection: "row",
+    overflow: "hidden",
+  },
+  recipeListImage: {
+    width: 104,
+    minHeight: 124,
+  },
+  recipeListBody: {
+    flex: 1,
+    padding: theme.spacing.md,
+    gap: 4,
+  },
+  recipeListTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.sm,
+  },
+  recipeCategory: {
+    flex: 1,
+    fontSize: theme.typography.fontSizes.h5,
+    fontWeight: theme.typography.fontWeights.semibold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  recipeRating: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  recipeRatingText: {
+    fontSize: theme.typography.fontSizes.h5,
+    fontFamily: theme.typography.fontFamily,
+  },
+  recipeListTitle: {
+    fontSize: theme.typography.fontSizes.h4,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  recipeListDescription: {
+    fontSize: theme.typography.fontSizes.h5,
+    lineHeight: 18,
+  },
+  recipeListFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.sm,
+    marginTop: 2,
+  },
+  recipeMetaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  recipeMetaText: {
+    fontSize: theme.typography.fontSizes.h5,
+    fontFamily: theme.typography.fontFamily,
+  },
+  noRecipesState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.xl,
+    gap: theme.spacing.xs,
+  },
+  noRecipesTitle: {
+    fontSize: theme.typography.fontSizes.h3,
+    fontWeight: theme.typography.fontWeights.bold,
+  },
+  noRecipesText: {
+    fontSize: theme.typography.fontSizes.h4,
+    textAlign: "center",
   },
 });
