@@ -5,5 +5,8 @@
     "dev": "./start.sh",
     "frontend:start": "npm --prefix frontend run start",
     "backend:start": "uvicorn app.main:app --reload --app-dir backend"
+  },
+  "dependencies": {
+    "expo": "^55.0.18"
   }
 }

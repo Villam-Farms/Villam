@@ -13,21 +13,29 @@
     "scheme": "villam",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "extra": {
+      "eas": {
+        "projectId": "109f1832-bb06-441c-bbeb-a3f7bd4f1567"
+      }
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.villam"
+      "bundleIdentifier": "com.villamfarms.villam",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/splash.png",
+        "foregroundImage": "./assets/images/splash-icon.png",
         "backgroundColor": "#FE9801"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.villam"
+      "package": "com.villamfarms.villam"
     },
     "web": {
       "output": "static",
@@ -47,7 +55,8 @@
         {
           "locationWhenInUsePermission": "Allow Villam to use your location to show nearby farms and your position on the map."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
