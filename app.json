@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "109f1832-bb06-441c-bbeb-a3f7bd4f1567"
+      }
+    },
+    "android": {
+      "package": "com.villamfarms.villam"
+    },
+    "ios": {
+      "bundleIdentifier": "com.villamfarms.villam",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
+}
