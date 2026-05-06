@@ -12,6 +12,7 @@ interface RecipeCardProps {
   rating: number;
   ratingsCount: number;
   duration: string;
+  difficulty?: string;
   imageUrl?: string;
   onPress?: () => void;
   onEditPress?: () => void;
@@ -23,6 +24,7 @@ export function RecipeCard({
   rating, 
   ratingsCount, 
   duration,
+  difficulty,
   imageUrl,
   onPress,
   onEditPress
@@ -78,7 +80,7 @@ export function RecipeCard({
             style={styles.clockIcon}
           />
           <ThemedText style={[styles.durationText, { color: colors.text.primary }]}>
-            {duration}
+            {difficulty ? `${duration} • ${difficulty}` : duration}
           </ThemedText>
         </View>
       </View>
@@ -120,8 +122,7 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.fontSizes.h4,
     fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
-    minHeight: 44, // Add this - forces 2 lines of space
-    lineHeight: 22, // Add this for consistent line spacing
+    lineHeight: 22,
   },
   ratingContainer: {
     flexDirection: 'row',

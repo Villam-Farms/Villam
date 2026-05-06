@@ -58,10 +58,13 @@ interface StoredStep {
   photo_urls: string[];
 }
 
+type RecipeDifficulty = "Easy" | "Medium" | "Hard";
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const onlyDigits = (value: string) => value.replace(/[^0-9]/g, "");
+const DIFFICULTY_OPTIONS: RecipeDifficulty[] = ["Easy", "Medium", "Hard"];
 
 const getFileExtension = (uri: string) => {
   const cleanUri = uri.split("?")[0];
@@ -492,6 +495,7 @@ export default function NewRecipeScreen() {
   const [mediaUris, setMediaUris] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [difficulty, setDifficulty] = useState<RecipeDifficulty>("Easy");
   const [prepTime, setPrepTime] = useState("");
   const [cookTime, setCookTime] = useState("");
   const [additionalTime, setAdditionalTime] = useState("");
@@ -658,6 +662,7 @@ export default function NewRecipeScreen() {
         user_id: user.id,
         title: title.trim(),
         description: description.trim() || null,
+        difficulty,
         cover_image_url: null,
         cover_image_path: null,
         cover_media: [],
@@ -926,6 +931,44 @@ export default function NewRecipeScreen() {
 
             <View
               style={[
+                styles.difficultyCard,
+                { backgroundColor: colors.input.background, borderColor: colors.border.default },
+              ]}
+            >
+              <SectionHeader title="Difficulty" colors={colors} />
+              <View style={styles.difficultyRow}>
+                {DIFFICULTY_OPTIONS.map((option) => {
+                  const isSelected = difficulty === option;
+
+                  return (
+                    <TouchableOpacity
+                      key={option}
+                      onPress={() => setDifficulty(option)}
+                      activeOpacity={0.8}
+                      style={[
+                        styles.difficultyChip,
+                        {
+                          backgroundColor: isSelected ? theme.brand.primary : colors.background,
+                          borderColor: isSelected ? theme.brand.primary : colors.border.default,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.difficultyChipText,
+                          { color: isSelected ? "#fff" : colors.text.primary },
+                        ]}
+                      >
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View
+              style={[
                 styles.timingCard,
                 { backgroundColor: colors.input.background, borderColor: colors.border.default },
               ]}
@@ -1161,6 +1204,31 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   thumbnail: { width: "100%", height: "100%" },
+
+  difficultyCard: {
+    width: "100%",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
+    gap: 12,
+  },
+  difficultyRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  difficultyChip: {
+    flex: 1,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  difficultyChipText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
 
   timingCard: {
     width: "100%",
