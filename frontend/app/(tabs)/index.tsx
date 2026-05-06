@@ -138,11 +138,11 @@ export default function HomeScreen() {
     );
   }, [currentProduce, searchQuery]);
 
-  const handleFarmPress = (farmId: number) => {
+  const handleFarmPress = (farmId: string) => {
     router.push(`/farm/${farmId}`);
   };
 
-  const handleDirectionPress = async (farmId: number) => {
+  const handleDirectionPress = async (farmId: string) => {
   const farm = farms.find((f) => f.id === farmId);
   if (!farm) return;
 
@@ -160,7 +160,7 @@ export default function HomeScreen() {
   }
 };
 
-  const handleSharePress = async (farmId: number) => {
+  const handleSharePress = async (farmId: string) => {
     const farm = farms.find((f) => f.id === farmId);
     if (!farm) return;
 

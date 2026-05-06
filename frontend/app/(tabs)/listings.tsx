@@ -69,11 +69,11 @@ export default function ListingsScreen() {
     };
   };
 
-  const handleFarmPress = (farmId: number) => {
+  const handleFarmPress = (farmId: string) => {
     router.push(`/farm/${farmId}`);
   };
 
-  const handleDirectionPress = async (farmId: number) => {
+  const handleDirectionPress = async (farmId: string) => {
     const farm = farms.find((f) => f.id === farmId);
     const listing = listings.find((item) => item.farmId === farmId);
     const fallbackAddress = listing

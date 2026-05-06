@@ -4,6 +4,70 @@ import type { FarmWithCoords } from "@/lib/location";
 const FARM_SELECT_COLUMNS =
   "id,name,latitude,longitude,city,state,postal_code,country,website,description";
 
+type FarmRatingAggregate = {
+  average: number;
+  count: number;
+};
+
+type FarmRatingRow = {
+  farm_id: string | null;
+  rating: number | null;
+};
+
+async function fetchRatingAggregates(farmIds: string[]) {
+  const uniqueFarmIds = Array.from(new Set(farmIds)).filter(Boolean);
+  if (!uniqueFarmIds.length) return {};
+
+  const { data, error } = await supabase
+    .from("farm_ratings")
+    .select("farm_id,rating")
+    .in("farm_id", uniqueFarmIds);
+
+  if (error) {
+    console.log("Could not load farm rating aggregates", error);
+    return {};
+  }
+
+  const totals = ((data ?? []) as FarmRatingRow[]).reduce<
+    Record<string, { total: number; count: number }>
+  >((acc, row) => {
+    if (!row.farm_id || typeof row.rating !== "number") return acc;
+
+    const current = acc[row.farm_id] ?? { total: 0, count: 0 };
+    current.total += row.rating;
+    current.count += 1;
+    acc[row.farm_id] = current;
+    return acc;
+  }, {});
+
+  return Object.entries(totals).reduce<Record<string, FarmRatingAggregate>>(
+    (acc, [farmId, value]) => {
+      acc[farmId] = {
+        average: value.count > 0 ? value.total / value.count : 0,
+        count: value.count,
+      };
+      return acc;
+    },
+    {}
+  );
+}
+
+function normalizeFarmRecord(
+  data: Record<string, unknown>,
+  ratings: Record<string, FarmRatingAggregate> = {}
+) {
+  const id = typeof data.id === "string" ? data.id : "";
+  const ratingSummary = ratings[id];
+
+  return {
+    ...data,
+    rating: ratingSummary?.average ?? 0,
+    reviews: ratingSummary?.count ?? 0,
+    products: "",
+    street: null,
+  } as FarmWithCoords;
+}
+
 export async function fetchFarms(): Promise<FarmWithCoords[]> {
   const { data, error } = await supabase
     .from("farms")
@@ -12,13 +76,14 @@ export async function fetchFarms(): Promise<FarmWithCoords[]> {
 
   if (error) throw error;
 
-  return (data ?? []).map((farm) => ({
-    ...farm,
-    rating: 0,
-    reviews: 0,
-    products: "",
-    street: null,
-  })) as FarmWithCoords[];
+  const farms = (data ?? []) as Record<string, unknown>[];
+  const ratingAggregates = await fetchRatingAggregates(
+    farms
+      .map((farm) => farm.id)
+      .filter((id): id is string => typeof id === "string")
+  );
+
+  return farms.map((farm) => normalizeFarmRecord(farm, ratingAggregates));
 }
 
 export type CreateFarmInput = {
@@ -35,7 +100,7 @@ export type CreateFarmInput = {
 };
 
 export type UpdateFarmInput = {
-  id: number;
+  id: string;
   name: string;
   latitude: number;
   longitude: number;
@@ -46,16 +111,6 @@ export type UpdateFarmInput = {
   website?: string | null;
   description?: string | null;
 };
-
-function normalizeFarmRecord(data: Record<string, unknown>) {
-  return {
-    ...data,
-    rating: 0,
-    reviews: 0,
-    products: "",
-    street: null,
-  } as FarmWithCoords;
-}
 
 function formatSupabaseError(error: unknown) {
   if (!error || typeof error !== "object") {
@@ -79,7 +134,7 @@ function formatSupabaseError(error: unknown) {
     .join("\n");
 }
 
-export async function fetchFarmById(farmId: number): Promise<FarmWithCoords | null> {
+export async function fetchFarmById(farmId: string): Promise<FarmWithCoords | null> {
   const { data, error } = await supabase
     .from("farms")
     .select(FARM_SELECT_COLUMNS)

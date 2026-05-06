@@ -5,7 +5,7 @@ import { formatAddress } from "@/lib/address";
 import type { FarmWithCoords } from "@/lib/location";
 
 type ShareFarmLinkInput = {
-  id: number;
+  id: string;
   name: string;
   location?: string | null;
 };
