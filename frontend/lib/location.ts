@@ -25,7 +25,7 @@ export function distanceMiles(a: Coords, b: Coords) {
 }
 
 export type FarmWithCoords = {
-  id: number;
+  id: string;
   name: string;
   rating: number;
   reviews: number;

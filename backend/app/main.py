@@ -65,6 +65,13 @@ def _safe_count(resp) -> int:
     return 0
 
 
+def _format_supabase_error(error: Exception) -> str:
+    message = str(error).strip()
+    if message:
+        return message
+    return error.__class__.__name__
+
+
 class FollowRequest(BaseModel):
     following_id: str = Field(..., min_length=1)
 
@@ -94,6 +101,21 @@ class MeOut(BaseModel):
 class ListingImageOut(BaseModel):
     id: str
     image_url: str | None = None
+
+
+class FarmRatingIn(BaseModel):
+    rating: float = Field(..., ge=1, le=5)
+    review: str = Field(..., min_length=1, max_length=500)
+
+
+class FarmRatingOut(BaseModel):
+    id: int | str
+    farm_id: str
+    user_id: str
+    rating: float
+    review: str
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 class UpdateMeIn(BaseModel):
@@ -158,6 +180,21 @@ def _get_profiles_by_ids(
     return getattr(resp, "data", []) or []
 
 
+def _farm_rating_out(row: dict) -> FarmRatingOut:
+    return FarmRatingOut(
+        id=row["id"],
+        farm_id=str(row["farm_id"]),
+        user_id=row["user_id"],
+        rating=row["rating"],
+        review=row.get("review") or "",
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
+    )
+
+
+FARM_RATING_SELECT_COLUMNS = "id,farm_id,user_id,rating,review,created_at,updated_at"
+
+
 @app.get("/health")
 def health_check() -> dict:
     return {"status": "ok"}
@@ -167,6 +204,73 @@ def health_check() -> dict:
 def db_check() -> dict:
     response = supabase.table("profiles").select("id").limit(1).execute()
     return {"data": response.data}
+
+
+@app.put("/farms/{farm_id}/rating", response_model=FarmRatingOut)
+def save_farm_rating(
+    farm_id: str,
+    body: FarmRatingIn,
+    user_id: str = Depends(get_current_user_id),
+) -> FarmRatingOut:
+    try:
+        farm_resp = (
+            supabase.table("farms")
+            .select("id")
+            .eq("id", farm_id)
+            .maybe_single()
+            .execute()
+        )
+        if not getattr(farm_resp, "data", None):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Farm not found")
+
+        existing_resp = (
+            supabase.table("farm_ratings")
+            .select("id")
+            .eq("farm_id", farm_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        existing = (getattr(existing_resp, "data", []) or [None])[0]
+
+        payload = {
+            "farm_id": farm_id,
+            "user_id": user_id,
+            "rating": round(body.rating * 2) / 2,
+            "review": body.review.strip(),
+        }
+
+        if existing and existing.get("id") is not None:
+            (
+                supabase.table("farm_ratings")
+                .update(payload)
+                .eq("id", existing["id"])
+                .execute()
+            )
+        else:
+            supabase.table("farm_ratings").insert(payload).execute()
+
+        rating_resp = (
+            supabase.table("farm_ratings")
+            .select(FARM_RATING_SELECT_COLUMNS)
+            .eq("farm_id", farm_id)
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=_format_supabase_error(error),
+        )
+
+    rating_row = getattr(rating_resp, "data", None)
+    if not isinstance(rating_row, dict):
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Review was not saved")
+
+    return _farm_rating_out(rating_row)
 
 
 @app.get("/me", response_model=MeOut)

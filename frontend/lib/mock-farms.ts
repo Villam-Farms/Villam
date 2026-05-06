@@ -103,8 +103,8 @@ const mockFarmProfiles: Record<number, MockFarmProfile> = {
   },
 };
 
-export function getMockFarmProfile(farmId: number, farm?: FarmWithCoords | null): MockFarmProfile {
-  const base = mockFarmProfiles[farmId];
+export function getMockFarmProfile(farmId: string, farm?: FarmWithCoords | null): MockFarmProfile {
+  const base = mockFarmProfiles[Number(farmId)];
 
   if (base) return base;
 

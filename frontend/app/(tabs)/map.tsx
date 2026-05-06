@@ -33,8 +33,8 @@ export default function MapTab() {
   const mapRef = useRef<MapView>(null);
 
   const [region, setRegion] = useState<Region | null>(null);
-  const [selectedFarmId, setSelectedFarmId] = useState<number | null>(null);
-  const [recentFarmIds, setRecentFarmIds] = useState<number[]>([]);
+  const [selectedFarmId, setSelectedFarmId] = useState<string | null>(null);
+  const [recentFarmIds, setRecentFarmIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
   const { coords: userCoords, locationText } = useCurrentLocation();
@@ -92,7 +92,7 @@ export default function MapTab() {
     });
   }, [fallbackCenter, selectedFarmId]);
 
-  const focusFarm = (farmId: number) => {
+  const focusFarm = (farmId: string) => {
     const farm = farms.find((f) => f.id === farmId);
     if (!farm) return;
 
@@ -134,7 +134,7 @@ export default function MapTab() {
 
         const parsed = JSON.parse(raw) as unknown;
         if (Array.isArray(parsed)) {
-          setRecentFarmIds(parsed.filter((id) => typeof id === "number"));
+          setRecentFarmIds(parsed.filter((id) => typeof id === "string"));
         }
       } catch (error) {
         console.log("Could not load recent farms", error);
@@ -144,7 +144,7 @@ export default function MapTab() {
     loadRecentFarms();
   }, []);
 
-  const persistRecentFarms = async (farmIds: number[]) => {
+  const persistRecentFarms = async (farmIds: string[]) => {
     try {
       await AsyncStorage.setItem("recentFarmIds", JSON.stringify(farmIds));
     } catch (error) {
@@ -152,7 +152,7 @@ export default function MapTab() {
     }
   };
 
-  const addRecentFarm = async (farmId: number) => {
+  const addRecentFarm = async (farmId: string) => {
     setRecentFarmIds((prev) => {
       const next = [farmId, ...prev.filter((id) => id !== farmId)].slice(0, 5);
       persistRecentFarms(next);
@@ -160,12 +160,12 @@ export default function MapTab() {
     });
   };
 
-  const handleFarmPress = async (farmId: number) => {
+  const handleFarmPress = async (farmId: string) => {
     await addRecentFarm(farmId);
     router.push(`/farm/${farmId}`);
   };
 
-  const handleDirectionPress = async (farmId: number) => {
+  const handleDirectionPress = async (farmId: string) => {
     const farm = farms.find((f) => f.id === farmId);
     if (!farm) return;
 
@@ -183,7 +183,7 @@ export default function MapTab() {
     }
   };
 
-  const handleSharePress = async (farmId: number) => {
+  const handleSharePress = async (farmId: string) => {
     const farm = farms.find((f) => f.id === farmId);
     if (!farm) return;
 

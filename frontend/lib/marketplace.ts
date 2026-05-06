@@ -29,7 +29,7 @@ export type ProduceCatalog = {
 
 export type MarketplaceListing = {
   id: string;
-  farmId: number;
+  farmId: string;
   farmName: string;
   latitude: number;
   longitude: number;
@@ -51,7 +51,7 @@ export type MarketplaceListing = {
 };
 
 type FarmRow = {
-  id: number;
+  id: string;
   name: string;
   latitude: number;
   longitude: number;
@@ -63,7 +63,7 @@ type FarmRow = {
 
 type ListingRow = {
   id: string;
-  farm_id: number;
+  farm_id: string;
   produce_variety_id: string;
   price: number;
   currency: string;
@@ -108,7 +108,7 @@ async function hydrateMarketplaceListings(listings: ListingRow[]): Promise<Marke
 
   if (itemError) throw itemError;
 
-  const farmMap = new Map<number, FarmRow>(
+  const farmMap = new Map<string, FarmRow>(
     ((farmRows ?? []) as FarmRow[]).map((farm) => [farm.id, farm])
   );
   const varietyMap = new Map<string, ProduceVarietyOption>(
@@ -186,7 +186,7 @@ export async function fetchMarketplaceListings(): Promise<MarketplaceListing[]> 
   return hydrateMarketplaceListings((listingRows ?? []) as ListingRow[]);
 }
 
-export async function fetchFarmListingsByFarmId(farmId: number): Promise<MarketplaceListing[]> {
+export async function fetchFarmListingsByFarmId(farmId: string): Promise<MarketplaceListing[]> {
   const { data, error } = await supabase
     .from("farm_listings")
     .select("id,farm_id,produce_variety_id,price,currency,sold_by,available,image_url")
@@ -199,7 +199,7 @@ export async function fetchFarmListingsByFarmId(farmId: number): Promise<Marketp
 }
 
 export type CreateFarmListingInput = {
-  farm_id: number;
+  farm_id: string;
   produce_variety_id: string;
   price: number;
   currency: string;

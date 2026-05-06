@@ -17,7 +17,7 @@ export type ListingRow = {
   farmDotColor: string;
   category: ListingCategory;
   icon: ListingVisualIcon;
-  farmId: number;
+  farmId: string;
   farmName: string;
   latitude: number;
   longitude: number;
@@ -49,7 +49,7 @@ export function addDistanceToListings(
     userCoords
   );
 
-  const distanceMap = new Map<number, number | null>(
+  const distanceMap = new Map<string, number | null>(
     farmsWithDistance.map((farm) => [farm.id, farm.distanceMi])
   );
 

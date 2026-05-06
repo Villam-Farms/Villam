@@ -87,7 +87,7 @@ export default function FarmCard({
           <ThemedView {...transparentBg} style={styles.farmRating}>
             <IconSymbol name="star.fill" size={14} color="#FFD700" />
             <ThemedText style={[styles.ratingText, { color: colors.text.secondary }]}>
-              {rating} ({reviews})
+              {rating.toFixed(1)} ({reviews})
             </ThemedText>
 
             <ThemedText

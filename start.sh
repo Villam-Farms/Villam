@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Start backend
 if [[ -x "backend/.venv/bin/uvicorn" ]]; then
-  backend_cmd=("backend/.venv/bin/uvicorn" app.main:app --reload --app-dir backend)
+  backend_cmd=("backend/.venv/bin/uvicorn" app.main:app --reload --app-dir backend --host 0.0.0.0 --port 8001)
 else
-  backend_cmd=(uvicorn app.main:app --reload --app-dir backend)
+  backend_cmd=(uvicorn app.main:app --reload --app-dir backend --host 0.0.0.0 --port 8001)
 fi
 
 # Start frontend (Expo)

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { ThemedText } from '@/components/themed-text';
 import { theme } from '@/constants/theme';
@@ -14,22 +15,45 @@ import { formatAddress } from '@/lib/address';
 import { openDirections } from '@/lib/directions';
 import { getMockFarmProfile } from '@/lib/mock-farms';
 import { shareFarmLink } from '@/lib/share-farm';
+import { fetchFarmRatings, saveFarmRating, summarizeFarmRatings, type FarmRating } from '@/lib/farm-ratings';
+import { useAuth } from '@/context/auth-context';
 
-function splitProducts(products: string | null | undefined) {
-  if (!products?.trim()) return [];
+const STAR_VALUES = [1, 2, 3, 4, 5];
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-  return products
-    .split(/,|•|\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+function formatReviewDate(value: string | null) {
+  if (!value) return 'Recently';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Recently';
+
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function getStarIcon(value: number, rating: number): IoniconName {
+  if (rating >= value) return 'star';
+  if (rating >= value - 0.5) return 'star-half';
+  return 'star-outline';
 }
 
 export default function FarmDetailScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { session } = useAuth();
+  const queryClient = useQueryClient();
   const { id } = useLocalSearchParams<{ id?: string }>();
-  const farmId = Number(id);
+  const farmId = typeof id === 'string' ? id : '';
   const [activeTab, setActiveTab] = useState<'overview' | 'reviews'>('overview');
+  const [ratings, setRatings] = useState<FarmRating[]>([]);
+  const [ratingsLoading, setRatingsLoading] = useState(false);
+  const [ratingsError, setRatingsError] = useState<string | null>(null);
+  const [draftRating, setDraftRating] = useState(5);
+  const [draftReview, setDraftReview] = useState('');
+  const [savingReview, setSavingReview] = useState(false);
   const tabTranslateX = useRef(new Animated.Value(0)).current;
   const previousTab = useRef<'overview' | 'reviews'>('overview');
 
@@ -44,11 +68,121 @@ export default function FarmDetailScreen() {
   }, [farm, userCoords]);
 
   const mockProfile = useMemo(() => getMockFarmProfile(farmId, farm), [farm, farmId]);
-  const produceItems = mockProfile.produce.length > 0 ? mockProfile.produce : splitProducts(farm?.products);
   const address = mockProfile.addressOverride ?? (farm ? formatAddress(farm) : '');
+  const ratingsSummary = useMemo(() => summarizeFarmRatings(ratings), [ratings]);
+  const displayRating = ratingsSummary.count > 0 ? ratingsSummary.average : 0;
+  const displayReviewCount = ratingsSummary.count;
+  const currentUserId = session?.user.id ?? null;
+  const currentUserReview = useMemo(
+    () => ratings.find((rating) => rating.userId === currentUserId) ?? null,
+    [currentUserId, ratings]
+  );
+
+  useEffect(() => {
+    if (currentUserReview) {
+      setDraftRating(currentUserReview.rating);
+      setDraftReview(currentUserReview.review);
+    } else {
+      setDraftRating(5);
+      setDraftReview('');
+    }
+  }, [currentUserReview]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadRatings() {
+      if (!farmId) return;
+
+      setRatingsLoading(true);
+      setRatingsError(null);
+
+      try {
+        const nextRatings = await fetchFarmRatings(farmId);
+        if (isMounted) setRatings(nextRatings);
+      } catch (e) {
+        console.log('Could not load farm ratings', e);
+        if (isMounted) setRatingsError('Unable to load reviews right now.');
+      } finally {
+        if (isMounted) setRatingsLoading(false);
+      }
+    }
+
+    loadRatings();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [farmId]);
+
+  const handleSaveReview = async () => {
+    console.log('Save review pressed', {
+      farmId,
+      hasUserId: !!currentUserId,
+      hasAccessToken: !!session?.access_token,
+    });
+
+    const accessToken = session?.access_token;
+    if (!farmId) {
+      console.log('Cannot save farm rating: invalid farm id', id);
+      Alert.alert('Review not saved', 'This farm profile is missing a valid farm id.');
+      return;
+    }
+
+    if (!currentUserId || !accessToken) {
+      console.log('Cannot save farm rating: missing session', {
+        hasUserId: !!currentUserId,
+        hasAccessToken: !!accessToken,
+      });
+      Alert.alert('Sign in required', 'Sign in again before saving your review.');
+      return;
+    }
+
+    if (!draftReview.trim()) {
+      Alert.alert('Add a review', 'Write a short review before saving.');
+      return;
+    }
+
+    setSavingReview(true);
+
+    try {
+      const savedRating = await saveFarmRating({
+        farmId,
+        accessToken,
+        rating: draftRating,
+        review: draftReview,
+      });
+
+      console.log('savedRating:', JSON.stringify(savedRating));
+      console.log('currentUserId:', currentUserId);
+
+      setRatings((previous) => {
+        const existingIndex = previous.findIndex((item) => item.userId === currentUserId);
+        if (existingIndex === -1) return [savedRating, ...previous];
+
+        const next = [...previous];
+        next[existingIndex] = savedRating;
+        return next;
+      });
+
+      try {
+        const nextRatings = await fetchFarmRatings(farmId);
+        setRatings(nextRatings);
+      } catch (refreshError) {
+        console.log('Could not refresh farm ratings after save', refreshError);
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['farms'] });
+    } catch (e) {
+      console.log('Could not save farm rating', e);
+      Alert.alert('Review not saved', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setSavingReview(false);
+    }
+  };
 
   const handleShareFarm = async () => {
-    if (!Number.isFinite(farmId)) return;
+    if (!farmId) return;
 
     const farmName = farm?.name ?? mockProfile.title;
     const farmLocation = address.trim().length
@@ -74,7 +208,7 @@ export default function FarmDetailScreen() {
 
     const finalDest = mockProfile.addressOverride
       ? mockProfile.addressOverride
-      : hasRealAddress
+      : farm && hasRealAddress
         ? formatAddress(farm)
         : farm
           ? `${farm.latitude},${farm.longitude}`
@@ -175,12 +309,12 @@ export default function FarmDetailScreen() {
                 <View style={styles.heroPill}>
                   <Ionicons name="star" size={14} color={theme.brand.red} />
                   <ThemedText style={styles.heroPillText}>
-                    {mockProfile.rating.toFixed(1)} average
+                    {displayRating.toFixed(1)} average
                   </ThemedText>
                 </View>
                 <View style={styles.heroPill}>
                   <Ionicons name="chatbubble-ellipses-outline" size={14} color={theme.brand.tertiary} />
-                  <ThemedText style={styles.heroPillText}>{mockProfile.reviews} reviews</ThemedText>
+                  <ThemedText style={styles.heroPillText}>{displayReviewCount} reviews</ThemedText>
                 </View>
                 {farmWithDistance?.distanceMi != null ? (
                   <View style={styles.heroPill}>
@@ -347,7 +481,7 @@ export default function FarmDetailScreen() {
             <View style={styles.metricRow}>
               <View style={[styles.metricCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
                 <ThemedText style={[styles.metricValue, { color: colors.text.primary }]}>
-                  {mockProfile.rating.toFixed(1)}
+                  {displayRating.toFixed(1)}
                 </ThemedText>
                 <ThemedText style={[styles.metricLabel, { color: colors.text.secondary }]}>
                   average rating
@@ -356,7 +490,7 @@ export default function FarmDetailScreen() {
 
               <View style={[styles.metricCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
                 <ThemedText style={[styles.metricValue, { color: colors.text.primary }]}>
-                  {mockProfile.reviews}
+                  {displayReviewCount}
                 </ThemedText>
                 <ThemedText style={[styles.metricLabel, { color: colors.text.secondary }]}>
                   total reviews
@@ -377,15 +511,19 @@ export default function FarmDetailScreen() {
               <View style={styles.reviewSummaryRow}>
                 <View style={[styles.reviewCircle, { backgroundColor: colors.card }]}>
                   <ThemedText style={[styles.reviewCircleValue, { color: colors.text.primary }]}>
-                    {mockProfile.rating.toFixed(1)}
+                    {displayRating.toFixed(1)}
                   </ThemedText>
                 </View>
                 <View style={{ flex: 1 }}>
                   <ThemedText style={[styles.reviewHeadline, { color: colors.text.primary }]}>
-                    {mockProfile.reviewHeadline}
+                    {displayReviewCount > 0
+                      ? `${displayReviewCount} reviews from local shoppers`
+                      : 'No shopper reviews yet'}
                   </ThemedText>
                   <ThemedText style={[styles.reviewBody, { color: colors.text.secondary }]}>
-                    {mockProfile.reviewBody}
+                    {displayReviewCount > 0
+                      ? 'This average is based on reviews saved by Villam users.'
+                      : 'Be the first local shopper to rate this farm visit.'}
                   </ThemedText>
                 </View>
               </View>
@@ -406,12 +544,12 @@ export default function FarmDetailScreen() {
                   <View style={styles.reviewHeaderRow}>
                     <View style={[styles.reviewCircle, { backgroundColor: colors.card }]}>
                       <ThemedText style={[styles.reviewCircleValue, { color: colors.text.primary }]}>
-                        {mockProfile.rating.toFixed(1)}
+                        {displayRating.toFixed(1)}
                       </ThemedText>
                     </View>
                     <View style={{ flex: 1 }}>
                       <ThemedText style={[styles.reviewHeadline, { color: colors.text.primary }]}>
-                        {mockProfile.reviews} reviews from local shoppers
+                        {displayReviewCount} reviews from local shoppers
                       </ThemedText>
                       <ThemedText style={[styles.reviewBody, { color: colors.text.secondary }]}>
                         See how other users rated the visit, produce quality, and the overall in-person experience.
@@ -420,37 +558,140 @@ export default function FarmDetailScreen() {
                   </View>
                 </View>
 
-                <View style={styles.reviewList}>
-                  {mockProfile.reviewEntries.map((entry) => (
-                    <View
-                      key={entry.id}
-                      style={[styles.reviewCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}
-                    >
-                      <View style={styles.reviewCardHeader}>
-                        <View>
-                          <ThemedText style={[styles.reviewAuthor, { color: colors.text.primary }]}>
-                            {entry.author}
-                          </ThemedText>
-                          <ThemedText style={[styles.reviewDate, { color: colors.text.secondary }]}>
-                            {entry.date}
-                          </ThemedText>
+                <View style={[styles.reviewFormCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+                  <View style={styles.reviewSectionHeader}>
+                    <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+                      {currentUserReview ? 'Update your review' : 'Add your review'}
+                    </ThemedText>
+                    <ThemedText style={[styles.reviewSectionCaption, { color: colors.text.secondary }]}>
+                      Your rating is saved to this farm profile
+                    </ThemedText>
+                  </View>
+
+                  {currentUserId ? (
+                    <>
+                      <View style={styles.starPickerRow}>
+                        <View style={styles.starPicker}>
+                          {STAR_VALUES.map((value) => (
+                            <View key={value} style={styles.starButton}>
+                              <Ionicons
+                                name={getStarIcon(value, draftRating)}
+                                size={34}
+                                color={theme.brand.red}
+                              />
+                              <TouchableOpacity
+                                style={[styles.starTapZone, styles.starTapZoneLeft]}
+                                onPress={() => setDraftRating(value - 0.5)}
+                                activeOpacity={0.9}
+                              />
+                              <TouchableOpacity
+                                style={[styles.starTapZone, styles.starTapZoneRight]}
+                                onPress={() => setDraftRating(value)}
+                                activeOpacity={0.9}
+                              />
+                            </View>
+                          ))}
                         </View>
-                        <View style={[styles.reviewScorePill, { backgroundColor: colors.card }]}>
-                          <Ionicons name="star" size={12} color={theme.brand.red} />
-                          <ThemedText style={[styles.reviewScoreText, { color: colors.text.primary }]}>
-                            {entry.rating.toFixed(1)}
+                        <View style={[styles.ratingValuePill, { backgroundColor: colors.card }]}>
+                          <ThemedText style={[styles.ratingValueText, { color: colors.text.primary }]}>
+                            {draftRating.toFixed(1)}
                           </ThemedText>
                         </View>
                       </View>
 
-                      <ThemedText style={[styles.reviewCardTitle, { color: colors.text.primary }]}>
-                        {entry.title}
-                      </ThemedText>
-                      <ThemedText style={[styles.reviewCardBody, { color: colors.text.secondary }]}>
-                        {entry.body}
+                      <TextInput
+                        value={draftReview}
+                        onChangeText={setDraftReview}
+                        placeholder="Share what stood out about the produce, pickup, or farm visit."
+                        placeholderTextColor={colors.text.secondary}
+                        multiline
+                        maxLength={500}
+                        textAlignVertical="top"
+                        style={[
+                          styles.reviewInput,
+                          {
+                            backgroundColor: colors.card,
+                            borderColor: colors.border.light,
+                            color: colors.text.primary,
+                          },
+                        ]}
+                      />
+
+                      <TouchableOpacity
+                        style={[
+                          styles.primaryAction,
+                          {
+                            backgroundColor: savingReview ? colors.text.secondary : theme.brand.primary,
+                            marginTop: theme.spacing.md,
+                          },
+                        ]}
+                        onPress={handleSaveReview}
+                        activeOpacity={0.88}
+                        disabled={savingReview}
+                      >
+                        {savingReview ? (
+                          <ActivityIndicator size="small" color={theme.neutral.white} />
+                        ) : (
+                          <Ionicons name="checkmark-circle-outline" size={18} color={theme.neutral.white} />
+                        )}
+                        <ThemedText style={styles.primaryActionText}>
+                          {savingReview ? 'Saving review' : currentUserReview ? 'Update review' : 'Save review'}
+                        </ThemedText>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <ThemedText style={[styles.emptyText, { color: colors.text.secondary }]}>
+                      Sign in to add your rating and review for this farm.
+                    </ThemedText>
+                  )}
+                </View>
+
+                <View style={styles.reviewList}>
+                  {ratingsLoading ? (
+                    <View style={[styles.reviewCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+                      <ActivityIndicator color={theme.brand.primary} />
+                    </View>
+                  ) : ratingsError ? (
+                    <View style={[styles.reviewCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+                      <ThemedText style={[styles.emptyText, { color: colors.text.secondary }]}>
+                        {ratingsError}
                       </ThemedText>
                     </View>
-                  ))}
+                  ) : ratings.length > 0 ? (
+                    ratings.map((entry) => (
+                      <View
+                        key={entry.id}
+                        style={[styles.reviewCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}
+                      >
+                        <View style={styles.reviewCardHeader}>
+                          <View style={{ flex: 1 }}>
+                            <ThemedText style={[styles.reviewAuthor, { color: colors.text.primary }]}>
+                              {entry.userId === currentUserId ? 'You' : entry.authorName}
+                            </ThemedText>
+                            <ThemedText style={[styles.reviewDate, { color: colors.text.secondary }]}>
+                              {formatReviewDate(entry.updatedAt ?? entry.createdAt)}
+                            </ThemedText>
+                          </View>
+                          <View style={[styles.reviewScorePill, { backgroundColor: colors.card }]}>
+                            <Ionicons name="star" size={12} color={theme.brand.red} />
+                            <ThemedText style={[styles.reviewScoreText, { color: colors.text.primary }]}>
+                              {entry.rating.toFixed(1)}
+                            </ThemedText>
+                          </View>
+                        </View>
+
+                        <ThemedText style={[styles.reviewCardBody, { color: colors.text.secondary }]}>
+                          {entry.review}
+                        </ThemedText>
+                      </View>
+                    ))
+                  ) : (
+                    <View style={[styles.reviewCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+                      <ThemedText style={[styles.emptyText, { color: colors.text.secondary }]}>
+                        No reviews yet. Be the first local shopper to review this farm.
+                      </ThemedText>
+                    </View>
+                  )}
                 </View>
                 </>
               )}
@@ -793,6 +1034,62 @@ const styles = StyleSheet.create({
   reviewList: {
     paddingTop: theme.spacing.xs,
     gap: theme.spacing.md,
+  },
+  reviewFormCard: {
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
+  starPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    marginBottom: theme.spacing.md,
+  },
+  starPicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  starButton: {
+    width: 42,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  starTapZone: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: '50%',
+  },
+  starTapZoneLeft: {
+    left: 0,
+  },
+  starTapZoneRight: {
+    right: 0,
+  },
+  ratingValuePill: {
+    minWidth: 52,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  ratingValueText: {
+    fontSize: 14,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  reviewInput: {
+    minHeight: 120,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: theme.typography.fontFamily,
   },
   reviewCard: {
     borderWidth: 1,
