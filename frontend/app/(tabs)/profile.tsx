@@ -31,6 +31,7 @@ type RecipeRow = {
   user_id: string;
   title: string;
   description: string | null;
+  difficulty?: string | null;
   cover_image_url: string | null;
   cover_image_path: string | null;
   cover_media: Array<{ path?: string; url?: string; type?: string; position?: number }> | null;
@@ -50,6 +51,7 @@ type ProfileRecipeCardData = {
   rating: number;
   ratingsCount: number;
   duration: string;
+  difficulty?: string;
   imageUrl?: string;
 };
 
@@ -186,7 +188,7 @@ export default function ProfileScreen() {
             supabase
               .from("recipes")
               .select(
-                "id, user_id, title, description, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, created_at"
+                "id, user_id, title, description, difficulty, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, created_at"
               )
               .eq("user_id", userId)
               .order("created_at", { ascending: false })
@@ -210,6 +212,7 @@ export default function ProfileScreen() {
               rating: 0,
               ratingsCount: 0,
               duration: formatRecipeDuration(recipe.total_time_minutes ?? 0),
+              difficulty: recipe.difficulty?.trim() || undefined,
               imageUrl: await resolveRecipeImageUrl(recipe),
             }))
           );
@@ -399,6 +402,7 @@ export default function ProfileScreen() {
                 rating={recipe.rating}
                 ratingsCount={recipe.ratingsCount}
                 duration={recipe.duration}
+                difficulty={recipe.difficulty}
                 imageUrl={recipe.imageUrl}
                 onPress={() => {
                   router.push(`/recipe/${recipe.id}`);

@@ -50,6 +50,7 @@ type RecipeRow = {
   user_id: string;
   title: string;
   description: string | null;
+  difficulty?: string | null;
   cover_image_url: string | null;
   cover_image_path: string | null;
   cover_media: RecipeMediaItem[] | null;
@@ -123,7 +124,7 @@ export default function RecipeDetailScreen() {
           const { data, error } = await supabase
             .from('recipes')
             .select(
-              'id, user_id, title, description, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, created_at'
+              'id, user_id, title, description, difficulty, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, created_at'
             )
             .eq('id', id)
             .single();
@@ -245,7 +246,9 @@ export default function RecipeDetailScreen() {
           <View style={[styles.heroContent, { paddingTop: insets.top + 72 }]}>
             <View style={styles.tagRow}>
               <View style={styles.heroTag}>
-                <ThemedText style={styles.heroTagText}>Recipe</ThemedText>
+                <ThemedText style={styles.heroTagText}>
+                  {recipe.difficulty?.trim() || 'Recipe'}
+                </ThemedText>
               </View>
               {recipe.servings ? (
                 <View style={[styles.heroTag, styles.heroTagAlt]}>
@@ -261,7 +264,7 @@ export default function RecipeDetailScreen() {
           </View>
         </View>
 
-        <View style={[styles.metaRow, { marginTop: -(theme.spacing.lg * 2) + descriptionOffset }]}>
+        <View style={[styles.metaRow, { marginTop: -theme.spacing['3xl'] + descriptionOffset }]}>
           <View style={[styles.metaCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
             <Ionicons name="time-outline" size={18} color={theme.brand.primary} />
             <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>
