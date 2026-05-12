@@ -1,32 +1,36 @@
 import { ScrollView, StyleSheet, TouchableOpacity, TextInput, View } from 'react-native';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { theme } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import FarmCard from '@/components/ui/farmcard';
-import { Ionicons } from '@expo/vector-icons';
+import { RecipeCard } from '@/components/ui/recipes/recipecard';
+import { GroceryListCard } from '@/components/ui/grocerylist/GroceryListCard';
 
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { addDistanceAndSort } from '@/lib/location';
 import { useAuth } from '@/context/auth-context';
 import { useFarms } from '@/hooks/useFarms';
-import { RecipeCard } from '@/components/ui/recipes/recipecard';
-import { recipes } from '@/lib/recipes';
-import { GroceryListCard } from '@/components/ui/grocerylist/GroceryListCard';
 import { mockGroceryLists } from '@/mockdata/GroceryList';
-
 import { openDirections } from '@/lib/directions';
 import { formatAddress } from '@/lib/address';
 import { shareFarm } from '@/lib/share-farm';
-
-import { supabase } from '@/lib/supabase'; // <-- adjust path if different
+import { supabase } from '@/lib/supabase';
 import { useMyProfile } from '@/hooks/useMyProfile';
 import { getProfileDisplay } from '@/lib/profile-display';
+
+const RECIPE_BUCKET = 'recipes';
+const FALLBACK_RECIPE_IMAGE =
+  'https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=1200&auto=format&fit=crop';
+
+const MEAL_TAGS = ['Breakfast', 'Lunch', 'Dinner'];
 
 type ProduceItem = {
   id: string;
@@ -34,6 +38,141 @@ type ProduceItem = {
   category: string;
   default_sold_by: string;
 };
+
+type StoredIngredient = {
+  id?: string;
+  position?: number;
+  quantity?: string;
+  unit?: string;
+  name?: string;
+};
+
+type StoredStep = {
+  id?: string;
+  position?: number;
+  instruction?: string;
+  photo_paths?: string[];
+  photo_urls?: string[];
+};
+
+type StoredMediaItem = {
+  path?: string;
+  url?: string;
+  type?: string;
+  position?: number;
+};
+
+type StoredRecipe = {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  difficulty?: string | null;
+  cover_image_url: string | null;
+  cover_image_path: string | null;
+  cover_media: StoredMediaItem[] | null;
+  prep_time_minutes: number;
+  cook_time_minutes: number;
+  additional_time_minutes: number;
+  total_time_minutes: number;
+  servings: number | null;
+  ingredients: StoredIngredient[] | null;
+  steps: StoredStep[] | null;
+  tags: string[] | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type HomeRecipeCardData = {
+  id: string;
+  title: string;
+  rating: number;
+  ratingsCount: number;
+  duration: string;
+  difficulty?: string;
+  imageUrl?: string;
+};
+
+const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+
+const sortByPosition = <T extends { position?: number }>(items: T[]) =>
+  [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+const getTags = (recipe: StoredRecipe) => asArray(recipe.tags).filter(Boolean);
+
+const getIngredientNames = (recipe: StoredRecipe) => {
+  return sortByPosition(asArray(recipe.ingredients))
+    .map((ingredient) => ingredient.name?.trim())
+    .filter((name): name is string => Boolean(name && name.length > 0));
+};
+
+const getStepInstructions = (recipe: StoredRecipe) => {
+  return sortByPosition(asArray(recipe.steps))
+    .map((step) => step.instruction?.trim())
+    .filter((instruction): instruction is string => Boolean(instruction && instruction.length > 0));
+};
+
+const formatRecipeDuration = (totalMinutes: number | null | undefined) => {
+  const safeMinutes = Number(totalMinutes || 0);
+  if (safeMinutes <= 0) return 'No time set';
+
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+
+  if (hours <= 0) return `${minutes} min`;
+  if (minutes <= 0) return `${hours} hr`;
+  return `${hours} hr ${minutes} min`;
+};
+
+const getRecipeCategory = (recipe: StoredRecipe) => {
+  const tags = getTags(recipe);
+  const mealTag = tags.find((tag) =>
+    MEAL_TAGS.some((meal) => meal.toLowerCase() === tag.toLowerCase())
+  );
+
+  return mealTag ?? tags[0] ?? 'Recipe';
+};
+
+const getFirstCoverUrl = (recipe: StoredRecipe) => {
+  if (recipe.cover_image_url?.trim()) return recipe.cover_image_url.trim();
+
+  const media = sortByPosition(asArray(recipe.cover_media));
+  const firstMediaWithUrl = media.find((item) => typeof item?.url === 'string' && item.url.trim().length > 0);
+
+  return firstMediaWithUrl?.url?.trim() ?? null;
+};
+
+async function resolveRecipeImageUrl(recipe: StoredRecipe) {
+  const media = sortByPosition(asArray(recipe.cover_media));
+  const fallbackPath =
+    recipe.cover_image_path ||
+    media.find((item) => typeof item?.path === 'string' && item.path.trim().length > 0)?.path;
+
+  // Prefer a signed URL when there is a Storage path.
+  // This works for private buckets and public buckets.
+  if (fallbackPath) {
+    const { data, error } = await supabase.storage
+      .from(RECIPE_BUCKET)
+      .createSignedUrl(fallbackPath, 60 * 60);
+
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
+    }
+
+    if (error) {
+      console.warn('Could not create signed recipe image URL:', fallbackPath, error.message);
+    }
+  }
+
+  const directUrl = getFirstCoverUrl(recipe);
+  if (directUrl) return directUrl;
+
+  const firstStepPhotoUrl = sortByPosition(asArray(recipe.steps))
+    .flatMap((step) => asArray(step.photo_urls))
+    .find((url) => typeof url === 'string' && url.trim().length > 0);
+
+  return firstStepPhotoUrl ?? FALLBACK_RECIPE_IMAGE;
+}
 
 export default function HomeScreen() {
   const { colors } = useTheme();
@@ -44,10 +183,14 @@ export default function HomeScreen() {
   const { coords: userCoords, locationText } = useCurrentLocation();
   const { data: farms = [], isLoading: farmsLoading, error: farmsError } = useFarms();
 
-  // In Season Now
   const [currentProduce, setCurrentProduce] = useState<ProduceItem[]>([]);
   const [produceLoading, setProduceLoading] = useState(false);
   const [produceError, setProduceError] = useState<string | null>(null);
+
+  const [recipesLoading, setRecipesLoading] = useState(false);
+  const [recipesError, setRecipesError] = useState<string | null>(null);
+  const [homeRecipes, setHomeRecipes] = useState<HomeRecipeCardData[]>([]);
+  const [recipeSearchIndex, setRecipeSearchIndex] = useState<Record<string, string>>({});
 
   const metadata = session?.user?.user_metadata as
     | { name?: string; full_name?: string; username?: string }
@@ -75,7 +218,6 @@ export default function HomeScreen() {
     return [...mockGroceryLists].sort((a, b) => toTime(b.date) - toTime(a.date))[0] ?? null;
   }, []);
 
-  // Load current-month produce from Supabase
   useEffect(() => {
     let cancelled = false;
 
@@ -83,7 +225,7 @@ export default function HomeScreen() {
       setProduceLoading(true);
       setProduceError(null);
 
-      const month = new Date().getMonth() + 1; // 1-12
+      const month = new Date().getMonth() + 1;
 
       const { data, error } = await supabase
         .from('produce_item_season_months')
@@ -128,7 +270,69 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // Filter produce using the existing search bar
+  const loadHomeRecipes = useCallback(async () => {
+    try {
+      setRecipesLoading(true);
+      setRecipesError(null);
+
+      const { data, error } = await supabase
+        .from('recipes')
+        .select(
+          'id, user_id, title, description, difficulty, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, tags, created_at, updated_at'
+        )
+        .order('created_at', { ascending: false })
+        .limit(12);
+
+      if (error) throw error;
+
+      const rows = (data ?? []) as StoredRecipe[];
+
+      const hydratedRecipes = await Promise.all(
+        rows.map(async (recipe) => ({
+          id: recipe.id,
+          title: recipe.title,
+          rating: 0,
+          ratingsCount: 0,
+          duration: formatRecipeDuration(recipe.total_time_minutes),
+          difficulty: recipe.difficulty?.trim() || undefined,
+          imageUrl: await resolveRecipeImageUrl(recipe),
+        }))
+      );
+
+      const nextSearchIndex = rows.reduce<Record<string, string>>((index, recipe) => {
+        index[recipe.id] = [
+          recipe.title,
+          recipe.description ?? '',
+          recipe.difficulty ?? '',
+          getRecipeCategory(recipe),
+          ...getTags(recipe),
+          ...getIngredientNames(recipe),
+          ...getStepInstructions(recipe),
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        return index;
+      }, {});
+
+      setHomeRecipes(hydratedRecipes);
+      setRecipeSearchIndex(nextSearchIndex);
+    } catch (error: any) {
+      console.error('Home recipes load failed:', error);
+      setRecipesError(error?.message ?? 'Could not load recipes.');
+      setHomeRecipes([]);
+      setRecipeSearchIndex({});
+    } finally {
+      setRecipesLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadHomeRecipes();
+    }, [loadHomeRecipes])
+  );
+
   const filteredProduce = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return currentProduce;
@@ -138,27 +342,32 @@ export default function HomeScreen() {
     );
   }, [currentProduce, searchQuery]);
 
+  const filteredHomeRecipes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return homeRecipes;
+
+    return homeRecipes.filter((recipe) => recipeSearchIndex[recipe.id]?.includes(q));
+  }, [homeRecipes, recipeSearchIndex, searchQuery]);
+
   const handleFarmPress = (farmId: string) => {
     router.push(`/farm/${farmId}`);
   };
 
   const handleDirectionPress = async (farmId: string) => {
-  const farm = farms.find((f) => f.id === farmId);
-  if (!farm) return;
+    const farm = farms.find((f) => f.id === farmId);
+    if (!farm) return;
 
-  const hasRealAddress =
-    !!farm.street?.trim() && (!!farm.city?.trim() || !!farm.postal_code?.trim());
+    const hasRealAddress =
+      !!farm.street?.trim() && (!!farm.city?.trim() || !!farm.postal_code?.trim());
 
-  const finalDest = hasRealAddress
-    ? formatAddress(farm)
-    : `${farm.latitude},${farm.longitude}`;
+    const finalDest = hasRealAddress ? formatAddress(farm) : `${farm.latitude},${farm.longitude}`;
 
-  try {
-    await openDirections(finalDest);
-  } catch (e) {
-    console.log("Could not open directions", e);
-  }
-};
+    try {
+      await openDirections(finalDest);
+    } catch (e) {
+      console.log('Could not open directions', e);
+    }
+  };
 
   const handleSharePress = async (farmId: string) => {
     const farm = farms.find((f) => f.id === farmId);
@@ -175,10 +384,6 @@ export default function HomeScreen() {
     router.push(`/recipe/${recipeId}`);
   };
 
-  const handleEditRecipePress = (recipeId: string) => {
-    router.push('/recipe/new');
-  };
-
   const handleProducePress = (produceId: string) => {
     router.push(`/produce/${produceId}`);
   };
@@ -186,7 +391,6 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <ScrollView style={styles.container}>
-        {/* Header */}
         <ThemedView style={styles.header}>
           <TouchableOpacity
             style={[styles.avatar, { backgroundColor: theme.brand.primary }]}
@@ -198,12 +402,11 @@ export default function HomeScreen() {
               <ThemedText style={styles.aiText}>{initials}</ThemedText>
             )}
           </TouchableOpacity>
-          <ThemedText type="defaultSemiBold" style={[styles.welcome, { color: colors.text.primary }]}>
+          <ThemedText type="defaultSemiBold" style={[styles.welcome, { color: colors.text.primary }]}> 
             {`Welcome ${displayName}!`}
           </ThemedText>
         </ThemedView>
 
-        {/* Search Bar */}
         <View
           style={[
             styles.searchContainer,
@@ -224,11 +427,8 @@ export default function HomeScreen() {
           />
         </View>
 
-        {/* Grocery List */}
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            Your Grocery List
-          </ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Your Grocery List</ThemedText>
           {mostRecentGroceryList ? (
             <GroceryListCard list={mostRecentGroceryList} style={styles.homeGroceryCard} />
           ) : (
@@ -236,11 +436,8 @@ export default function HomeScreen() {
           )}
         </ThemedView>
 
-        {/* In Season Now */}
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            In Season Now
-          </ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>In Season Now</ThemedText>
 
           {produceLoading ? (
             <ThemedText style={{ color: colors.text.tertiary }}>Loading produce…</ThemedText>
@@ -265,7 +462,7 @@ export default function HomeScreen() {
                   <ThemedText style={[styles.produceName, { color: colors.text.primary }]}>
                     {item.name}
                   </ThemedText>
-                  <ThemedText style={[styles.produceMeta, { color: colors.text.tertiary }]}>
+                  <ThemedText style={[styles.produceMeta, { color: colors.text.tertiary }]}> 
                     {item.category} • {item.default_sold_by}
                   </ThemedText>
                 </TouchableOpacity>
@@ -274,11 +471,8 @@ export default function HomeScreen() {
           )}
         </ThemedView>
 
-        {/* Close Farms */}
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            Close Farms Near You
-          </ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Close Farms Near You</ThemedText>
 
           <ThemedText style={{ color: colors.text.tertiary, marginTop: 2, marginBottom: 2 }}>
             📍 {locationText}
@@ -315,28 +509,37 @@ export default function HomeScreen() {
           )}
         </ThemedView>
 
-        {/* Top Recipes */}
-        <ThemedView style={[styles.section, { marginBottom: 80 }]}>
+        <ThemedView style={[styles.section, { marginBottom: 80 }]}> 
           <View style={styles.sectionHeaderRow}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-              Top Recipes of the Week
-            </ThemedText>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Top Recipes of the Week</ThemedText>
             <TouchableOpacity onPress={() => router.push('/recipe/recipes')} activeOpacity={0.7}>
-              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>
-                Browse All
-              </ThemedText>
+              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>Browse All</ThemedText>
             </TouchableOpacity>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recipesScroll}>
-            {recipes.map((recipe) => (
-              <RecipeCard
-                key={recipe.id}
-                {...recipe}
-                onPress={() => handleRecipePress(recipe.id)}
-                onEditPress={() => handleEditRecipePress(recipe.id)}
-              />
-            ))}
-          </ScrollView>
+
+          {recipesLoading ? (
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>Loading recipes…</ThemedText>
+          ) : recipesError ? (
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>Could not load recipes.</ThemedText>
+          ) : filteredHomeRecipes.length === 0 ? (
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>No recipes found.</ThemedText>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recipesScroll}>
+              {filteredHomeRecipes.map((recipe) => (
+                <RecipeCard
+                  key={recipe.id}
+                  id={recipe.id}
+                  title={recipe.title}
+                  rating={recipe.rating}
+                  ratingsCount={recipe.ratingsCount}
+                  duration={recipe.duration}
+                  difficulty={recipe.difficulty}
+                  imageUrl={recipe.imageUrl}
+                  onPress={() => handleRecipePress(recipe.id)}
+                />
+              ))}
+            </ScrollView>
+          )}
         </ThemedView>
       </ScrollView>
     </SafeAreaView>
@@ -417,8 +620,6 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
   },
-
-  // Produce
   produceScroll: {
     marginTop: theme.spacing.md,
     marginLeft: -theme.spacing.md,
@@ -442,7 +643,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: theme.typography.fontFamily,
   },
-
   farmsScroll: {
     marginTop: theme.spacing.sm,
     marginLeft: -theme.spacing.md,
