@@ -15,7 +15,6 @@ interface RecipeCardProps {
   difficulty?: string;
   imageUrl?: string;
   onPress?: () => void;
-  onEditPress?: () => void;
 }
 
 export function RecipeCard({ 
@@ -27,7 +26,6 @@ export function RecipeCard({
   difficulty,
   imageUrl,
   onPress,
-  onEditPress
 }: RecipeCardProps) {
   const { colors } = useTheme();
 
@@ -86,15 +84,6 @@ export function RecipeCard({
       </View>
 
       {/* Edit Button */}
-      <TouchableOpacity 
-        onPress={onEditPress}
-        style={[styles.editButton, { backgroundColor: theme.brand.primary }]}
-        activeOpacity={0.8}
-      >
-        <ThemedText style={styles.editButtonText}>
-          Edit Recipes
-        </ThemedText>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -146,20 +135,6 @@ const styles = StyleSheet.create({
   },
   durationText: {
     fontSize: theme.typography.fontSizes.h4,
-    fontFamily: theme.typography.fontFamily,
-  },
-  editButton: {
-    marginTop: theme.spacing.sm,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: theme.spacing.lg,
-  },
-  editButtonText: {
-    color: theme.neutral.white,
-    fontSize: theme.typography.fontSizes.h4,
-    fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
   },
 });

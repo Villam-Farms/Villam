@@ -1,34 +1,30 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  View,
-  Text,
-  ScrollView,
-  Image,
-  FlatList,
+  ActivityIndicator,
   Alert,
   Animated,
-  ActivityIndicator,
+  FlatList,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
-import { Stack, router } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Stack, router } from "expo-router";
 import DraggableFlatList, { type RenderItemParams } from "react-native-draggable-flatlist";
 
 import { ThemedView } from "@/components/themed-view";
-import { useTheme } from "@/hooks/useTheme";
 import { theme } from "@/constants/theme";
+import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/lib/supabase";
 
-// Assumes you already created a Supabase Storage bucket named "recipes".
-// If the bucket is private, keep using the stored `path` values and generate signed URLs when rendering.
 const STORAGE_BUCKET = "recipes";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface Ingredient {
   id: string;
@@ -40,7 +36,7 @@ interface Ingredient {
 interface Step {
   id: string;
   instruction: string;
-  photoUris: string[]; // local URIs while editing
+  photoUris: string[];
 }
 
 interface StoredMediaItem {
@@ -60,11 +56,12 @@ interface StoredStep {
 
 type RecipeDifficulty = "Easy" | "Medium" | "Hard";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const DIFFICULTY_OPTIONS: RecipeDifficulty[] = ["Easy", "Medium", "Hard"];
+const MEAL_TAG_OPTIONS = ["Breakfast", "Lunch", "Dinner"];
 
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const onlyDigits = (value: string) => value.replace(/[^0-9]/g, "");
-const DIFFICULTY_OPTIONS: RecipeDifficulty[] = ["Easy", "Medium", "Hard"];
+const normalizeTag = (value: string) => value.trim().replace(/^#+/, "").replace(/\s+/g, " ");
 
 const getFileExtension = (uri: string) => {
   const cleanUri = uri.split("?")[0];
@@ -158,7 +155,17 @@ async function uploadImageToStorage(uri: string, path: string) {
   };
 }
 
-// ─── Sub-components ──────────────────────────────────────────────────────────
+function SectionHeader({ title, colors }: { title: string; colors: any }) {
+  return <Text style={[sectionStyles.title, { color: colors.text.primary }]}>{title}</Text>;
+}
+
+const sectionStyles = StyleSheet.create({
+  title: {
+    fontSize: 18,
+    fontWeight: "700",
+    alignSelf: "flex-start",
+  },
+});
 
 function TimeField({
   label,
@@ -222,11 +229,7 @@ function IngredientRow({
         placeholderTextColor={colors.text.tertiary}
         style={[
           ingStyles.qtyInput,
-          {
-            backgroundColor: colors.input.background,
-            borderColor: colors.border.default,
-            color: colors.text.primary,
-          },
+          { backgroundColor: colors.input.background, borderColor: colors.border.default, color: colors.text.primary },
         ]}
       />
       <TextInput
@@ -236,11 +239,7 @@ function IngredientRow({
         placeholderTextColor={colors.text.tertiary}
         style={[
           ingStyles.unitInput,
-          {
-            backgroundColor: colors.input.background,
-            borderColor: colors.border.default,
-            color: colors.text.primary,
-          },
+          { backgroundColor: colors.input.background, borderColor: colors.border.default, color: colors.text.primary },
         ]}
       />
       <TextInput
@@ -250,11 +249,7 @@ function IngredientRow({
         placeholderTextColor={colors.text.tertiary}
         style={[
           ingStyles.nameInput,
-          {
-            backgroundColor: colors.input.background,
-            borderColor: colors.border.default,
-            color: colors.text.primary,
-          },
+          { backgroundColor: colors.input.background, borderColor: colors.border.default, color: colors.text.primary },
         ]}
       />
       <TouchableOpacity onPress={() => onDelete(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -329,12 +324,7 @@ function StepCard({
 
   return (
     <Animated.View style={{ transform: [{ scale: scaleValue }] }} pointerEvents="box-none">
-      <View
-        style={[
-          stepStyles.card,
-          { backgroundColor: colors.input.background, borderColor: colors.border.default },
-        ]}
-      >
+      <View style={[stepStyles.card, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
         <View style={stepStyles.header}>
           <View style={[stepStyles.stepBadge, { backgroundColor: theme.brand.primary }]}>
             <Text style={stepStyles.stepNum}>{index + 1}</Text>
@@ -344,10 +334,7 @@ function StepCard({
           <TouchableOpacity
             onLongPress={onDragStart}
             delayLongPress={120}
-            style={[
-              stepStyles.dragHandleButton,
-              { backgroundColor: colors.background, borderColor: colors.border.default },
-            ]}
+            style={[stepStyles.dragHandleButton, { backgroundColor: colors.background, borderColor: colors.border.default }]}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
             <Ionicons name="reorder-three-outline" size={20} color={colors.text.secondary} />
@@ -383,10 +370,7 @@ function StepCard({
           ))}
 
           <TouchableOpacity
-            style={[
-              stepStyles.addPhotoBtn,
-              { backgroundColor: colors.background, borderColor: theme.brand.primary },
-            ]}
+            style={[stepStyles.addPhotoBtn, { backgroundColor: colors.background, borderColor: theme.brand.primary }]}
             onPress={() => onAddPhoto(step.id)}
             activeOpacity={0.7}
           >
@@ -408,11 +392,7 @@ const stepStyles = StyleSheet.create({
     gap: 10,
     marginBottom: theme.spacing.sm,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
+  header: { flexDirection: "row", alignItems: "center", gap: 8 },
   stepBadge: {
     width: 26,
     height: 26,
@@ -473,20 +453,6 @@ const stepStyles = StyleSheet.create({
   addPhotoLabel: { fontSize: 10, fontWeight: "600" },
 });
 
-function SectionHeader({ title, colors }: { title: string; colors: any }) {
-  return <Text style={[sectionStyles.title, { color: colors.text.primary }]}>{title}</Text>;
-}
-
-const sectionStyles = StyleSheet.create({
-  title: {
-    fontSize: 18,
-    fontWeight: "700",
-    alignSelf: "flex-start",
-  },
-});
-
-// ─── Main Screen ──────────────────────────────────────────────────────────────
-
 export default function NewRecipeScreen() {
   const { colors } = useTheme();
   const [isDraggingStep, setIsDraggingStep] = useState(false);
@@ -500,6 +466,8 @@ export default function NewRecipeScreen() {
   const [cookTime, setCookTime] = useState("");
   const [additionalTime, setAdditionalTime] = useState("");
   const [servings, setServings] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
 
   const [ingredients, setIngredients] = useState<Ingredient[]>([
     { id: uid(), quantity: "", unit: "", name: "" },
@@ -513,6 +481,7 @@ export default function NewRecipeScreen() {
     (parseInt(additionalTime, 10) || 0);
 
   const totalDisplay = totalMins > 0 ? `${totalMins} min` : "—";
+  const normalizedTagInput = normalizeTag(tagInput);
 
   const hasValidIngredient = useMemo(
     () => ingredients.some((ing) => ing.name.trim().length > 0),
@@ -531,15 +500,12 @@ export default function NewRecipeScreen() {
     const hasBasicInfo = title.trim().length > 0 || description.trim().length > 0;
     const hasTimeInfo =
       prepTime.length > 0 || cookTime.length > 0 || additionalTime.length > 0 || servings.length > 0;
-    const hasIngredientData = ingredients.some(
-      (ing) => ing.quantity.trim() || ing.unit.trim() || ing.name.trim()
-    );
-    const hasStepData = steps.some(
-      (step) => step.instruction.trim().length > 0 || step.photoUris.length > 0
-    );
+    const hasTags = tags.length > 0 || tagInput.trim().length > 0;
+    const hasIngredientData = ingredients.some((ing) => ing.quantity.trim() || ing.unit.trim() || ing.name.trim());
+    const hasStepData = steps.some((step) => step.instruction.trim().length > 0 || step.photoUris.length > 0);
 
-    return hasMedia || hasBasicInfo || hasTimeInfo || hasIngredientData || hasStepData;
-  }, [mediaUris, title, description, prepTime, cookTime, additionalTime, servings, ingredients, steps]);
+    return hasMedia || hasBasicInfo || hasTimeInfo || hasTags || hasIngredientData || hasStepData;
+  }, [mediaUris, title, description, prepTime, cookTime, additionalTime, servings, tags, tagInput, ingredients, steps]);
 
   const confirmLeave = () => {
     if (isSaving) return;
@@ -549,14 +515,10 @@ export default function NewRecipeScreen() {
       return;
     }
 
-    Alert.alert(
-      "Discard recipe?",
-      "You have unsaved changes. If you go back now, your recipe will be lost.",
-      [
-        { text: "Keep editing", style: "cancel" },
-        { text: "Discard", style: "destructive", onPress: () => router.back() },
-      ]
-    );
+    Alert.alert("Discard recipe?", "You have unsaved changes. If you go back now, your recipe will be lost.", [
+      { text: "Keep editing", style: "cancel" },
+      { text: "Discard", style: "destructive", onPress: () => router.back() },
+    ]);
   };
 
   const handleMediaUpload = async () => {
@@ -569,8 +531,38 @@ export default function NewRecipeScreen() {
     setMediaUris((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const addIngredient = () =>
-    setIngredients((prev) => [...prev, { id: uid(), quantity: "", unit: "", name: "" }]);
+  const addTag = () => {
+    const nextTag = normalizeTag(tagInput);
+    if (!nextTag) return;
+
+    const alreadyExists = tags.some((tag) => tag.toLowerCase() === nextTag.toLowerCase());
+
+    if (alreadyExists) {
+      setTagInput("");
+      return;
+    }
+
+    setTags((prev) => [...prev, nextTag]);
+    setTagInput("");
+  };
+
+  const deleteTag = (tagToDelete: string) => {
+    setTags((prev) => prev.filter((tag) => tag !== tagToDelete));
+  };
+
+  const toggleMealTag = (mealTag: string) => {
+    const nextTag = normalizeTag(mealTag);
+    const existingTag = tags.find((tag) => tag.toLowerCase() === nextTag.toLowerCase());
+
+    if (existingTag) {
+      deleteTag(existingTag);
+      return;
+    }
+
+    setTags((prev) => [...prev, nextTag]);
+  };
+
+  const addIngredient = () => setIngredients((prev) => [...prev, { id: uid(), quantity: "", unit: "", name: "" }]);
 
   const updateIngredient = (id: string, field: "quantity" | "unit" | "name", val: string) =>
     setIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, [field]: val } : ing)));
@@ -578,29 +570,23 @@ export default function NewRecipeScreen() {
   const deleteIngredient = (id: string) =>
     setIngredients((prev) => (prev.length > 1 ? prev.filter((i) => i.id !== id) : prev));
 
-  const addStep = () =>
-    setSteps((prev) => [...prev, { id: uid(), instruction: "", photoUris: [] }]);
+  const addStep = () => setSteps((prev) => [...prev, { id: uid(), instruction: "", photoUris: [] }]);
 
   const updateStep = (id: string, text: string) =>
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, instruction: text } : s)));
 
-  const deleteStep = (id: string) =>
-    setSteps((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== id) : prev));
+  const deleteStep = (id: string) => setSteps((prev) => (prev.length > 1 ? prev.filter((s) => s.id !== id) : prev));
 
   const addStepPhoto = async (stepId: string) => {
     const uris = await pickPhotosFromLibrary();
     if (uris.length === 0) return;
 
-    setSteps((prev) =>
-      prev.map((s) => (s.id === stepId ? { ...s, photoUris: [...s.photoUris, ...uris] } : s))
-    );
+    setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, photoUris: [...s.photoUris, ...uris] } : s)));
   };
 
   const deleteStepPhoto = (stepId: string, photoIndex: number) => {
     setSteps((prev) =>
-      prev.map((s) =>
-        s.id === stepId ? { ...s, photoUris: s.photoUris.filter((_, i) => i !== photoIndex) } : s
-      )
+      prev.map((s) => (s.id === stepId ? { ...s, photoUris: s.photoUris.filter((_, i) => i !== photoIndex) } : s))
     );
   };
 
@@ -614,6 +600,16 @@ export default function NewRecipeScreen() {
         Alert.alert("Missing title", "Please give your recipe a title.");
         return;
       }
+
+      const pendingTag = normalizeTag(tagInput);
+      const validTags = Array.from(
+        new Map(
+          [...tags, pendingTag]
+            .map(normalizeTag)
+            .filter(Boolean)
+            .map((tag) => [tag.toLowerCase(), tag])
+        ).values()
+      );
 
       const validIngredients = ingredients
         .map((ing, index) => ({
@@ -663,14 +659,14 @@ export default function NewRecipeScreen() {
         title: title.trim(),
         description: description.trim() || null,
         difficulty,
+        tags: validTags,
         cover_image_url: null,
         cover_image_path: null,
         cover_media: [],
         prep_time_minutes: Number(prepTime || 0),
         cook_time_minutes: Number(cookTime || 0),
         additional_time_minutes: Number(additionalTime || 0),
-        total_time_minutes:
-          Number(prepTime || 0) + Number(cookTime || 0) + Number(additionalTime || 0),
+        total_time_minutes: Number(prepTime || 0) + Number(cookTime || 0) + Number(additionalTime || 0),
         servings: servings ? Number(servings) : null,
         ingredients: validIngredients,
         steps: rawSteps.map((step) => ({
@@ -815,11 +811,7 @@ export default function NewRecipeScreen() {
               activeOpacity={0.85}
               disabled={!canPublish}
             >
-              {isSaving ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.publishBtnText}>Publish</Text>
-              )}
+              {isSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.publishBtnText}>Publish</Text>}
             </TouchableOpacity>
           ),
           headerStyle: { backgroundColor: colors.background },
@@ -832,8 +824,6 @@ export default function NewRecipeScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator
-          indicatorStyle="default"
-          persistentScrollbar
           scrollEnabled={!isDraggingStep}
         >
           <ThemedView style={styles.container}>
@@ -841,10 +831,7 @@ export default function NewRecipeScreen() {
 
             {mediaUris.length === 0 ? (
               <TouchableOpacity
-                style={[
-                  styles.uploadBox,
-                  { backgroundColor: colors.input.background, borderColor: theme.brand.primary },
-                ]}
+                style={[styles.uploadBox, { backgroundColor: colors.input.background, borderColor: theme.brand.primary }]}
                 onPress={handleMediaUpload}
                 activeOpacity={0.7}
               >
@@ -896,12 +883,7 @@ export default function NewRecipeScreen() {
               </View>
             )}
 
-            <View
-              style={[
-                styles.inputWrapper,
-                { backgroundColor: colors.input.background, borderColor: colors.border.default },
-              ]}
-            >
+            <View style={[styles.inputWrapper, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
               <TextInput
                 value={title}
                 onChangeText={setTitle}
@@ -912,12 +894,7 @@ export default function NewRecipeScreen() {
               />
             </View>
 
-            <View
-              style={[
-                styles.descriptionWrapper,
-                { backgroundColor: colors.input.background, borderColor: colors.border.default },
-              ]}
-            >
+            <View style={[styles.descriptionWrapper, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
               <TextInput
                 value={description}
                 onChangeText={setDescription}
@@ -929,12 +906,84 @@ export default function NewRecipeScreen() {
               />
             </View>
 
-            <View
-              style={[
-                styles.difficultyCard,
-                { backgroundColor: colors.input.background, borderColor: colors.border.default },
-              ]}
-            >
+            <View style={[styles.tagsCard, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
+              <SectionHeader title="Tags" colors={colors} />
+              <Text style={[styles.helperText, { color: colors.text.tertiary }]}>
+                Add tags like breakfast, quick, spicy, or dessert
+              </Text>
+
+              <View style={styles.mealTagOptionsRow}>
+                {MEAL_TAG_OPTIONS.map((mealTag) => {
+                  const isSelected = tags.some((tag) => tag.toLowerCase() === mealTag.toLowerCase());
+
+                  return (
+                    <TouchableOpacity
+                      key={mealTag}
+                      onPress={() => toggleMealTag(mealTag)}
+                      activeOpacity={0.8}
+                      style={[
+                        styles.mealTagOption,
+                        {
+                          backgroundColor: isSelected ? theme.brand.primary : colors.background,
+                          borderColor: isSelected ? theme.brand.primary : colors.border.default,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.mealTagOptionText, { color: isSelected ? "#fff" : colors.text.primary }]}>
+                        {mealTag}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <View style={styles.tagInputRow}>
+                <TextInput
+                  value={tagInput}
+                  onChangeText={setTagInput}
+                  onSubmitEditing={addTag}
+                  placeholder="Add a tag"
+                  placeholderTextColor={colors.text.tertiary}
+                  returnKeyType="done"
+                  style={[
+                    styles.tagInput,
+                    { backgroundColor: colors.background, borderColor: colors.border.default, color: colors.text.primary },
+                  ]}
+                />
+
+                <TouchableOpacity
+                  style={[
+                    styles.tagAddBtn,
+                    { backgroundColor: normalizedTagInput ? theme.brand.primary : colors.border.default },
+                  ]}
+                  onPress={addTag}
+                  activeOpacity={0.85}
+                  disabled={!normalizedTagInput}
+                >
+                  <Ionicons name="add" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              {tags.length > 0 ? (
+                <View style={styles.tagChipsRow}>
+                  {tags.map((tag) => (
+                    <TouchableOpacity
+                      key={tag}
+                      style={[styles.tagChip, { backgroundColor: colors.background, borderColor: theme.brand.primary }]}
+                      onPress={() => deleteTag(tag)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.tagChipText, { color: colors.text.primary }]}>#{tag}</Text>
+                      <Ionicons name="close" size={13} color={colors.text.tertiary} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <Text style={[styles.noTagsText, { color: colors.text.tertiary }]}>No tags yet</Text>
+              )}
+            </View>
+
+            <View style={[styles.difficultyCard, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
               <SectionHeader title="Difficulty" colors={colors} />
               <View style={styles.difficultyRow}>
                 {DIFFICULTY_OPTIONS.map((option) => {
@@ -953,12 +1002,7 @@ export default function NewRecipeScreen() {
                         },
                       ]}
                     >
-                      <Text
-                        style={[
-                          styles.difficultyChipText,
-                          { color: isSelected ? "#fff" : colors.text.primary },
-                        ]}
-                      >
+                      <Text style={[styles.difficultyChipText, { color: isSelected ? "#fff" : colors.text.primary }]}>
                         {option}
                       </Text>
                     </TouchableOpacity>
@@ -967,12 +1011,7 @@ export default function NewRecipeScreen() {
               </View>
             </View>
 
-            <View
-              style={[
-                styles.timingCard,
-                { backgroundColor: colors.input.background, borderColor: colors.border.default },
-              ]}
-            >
+            <View style={[styles.timingCard, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
               <SectionHeader title="Time & Servings" colors={colors} />
 
               <View style={styles.timeRow}>
@@ -999,52 +1038,33 @@ export default function NewRecipeScreen() {
                   keyboardType="number-pad"
                   style={[
                     styles.servingsInput,
-                    {
-                      backgroundColor: colors.background,
-                      borderColor: colors.border.default,
-                      color: colors.text.primary,
-                    },
+                    { backgroundColor: colors.background, borderColor: colors.border.default, color: colors.text.primary },
                   ]}
                 />
               </View>
             </View>
 
-            <View
-              style={[
-                styles.sectionCard,
-                { backgroundColor: colors.input.background, borderColor: colors.border.default },
-              ]}
-            >
+            <View style={[styles.sectionCard, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
               <SectionHeader title="Ingredients" colors={colors} />
-              <Text style={[styles.helperText, { color: colors.text.tertiary }]}>Add quantity, unit, and ingredient name for each item</Text>
+              <Text style={[styles.helperText, { color: colors.text.tertiary }]}>
+                Add quantity, unit, and ingredient name for each item
+              </Text>
 
               {ingredients.map((ing) => (
-                <IngredientRow
-                  key={ing.id}
-                  item={ing}
-                  onUpdate={updateIngredient}
-                  onDelete={deleteIngredient}
-                  colors={colors}
-                />
+                <IngredientRow key={ing.id} item={ing} onUpdate={updateIngredient} onDelete={deleteIngredient} colors={colors} />
               ))}
 
-              <TouchableOpacity
-                style={[styles.addRowBtn, { borderColor: theme.brand.primary }]}
-                onPress={addIngredient}
-              >
+              <TouchableOpacity style={[styles.addRowBtn, { borderColor: theme.brand.primary }]} onPress={addIngredient}>
                 <Ionicons name="add" size={18} color={theme.brand.primary} />
                 <Text style={[styles.addRowLabel, { color: theme.brand.primary }]}>Add ingredient</Text>
               </TouchableOpacity>
             </View>
 
-            <View
-              style={[
-                styles.sectionCard,
-                { backgroundColor: colors.input.background, borderColor: colors.border.default },
-              ]}
-            >
+            <View style={[styles.sectionCard, { backgroundColor: colors.input.background, borderColor: colors.border.default }]}>
               <SectionHeader title="Steps" colors={colors} />
-              <Text style={[styles.stepsHint, { color: colors.text.tertiary }]}>Long press and drag to reorder • Step photos upload when you publish</Text>
+              <Text style={[styles.stepsHint, { color: colors.text.tertiary }]}>
+                Long press and drag to reorder • Step photos upload when you publish
+              </Text>
 
               <DraggableFlatList
                 data={steps}
@@ -1103,8 +1123,6 @@ export default function NewRecipeScreen() {
     </>
   );
 }
-
-// ─── Main Styles ─────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
@@ -1204,7 +1222,73 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   thumbnail: { width: "100%", height: "100%" },
-
+  tagsCard: {
+    width: "100%",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    padding: 16,
+    gap: 12,
+  },
+  mealTagOptionsRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  mealTagOption: {
+    flex: 1,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+  },
+  mealTagOptionText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  tagInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  tagInput: {
+    flex: 1,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  tagAddBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tagChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  tagChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+  },
+  tagChipText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  noTagsText: {
+    fontSize: 12,
+    marginTop: -2,
+  },
   difficultyCard: {
     width: "100%",
     borderRadius: 16,
@@ -1229,7 +1313,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
-
   timingCard: {
     width: "100%",
     borderRadius: 16,
@@ -1267,7 +1350,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "center",
   },
-
   sectionCard: {
     width: "100%",
     borderRadius: 16,
@@ -1296,7 +1378,6 @@ const styles = StyleSheet.create({
   stepsListContent: {
     paddingVertical: theme.spacing.xs,
   },
-
   publishBtn: {
     minWidth: 92,
     paddingHorizontal: 18,
