@@ -83,11 +83,24 @@ type StoredRecipe = {
   updated_at: string;
 };
 
+type RecipeRatingRow = {
+  recipe_id: string;
+  user_id: string;
+  rating: number;
+};
+
+type RecipeRatingSummary = {
+  averageRating: number | null;
+  ratingCount: number;
+  currentUserRating: number | null;
+};
+
 type HomeRecipeCardData = {
   id: string;
   title: string;
-  rating: number;
+  rating: number | null;
   ratingsCount: number;
+  currentUserRating: number | null;
   duration: string;
   difficulty?: string;
   imageUrl?: string;
@@ -148,8 +161,6 @@ async function resolveRecipeImageUrl(recipe: StoredRecipe) {
     recipe.cover_image_path ||
     media.find((item) => typeof item?.path === 'string' && item.path.trim().length > 0)?.path;
 
-  // Prefer a signed URL when there is a Storage path.
-  // This works for private buckets and public buckets.
   if (fallbackPath) {
     const { data, error } = await supabase.storage
       .from(RECIPE_BUCKET)
@@ -174,6 +185,37 @@ async function resolveRecipeImageUrl(recipe: StoredRecipe) {
   return firstStepPhotoUrl ?? FALLBACK_RECIPE_IMAGE;
 }
 
+async function getRecipeRatingSummaries(
+  recipeIds: string[],
+  currentUserId: string | null
+): Promise<Record<string, RecipeRatingSummary>> {
+  if (recipeIds.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from('recipe_ratings')
+    .select('recipe_id, user_id, rating')
+    .in('recipe_id', recipeIds);
+
+  if (error) throw error;
+
+  const ratings = (data ?? []) as RecipeRatingRow[];
+
+  return recipeIds.reduce<Record<string, RecipeRatingSummary>>((summaries, recipeId) => {
+    const recipeRatings = ratings.filter((item) => item.recipe_id === recipeId);
+    const total = recipeRatings.reduce((sum, item) => sum + Number(item.rating || 0), 0);
+
+    summaries[recipeId] = {
+      averageRating: recipeRatings.length > 0 ? total / recipeRatings.length : null,
+      ratingCount: recipeRatings.length,
+      currentUserRating: currentUserId
+        ? recipeRatings.find((item) => item.user_id === currentUserId)?.rating ?? null
+        : null,
+    };
+
+    return summaries;
+  }, {});
+}
+
 export default function HomeScreen() {
   const { colors } = useTheme();
   const { session } = useAuth();
@@ -195,6 +237,7 @@ export default function HomeScreen() {
   const metadata = session?.user?.user_metadata as
     | { name?: string; full_name?: string; username?: string }
     | undefined;
+
   const { avatarUrl, displayName, initials } = getProfileDisplay(
     profile,
     metadata,
@@ -286,17 +329,26 @@ export default function HomeScreen() {
       if (error) throw error;
 
       const rows = (data ?? []) as StoredRecipe[];
+      const recipeIds = rows.map((recipe) => recipe.id);
+      const currentUserId = session?.user?.id ?? null;
+
+      const ratingSummaries = await getRecipeRatingSummaries(recipeIds, currentUserId);
 
       const hydratedRecipes = await Promise.all(
-        rows.map(async (recipe) => ({
-          id: recipe.id,
-          title: recipe.title,
-          rating: 0,
-          ratingsCount: 0,
-          duration: formatRecipeDuration(recipe.total_time_minutes),
-          difficulty: recipe.difficulty?.trim() || undefined,
-          imageUrl: await resolveRecipeImageUrl(recipe),
-        }))
+        rows.map(async (recipe) => {
+          const summary = ratingSummaries[recipe.id];
+
+          return {
+            id: recipe.id,
+            title: recipe.title,
+            rating: summary?.averageRating ?? null,
+            ratingsCount: summary?.ratingCount ?? 0,
+            currentUserRating: summary?.currentUserRating ?? null,
+            duration: formatRecipeDuration(recipe.total_time_minutes),
+            difficulty: recipe.difficulty?.trim() || undefined,
+            imageUrl: await resolveRecipeImageUrl(recipe),
+          };
+        })
       );
 
       const nextSearchIndex = rows.reduce<Record<string, string>>((index, recipe) => {
@@ -325,7 +377,7 @@ export default function HomeScreen() {
     } finally {
       setRecipesLoading(false);
     }
-  }, []);
+  }, [session?.user?.id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -402,7 +454,8 @@ export default function HomeScreen() {
               <ThemedText style={styles.aiText}>{initials}</ThemedText>
             )}
           </TouchableOpacity>
-          <ThemedText type="defaultSemiBold" style={[styles.welcome, { color: colors.text.primary }]}> 
+
+          <ThemedText type="defaultSemiBold" style={[styles.welcome, { color: colors.text.primary }]}>
             {`Welcome ${displayName}!`}
           </ThemedText>
         </ThemedView>
@@ -462,7 +515,7 @@ export default function HomeScreen() {
                   <ThemedText style={[styles.produceName, { color: colors.text.primary }]}>
                     {item.name}
                   </ThemedText>
-                  <ThemedText style={[styles.produceMeta, { color: colors.text.tertiary }]}> 
+                  <ThemedText style={[styles.produceMeta, { color: colors.text.tertiary }]}>
                     {item.category} • {item.default_sold_by}
                   </ThemedText>
                 </TouchableOpacity>
@@ -509,7 +562,7 @@ export default function HomeScreen() {
           )}
         </ThemedView>
 
-        <ThemedView style={[styles.section, { marginBottom: 80 }]}> 
+        <ThemedView style={[styles.section, { marginBottom: 80 }]}>
           <View style={styles.sectionHeaderRow}>
             <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Top Recipes of the Week</ThemedText>
             <TouchableOpacity onPress={() => router.push('/recipe/recipes')} activeOpacity={0.7}>
@@ -520,7 +573,7 @@ export default function HomeScreen() {
           {recipesLoading ? (
             <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>Loading recipes…</ThemedText>
           ) : recipesError ? (
-            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>Could not load recipes.</ThemedText>
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>{recipesError}</ThemedText>
           ) : filteredHomeRecipes.length === 0 ? (
             <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>No recipes found.</ThemedText>
           ) : (
@@ -532,6 +585,7 @@ export default function HomeScreen() {
                   title={recipe.title}
                   rating={recipe.rating}
                   ratingsCount={recipe.ratingsCount}
+                  currentUserRating={recipe.currentUserRating}
                   duration={recipe.duration}
                   difficulty={recipe.difficulty}
                   imageUrl={recipe.imageUrl}
