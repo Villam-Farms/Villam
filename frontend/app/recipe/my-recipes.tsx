@@ -89,12 +89,17 @@ const MEAL_ICONS: Record<MealTime, keyof typeof Ionicons.glyphMap> = {
   Uncategorized: "help-circle-outline",
 };
 
-const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+const asArray = <T,>(value: T[] | null | undefined): T[] => {
+  return Array.isArray(value) ? value : [];
+};
 
-const sortByPosition = <T extends { position?: number }>(items: T[]) =>
-  [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+const sortByPosition = <T extends { position?: number }>(items: T[]) => {
+  return [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+};
 
-const getTags = (recipe: StoredRecipe) => asArray(recipe.tags).filter(Boolean);
+const getTags = (recipe: StoredRecipe) => {
+  return asArray(recipe.tags).filter(Boolean);
+};
 
 const getMealTime = (recipe: StoredRecipe): MealTime => {
   const tags = getTags(recipe);
@@ -120,6 +125,7 @@ const getIngredientLabel = (ingredient: StoredIngredient) => {
 
 const formatMinutes = (minutes: number | null | undefined) => {
   const safeMinutes = Number(minutes || 0);
+
   if (safeMinutes <= 0) return "—";
 
   const hours = Math.floor(safeMinutes / 60);
@@ -127,6 +133,7 @@ const formatMinutes = (minutes: number | null | undefined) => {
 
   if (hours <= 0) return `${mins} min`;
   if (mins <= 0) return `${hours} hr`;
+
   return `${hours} hr ${mins} min`;
 };
 
@@ -136,12 +143,15 @@ const getStepPhotoUrls = (recipe: StoredRecipe) => {
 
 const getCoverImageUrl = (recipe: StoredRecipe) => {
   const coverImageUrl = recipe.cover_image_url?.trim();
+
   if (coverImageUrl) return coverImageUrl;
 
   const firstCoverMedia = sortByPosition(asArray(recipe.cover_media)).find((item) => item.url?.trim());
+
   if (firstCoverMedia?.url) return firstCoverMedia.url;
 
   const firstStepPhoto = getStepPhotoUrls(recipe).find((url) => url?.trim());
+
   if (firstStepPhoto) return firstStepPhoto;
 
   return null;
@@ -151,7 +161,6 @@ const resolveStorageUrl = async (path?: string | null, fallbackUrl?: string | nu
   const cleanPath = path?.trim();
   const cleanFallbackUrl = fallbackUrl?.trim() || null;
 
-  // This matches the detail page behavior: try the Storage path first, then fall back to the saved URL.
   if (cleanPath) {
     const { data, error } = await supabase.storage
       .from(RECIPE_BUCKET)
@@ -221,12 +230,14 @@ const hydrateRecipeImages = async (recipe: StoredRecipe): Promise<StoredRecipe> 
 
 export default function MyRecipesScreen() {
   const { colors } = useTheme();
+
   const [recipes, setRecipes] = useState<StoredRecipe[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeMeal, setActiveMeal] = useState<MealFilter>("All");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const deferredSearch = useDeferredValue(searchQuery);
 
   const loadRecipes = useCallback(async ({ refreshing = false } = {}) => {
@@ -239,11 +250,25 @@ export default function MyRecipesScreen() {
 
       setErrorMessage(null);
 
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) throw userError;
+
+      if (!user) {
+        setRecipes([]);
+        setErrorMessage("You need to be signed in to view your recipes.");
+        return;
+      }
+
       const { data, error } = await supabase
         .from("recipes")
         .select(
           "id, user_id, title, description, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, tags, difficulty, created_at, updated_at"
         )
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -341,7 +366,7 @@ export default function MyRecipesScreen() {
     }
 
     return (
-      <View style={[imageStyle, styles.imagePlaceholder, { backgroundColor: colors.input.background }]}> 
+      <View style={[imageStyle, styles.imagePlaceholder, { backgroundColor: colors.input.background }]}>
         <Ionicons name="restaurant-outline" size={26} color={colors.text.tertiary} />
       </View>
     );
@@ -370,7 +395,7 @@ export default function MyRecipesScreen() {
         {renderRecipeImage(recipe, variant === "compact" ? styles.compactImage : styles.recipeImage)}
 
         <View style={styles.cardBody}>
-          <View style={[styles.mealBadge, { backgroundColor: `${mealColor}22` }]}> 
+          <View style={[styles.mealBadge, { backgroundColor: `${mealColor}22` }]}>
             <Ionicons name={mealIcon} size={12} color={mealColor} />
             <ThemedText style={[styles.mealBadgeText, { color: mealColor }]}>{recipe.mealTime}</ThemedText>
           </View>
@@ -389,7 +414,7 @@ export default function MyRecipesScreen() {
           {otherTags.length > 0 && (
             <View style={styles.tagRow}>
               {otherTags.slice(0, variant === "compact" ? 3 : 6).map((tag) => (
-                <View key={`${recipe.id}-${tag}`} style={[styles.tagPill, { backgroundColor: colors.input.background }]}> 
+                <View key={`${recipe.id}-${tag}`} style={[styles.tagPill, { backgroundColor: colors.input.background }]}>
                   <ThemedText style={[styles.tagText, { color: colors.text.secondary }]}>#{tag}</ThemedText>
                 </View>
               ))}
@@ -401,8 +426,9 @@ export default function MyRecipesScreen() {
             <MetaItem icon="flame-outline" label={recipe.difficulty} colors={colors} />
           </View>
 
-          <ThemedText style={[styles.cardSmallText, { color: colors.text.secondary }]}> 
-            {recipe.servings ? `${recipe.servings} servings` : "Servings not set"} • {ingredientCount} ingredients • {stepCount} steps
+          <ThemedText style={[styles.cardSmallText, { color: colors.text.secondary }]}>
+            {recipe.servings ? `${recipe.servings} servings` : "Servings not set"} • {ingredientCount} ingredients •{" "}
+            {stepCount} steps
           </ThemedText>
         </View>
       </TouchableOpacity>
@@ -441,7 +467,7 @@ export default function MyRecipesScreen() {
         <View style={styles.heroCopy}>
           <ThemedText style={[styles.eyebrow, { color: theme.brand.tertiary }]}>My kitchen</ThemedText>
           <ThemedText style={[styles.heroTitle, { color: colors.text.primary }]}>All your recipes, sorted by meal.</ThemedText>
-          <ThemedText style={[styles.heroSubtitle, { color: colors.text.secondary }]}> 
+          <ThemedText style={[styles.heroSubtitle, { color: colors.text.secondary }]}>
             {recipes.length} saved {recipes.length === 1 ? "recipe" : "recipes"} across breakfast, lunch, and dinner.
           </ThemedText>
         </View>
@@ -474,8 +500,9 @@ export default function MyRecipesScreen() {
           })}
         </View>
 
-        <View style={[styles.searchBar, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}> 
+        <View style={[styles.searchBar, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}>
           <Ionicons name="search" size={20} color={colors.text.tertiary} />
+
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -485,6 +512,7 @@ export default function MyRecipesScreen() {
             autoCorrect={false}
             autoCapitalize="none"
           />
+
           {searchQuery.trim().length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={18} color={colors.text.secondary} />
@@ -512,7 +540,8 @@ export default function MyRecipesScreen() {
                 activeOpacity={0.8}
               >
                 {icon && <Ionicons name={icon} size={14} color={isActive ? theme.neutral.white : colors.text.secondary} />}
-                <ThemedText style={[styles.filterChipText, { color: isActive ? theme.neutral.white : colors.text.secondary }]}> 
+
+                <ThemedText style={[styles.filterChipText, { color: isActive ? theme.neutral.white : colors.text.secondary }]}>
                   {meal}
                 </ThemedText>
               </TouchableOpacity>
@@ -551,6 +580,7 @@ export default function MyRecipesScreen() {
           <View style={styles.groupedContent}>
             {(["Breakfast", "Lunch", "Dinner", "Uncategorized"] as MealTime[]).map((meal) => {
               const group = groupedRecipes[meal];
+
               if (group.length === 0) return null;
 
               const color = MEAL_COLORS[meal];
@@ -560,12 +590,14 @@ export default function MyRecipesScreen() {
                 <View key={meal} style={styles.mealSection}>
                   <View style={styles.sectionHeader}>
                     <View style={styles.sectionTitleRow}>
-                      <View style={[styles.sectionIconBadge, { backgroundColor: `${color}22` }]}> 
+                      <View style={[styles.sectionIconBadge, { backgroundColor: `${color}22` }]}>
                         <Ionicons name={icon} size={18} color={color} />
                       </View>
+
                       <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>{meal}</ThemedText>
                     </View>
-                    <ThemedText style={[styles.sectionCount, { color: colors.text.secondary }]}> 
+
+                    <ThemedText style={[styles.sectionCount, { color: colors.text.secondary }]}>
                       {group.length} {group.length === 1 ? "recipe" : "recipes"}
                     </ThemedText>
                   </View>
@@ -618,14 +650,17 @@ function StateCard({
   onAction?: () => void;
 }) {
   return (
-    <View style={[styles.stateCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
+    <View style={[styles.stateCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
       {title === "Loading recipes..." ? (
         <ActivityIndicator size="small" color={theme.brand.primary} />
       ) : (
         <Ionicons name={icon} size={28} color={colors.text.tertiary} />
       )}
+
       <ThemedText style={[styles.stateTitle, { color: colors.text.primary }]}>{title}</ThemedText>
+
       {!!body && <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>{body}</ThemedText>}
+
       {!!actionLabel && !!onAction && (
         <TouchableOpacity style={styles.stateButton} onPress={onAction} activeOpacity={0.85}>
           <ThemedText style={styles.stateButtonText}>{actionLabel}</ThemedText>

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -7,20 +7,20 @@ import {
   StyleSheet,
   TouchableOpacity,
   View,
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+} from "react-native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { Stack, router, useLocalSearchParams } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
-import { ThemedText } from '@/components/themed-text';
-import { theme } from '@/constants/theme';
-import { useTheme } from '@/hooks/useTheme';
-import { supabase } from '@/lib/supabase';
+import { ThemedText } from "@/components/themed-text";
+import { theme } from "@/constants/theme";
+import { useTheme } from "@/hooks/useTheme";
+import { supabase } from "@/lib/supabase";
 
-const RECIPE_BUCKET = 'recipes';
+const RECIPE_BUCKET = "recipes";
 const FALLBACK_RECIPE_IMAGE =
-  'https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=1200&auto=format&fit=crop';
+  "https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=1200&auto=format&fit=crop";
 
 type RecipeMediaItem = {
   path?: string;
@@ -66,13 +66,27 @@ type RecipeRow = {
   updated_at: string;
 };
 
-const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+type RecipeRatingRow = {
+  rating: number;
+  user_id: string;
+};
 
-const sortByPosition = <T extends { position?: number }>(items: T[]) =>
-  [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+type RecipeRatingSummary = {
+  currentUserRating: number | null;
+  averageRating: number | null;
+  ratingCount: number;
+};
+
+const asArray = <T,>(value: T[] | null | undefined): T[] => {
+  return Array.isArray(value) ? value : [];
+};
+
+const sortByPosition = <T extends { position?: number }>(items: T[]) => {
+  return [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+};
 
 function formatIngredientLine(item: IngredientItem) {
-  return [item.quantity, item.unit, item.name].filter(Boolean).join(' ').trim();
+  return [item.quantity, item.unit, item.name].filter(Boolean).join(" ").trim();
 }
 
 function getIngredientNames(ingredients: IngredientItem[]) {
@@ -83,23 +97,25 @@ function getIngredientNames(ingredients: IngredientItem[]) {
 
 function formatMinutes(minutes: number | null | undefined) {
   const safeMinutes = Number(minutes || 0);
-  if (safeMinutes <= 0) return '—';
+
+  if (safeMinutes <= 0) return "—";
 
   const hours = Math.floor(safeMinutes / 60);
   const mins = safeMinutes % 60;
 
   if (hours <= 0) return `${mins} min`;
   if (mins <= 0) return `${hours} hr`;
+
   return `${hours} hr ${mins} min`;
 }
 
 function formatDate(value: string | null | undefined) {
-  if (!value) return '—';
+  if (!value) return "—";
 
-  return new Intl.DateTimeFormat('en', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
   }).format(new Date(value));
 }
 
@@ -114,6 +130,10 @@ async function resolveStorageUrl(path?: string | null, fallbackUrl?: string | nu
 
     if (!error && data?.signedUrl) {
       return data.signedUrl;
+    }
+
+    if (error) {
+      console.warn("Could not create signed image URL:", cleanPath, error.message);
     }
   }
 
@@ -187,34 +207,105 @@ async function hydrateRecipeMedia(recipe: RecipeRow): Promise<RecipeRow> {
   };
 }
 
+async function getRecipeRatingSummary(recipeId: string, userId?: string | null): Promise<RecipeRatingSummary> {
+  const { data, error } = await supabase
+    .from("recipe_ratings")
+    .select("rating, user_id")
+    .eq("recipe_id", recipeId);
+
+  if (error) throw error;
+
+  const ratings = (data ?? []) as RecipeRatingRow[];
+  const total = ratings.reduce((sum, item) => sum + Number(item.rating || 0), 0);
+
+  return {
+    currentUserRating: userId ? ratings.find((item) => item.user_id === userId)?.rating ?? null : null,
+    averageRating: ratings.length > 0 ? total / ratings.length : null,
+    ratingCount: ratings.length,
+  };
+}
+
 export default function RecipeDetailScreen() {
   const { colors } = useTheme();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const insets = useSafeAreaInsets();
 
   const [recipe, setRecipe] = useState<RecipeRow | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string>(FALLBACK_RECIPE_IMAGE);
   const [loading, setLoading] = useState(true);
 
+  const [currentUserRating, setCurrentUserRating] = useState<number | null>(null);
+  const [averageRating, setAverageRating] = useState<number | null>(null);
+  const [ratingCount, setRatingCount] = useState(0);
+  const [savingRating, setSavingRating] = useState(false);
+
+  const applyRatingSummary = useCallback((summary: RecipeRatingSummary) => {
+    setCurrentUserRating(summary.currentUserRating);
+    setAverageRating(summary.averageRating);
+    setRatingCount(summary.ratingCount);
+  }, []);
+
+  const refreshRatings = useCallback(
+    async (recipeId: string, userId?: string | null) => {
+      try {
+        const summary = await getRecipeRatingSummary(recipeId, userId);
+        applyRatingSummary(summary);
+      } catch (error) {
+        console.warn("Could not load recipe ratings:", error);
+        applyRatingSummary({
+          currentUserRating: null,
+          averageRating: null,
+          ratingCount: 0,
+        });
+      }
+    },
+    [applyRatingSummary]
+  );
+
   useFocusEffect(
     useCallback(() => {
-      if (!id || typeof id !== 'string') {
+      if (!id || typeof id !== "string") {
         setRecipe(null);
+        setCurrentUserId(null);
         setLoading(false);
         return;
       }
 
       let isActive = true;
+
       setLoading(true);
+      setRecipe(null);
+      setCurrentUserId(null);
+      setCurrentUserRating(null);
+      setAverageRating(null);
+      setRatingCount(0);
+      setSavingRating(false);
+      setImageUrl(FALLBACK_RECIPE_IMAGE);
 
       (async () => {
         try {
+          const {
+            data: { user },
+            error: userError,
+          } = await supabase.auth.getUser();
+
+          if (userError) {
+            console.warn("Could not check current user:", userError.message);
+          }
+
+          const userId = user?.id ?? null;
+
+          if (isActive) {
+            setCurrentUserId(userId);
+          }
+
           const { data, error } = await supabase
-            .from('recipes')
+            .from("recipes")
             .select(
-              'id, user_id, title, description, difficulty, tags, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, created_at, updated_at'
+              "id, user_id, title, description, difficulty, tags, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, total_time_minutes, servings, ingredients, steps, created_at, updated_at"
             )
-            .eq('id', id)
+            .eq("id", id)
             .single();
 
           if (error) throw error;
@@ -223,18 +314,31 @@ export default function RecipeDetailScreen() {
           const hydratedRecipe = await hydrateRecipeMedia(data as RecipeRow);
           if (!isActive) return;
 
-          setRecipe(hydratedRecipe);
+          const [resolvedImageUrl, ratingSummary] = await Promise.all([
+            resolveRecipeImageUrl(hydratedRecipe),
+            getRecipeRatingSummary(hydratedRecipe.id, userId).catch((ratingError) => {
+              console.warn("Could not load recipe ratings:", ratingError);
 
-          const resolvedImageUrl = await resolveRecipeImageUrl(hydratedRecipe);
+              return {
+                currentUserRating: null,
+                averageRating: null,
+                ratingCount: 0,
+              };
+            }),
+          ]);
+
           if (!isActive) return;
 
+          setRecipe(hydratedRecipe);
           setImageUrl(resolvedImageUrl);
+          applyRatingSummary(ratingSummary);
         } catch (e) {
           if (!isActive) return;
-          console.error('Recipe detail load failed:', e);
 
-          const message = e instanceof Error ? e.message : 'Unable to load recipe';
-          Alert.alert('Error', message);
+          console.error("Recipe detail load failed:", e);
+
+          const message = e instanceof Error ? e.message : "Unable to load recipe";
+          Alert.alert("Error", message);
           setRecipe(null);
         } finally {
           if (!isActive) return;
@@ -245,7 +349,7 @@ export default function RecipeDetailScreen() {
       return () => {
         isActive = false;
       };
-    }, [id])
+    }, [applyRatingSummary, id])
   );
 
   const tags = useMemo(() => asArray(recipe?.tags).filter(Boolean), [recipe]);
@@ -272,9 +376,49 @@ export default function RecipeDetailScreen() {
 
   const ingredientNames = useMemo(() => getIngredientNames(ingredients), [ingredients]);
 
+  const isRecipeOwner = Boolean(recipe && currentUserId && recipe.user_id === currentUserId);
+
+  const handleRateRecipe = useCallback(
+    async (rating: number) => {
+      if (!recipe) return;
+
+      if (!currentUserId) {
+        Alert.alert("Sign in required", "You need to be signed in to rate this recipe.");
+        return;
+      }
+
+      try {
+        setSavingRating(true);
+
+        const { error } = await supabase.from("recipe_ratings").upsert(
+          {
+            recipe_id: recipe.id,
+            user_id: currentUserId,
+            rating,
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "recipe_id,user_id",
+          }
+        );
+
+        if (error) throw error;
+
+        setCurrentUserRating(rating);
+        await refreshRatings(recipe.id, currentUserId);
+      } catch (error: any) {
+        console.error("Rating save failed:", error);
+        Alert.alert("Could not save rating", error?.message ?? "Please try again.");
+      } finally {
+        setSavingRating(false);
+      }
+    },
+    [currentUserId, recipe, refreshRatings]
+  );
+
   if (loading) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["bottom"]}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.loadingState}>
           <ActivityIndicator size="large" color={theme.brand.primary} />
@@ -285,7 +429,7 @@ export default function RecipeDetailScreen() {
 
   if (!recipe) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["bottom"]}>
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.missingState}>
           <TouchableOpacity
@@ -295,8 +439,11 @@ export default function RecipeDetailScreen() {
           >
             <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
           </TouchableOpacity>
+
           <ThemedText style={[styles.missingTitle, { color: colors.text.primary }]}>Recipe not found</ThemedText>
-          <ThemedText style={[styles.missingBody, { color: colors.text.secondary }]}>This recipe could not be loaded.</ThemedText>
+          <ThemedText style={[styles.missingBody, { color: colors.text.secondary }]}>
+            This recipe could not be loaded.
+          </ThemedText>
         </View>
       </SafeAreaView>
     );
@@ -306,41 +453,49 @@ export default function RecipeDetailScreen() {
   const descriptionOffset = descriptionLength > 120 ? Math.min((descriptionLength - 120) / 8, 24) : 0;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.hero}>
           <Image
             source={{ uri: imageUrl }}
             style={styles.heroImage}
             resizeMode="cover"
-            onError={(event) => console.warn('Hero image failed to load:', imageUrl, event.nativeEvent.error)}
+            onError={(event) => console.warn("Hero image failed to load:", imageUrl, event.nativeEvent.error)}
           />
+
           <View style={styles.heroOverlay} />
 
-          <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}> 
+          <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}>
             <TouchableOpacity
-              style={[styles.backButton, { backgroundColor: 'rgba(17, 24, 28, 0.45)' }]}
+              style={[styles.backButton, { backgroundColor: "rgba(17, 24, 28, 0.45)" }]}
               onPress={() => router.back()}
               activeOpacity={0.8}
             >
               <Ionicons name="arrow-back" size={20} color={theme.neutral.white} />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.backButton, { backgroundColor: theme.brand.primary }]}
-              onPress={() => router.push('/recipe/new')}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="create-outline" size={18} color={theme.neutral.white} />
-            </TouchableOpacity>
+            {isRecipeOwner && (
+              <TouchableOpacity
+                style={styles.editRecipeButton}
+                onPress={() => router.push(`/recipe/${recipe.id}/edit`)}
+                activeOpacity={0.85}
+              >
+                <View style={styles.editRecipeIconCircle}>
+                  <Ionicons name="create-outline" size={17} color={theme.brand.primary} />
+                </View>
+                <ThemedText style={styles.editRecipeButtonText}>Edit Recipe</ThemedText>
+              </TouchableOpacity>
+            )}
           </View>
 
-          <View style={[styles.heroContent, { paddingTop: insets.top + 72 }]}> 
+          <View style={[styles.heroContent, { paddingTop: insets.top + 72 }]}>
             <View style={styles.tagRow}>
               <View style={styles.heroTag}>
-                <ThemedText style={styles.heroTagText}>{recipe.difficulty?.trim() || 'Recipe'}</ThemedText>
+                <ThemedText style={styles.heroTagText}>{recipe.difficulty?.trim() || "Recipe"}</ThemedText>
               </View>
+
               {recipe.servings ? (
                 <View style={[styles.heroTag, styles.heroTagAlt]}>
                   <ThemedText style={styles.heroTagText}>{recipe.servings} servings</ThemedText>
@@ -349,13 +504,14 @@ export default function RecipeDetailScreen() {
             </View>
 
             <ThemedText style={styles.heroTitle}>{recipe.title}</ThemedText>
+
             <ThemedText style={styles.heroDescription}>
-              {recipe.description?.trim() || 'A homemade recipe from your collection.'}
+              {recipe.description?.trim() || "A homemade recipe from your collection."}
             </ThemedText>
           </View>
         </View>
 
-        <View style={[styles.metaRow, { marginTop: -theme.spacing['3xl'] + descriptionOffset }]}> 
+        <View style={[styles.metaRow, { marginTop: -theme.spacing["3xl"] + descriptionOffset }]}>
           <InfoCard
             colors={colors}
             icon="time-outline"
@@ -363,6 +519,7 @@ export default function RecipeDetailScreen() {
             label="Total time"
             iconColor={theme.brand.primary}
           />
+
           <InfoCard
             colors={colors}
             icon="restaurant-outline"
@@ -381,6 +538,7 @@ export default function RecipeDetailScreen() {
             iconColor={theme.brand.primary}
             compact
           />
+
           <InfoCard
             colors={colors}
             icon="flame-outline"
@@ -389,6 +547,7 @@ export default function RecipeDetailScreen() {
             iconColor={theme.brand.red}
             compact
           />
+
           <InfoCard
             colors={colors}
             icon="add-circle-outline"
@@ -401,19 +560,34 @@ export default function RecipeDetailScreen() {
 
         <View style={styles.updatedMetaRow}>
           <Ionicons name="calendar-outline" size={13} color={colors.text.tertiary} />
-          <ThemedText style={[styles.updatedMetaText, { color: colors.text.tertiary }]}>Updated {formatDate(recipe.updated_at)}</ThemedText>
+          <ThemedText style={[styles.updatedMetaText, { color: colors.text.tertiary }]}>
+            Updated {formatDate(recipe.updated_at)}
+          </ThemedText>
         </View>
 
+        <RatingCard
+          colors={colors}
+          currentUserRating={currentUserRating}
+          averageRating={averageRating}
+          ratingCount={ratingCount}
+          savingRating={savingRating}
+          onRate={handleRateRecipe}
+        />
+
         {(tags.length > 0 || galleryMedia.length > 1) && (
-          <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
+          <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
             <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Recipe details</ThemedText>
 
             {tags.length > 0 && (
               <View style={styles.overviewBlock}>
                 <ThemedText style={[styles.overviewLabel, { color: colors.text.tertiary }]}>Tags</ThemedText>
+
                 <View style={styles.chipRow}>
                   {tags.map((tag) => (
-                    <View key={tag} style={[styles.tagChip, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}> 
+                    <View
+                      key={tag}
+                      style={[styles.tagChip, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}
+                    >
                       <ThemedText style={[styles.tagChipText, { color: colors.text.secondary }]}>#{tag}</ThemedText>
                     </View>
                   ))}
@@ -424,6 +598,7 @@ export default function RecipeDetailScreen() {
             {galleryMedia.length > 1 && (
               <View style={styles.overviewBlock}>
                 <ThemedText style={[styles.overviewLabel, { color: colors.text.tertiary }]}>Photos</ThemedText>
+
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.galleryRow}>
                   {galleryMedia.map((url, index) => (
                     <Image
@@ -431,7 +606,7 @@ export default function RecipeDetailScreen() {
                       source={{ uri: url }}
                       style={styles.galleryImage}
                       resizeMode="cover"
-                      onError={(event) => console.warn('Gallery image failed to load:', url, event.nativeEvent.error)}
+                      onError={(event) => console.warn("Gallery image failed to load:", url, event.nativeEvent.error)}
                     />
                   ))}
                 </ScrollView>
@@ -440,8 +615,9 @@ export default function RecipeDetailScreen() {
           </View>
         )}
 
-        <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
+        <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
           <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Ingredients</ThemedText>
+
           <View style={styles.ingredientList}>
             {ingredients.length === 0 ? (
               <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>No ingredients added yet.</ThemedText>
@@ -449,14 +625,16 @@ export default function RecipeDetailScreen() {
               ingredients.map((ingredient, index) => (
                 <View key={ingredient.id ?? `${recipe.id}-ingredient-${index}`} style={styles.ingredientRow}>
                   <View style={styles.ingredientDot} />
+
                   <View style={styles.ingredientCopy}>
-                    <ThemedText style={[styles.ingredientAmount, { color: theme.brand.tertiary }]}> 
+                    <ThemedText style={[styles.ingredientAmount, { color: theme.brand.tertiary }]}>
                       {ingredient.quantity || ingredient.unit
-                        ? [ingredient.quantity, ingredient.unit].filter(Boolean).join(' ')
-                        : '—'}
+                        ? [ingredient.quantity, ingredient.unit].filter(Boolean).join(" ")
+                        : "—"}
                     </ThemedText>
-                    <ThemedText style={[styles.ingredientName, { color: colors.text.primary }]}> 
-                      {ingredient.name || formatIngredientLine(ingredient) || 'Untitled ingredient'}
+
+                    <ThemedText style={[styles.ingredientName, { color: colors.text.primary }]}>
+                      {ingredient.name || formatIngredientLine(ingredient) || "Untitled ingredient"}
                     </ThemedText>
                   </View>
                 </View>
@@ -465,8 +643,9 @@ export default function RecipeDetailScreen() {
           </View>
         </View>
 
-        <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
+        <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
           <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Directions</ThemedText>
+
           <View style={styles.stepsList}>
             {steps.length === 0 ? (
               <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>No steps added yet.</ThemedText>
@@ -481,8 +660,8 @@ export default function RecipeDetailScreen() {
                     </View>
 
                     <View style={styles.stepContent}>
-                      <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}> 
-                        {step.instruction?.trim() || 'No instruction provided.'}
+                      <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>
+                        {step.instruction?.trim() || "No instruction provided."}
                       </ThemedText>
 
                       {stepPhotos.length > 0 && (
@@ -497,7 +676,7 @@ export default function RecipeDetailScreen() {
                               source={{ uri: url }}
                               style={styles.stepPhoto}
                               resizeMode="cover"
-                              onError={(event) => console.warn('Step image failed to load:', url, event.nativeEvent.error)}
+                              onError={(event) => console.warn("Step image failed to load:", url, event.nativeEvent.error)}
                             />
                           ))}
                         </ScrollView>
@@ -510,16 +689,91 @@ export default function RecipeDetailScreen() {
           </View>
         </View>
 
-        <View style={[styles.sectionCard, { backgroundColor: '#FFF7E7', borderColor: '#F2D39B' }]}> 
-          <ThemedText style={[styles.sectionTitle, { color: '#6F4B00' }]}>Market note</ThemedText>
-          <ThemedText style={[styles.marketNote, { color: '#7A5A18' }]}> 
+        <View style={[styles.sectionCard, { backgroundColor: "#FFF7E7", borderColor: "#F2D39B" }]}>
+          <ThemedText style={[styles.sectionTitle, { color: "#6F4B00" }]}>Market note</ThemedText>
+
+          <ThemedText style={[styles.marketNote, { color: "#7A5A18" }]}>
             {ingredientNames.length > 0
-              ? `This recipe works best with fresh ingredients, especially ${ingredientNames.slice(0, 2).join(' and ')}.`
-              : 'This recipe works best when made with fresh, seasonal ingredients.'}
+              ? `This recipe works best with fresh ingredients, especially ${ingredientNames.slice(0, 2).join(" and ")}.`
+              : "This recipe works best when made with fresh, seasonal ingredients."}
           </ThemedText>
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function RatingCard({
+  colors,
+  currentUserRating,
+  averageRating,
+  ratingCount,
+  savingRating,
+  onRate,
+}: {
+  colors: any;
+  currentUserRating: number | null;
+  averageRating: number | null;
+  ratingCount: number;
+  savingRating: boolean;
+  onRate: (rating: number) => void;
+}) {
+  const roundedAverage = averageRating === null ? "—" : averageRating.toFixed(1);
+
+  return (
+    <View style={[styles.ratingCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+      <View style={styles.ratingHeader}>
+        <View style={styles.ratingHeaderCopy}>
+          <ThemedText style={[styles.ratingTitle, { color: colors.text.primary }]}>Rate this recipe</ThemedText>
+
+          <ThemedText style={[styles.ratingSubtitle, { color: colors.text.secondary }]}>
+            Your rating: {currentUserRating ? `${currentUserRating}/5` : "Not rated yet"}
+          </ThemedText>
+        </View>
+
+        <View style={styles.ratingAverageBox}>
+          <View style={styles.ratingAverageTopRow}>
+            <Ionicons name="star" size={15} color="#F59E0B" />
+            <ThemedText style={styles.ratingAverageValue}>{roundedAverage}</ThemedText>
+          </View>
+
+          <ThemedText style={styles.ratingAverageLabel}>
+            {ratingCount} {ratingCount === 1 ? "rating" : "ratings"}
+          </ThemedText>
+        </View>
+      </View>
+
+      <View style={styles.starRow}>
+        {[1, 2, 3, 4, 5].map((star) => {
+          const isFilled = Boolean(currentUserRating && star <= currentUserRating);
+
+          return (
+            <TouchableOpacity
+              key={star}
+              onPress={() => onRate(star)}
+              disabled={savingRating}
+              activeOpacity={0.75}
+              style={styles.starButton}
+            >
+              <Ionicons
+                name={isFilled ? "star" : "star-outline"}
+                size={36}
+                color={isFilled ? "#F59E0B" : colors.text.tertiary}
+              />
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {savingRating && (
+        <View style={styles.savingRatingRow}>
+          <ActivityIndicator size="small" color={theme.brand.primary} />
+          <ThemedText style={[styles.savingRatingText, { color: colors.text.secondary }]}>
+            Saving rating...
+          </ThemedText>
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -546,10 +800,12 @@ function InfoCard({
       ]}
     >
       <Ionicons name={icon} size={compact ? 16 : 18} color={iconColor} />
-      <ThemedText style={[compact ? styles.compactMetaValue : styles.metaValue, { color: colors.text.primary }]}> 
+
+      <ThemedText style={[compact ? styles.compactMetaValue : styles.metaValue, { color: colors.text.primary }]}>
         {value}
       </ThemedText>
-      <ThemedText style={[compact ? styles.compactMetaLabel : styles.metaLabel, { color: colors.text.secondary }]}> 
+
+      <ThemedText style={[compact ? styles.compactMetaLabel : styles.metaLabel, { color: colors.text.secondary }]}>
         {label}
       </ThemedText>
     </View>
@@ -558,29 +814,31 @@ function InfoCard({
 
 const styles = StyleSheet.create({
   content: {
-    paddingBottom: theme.spacing['4xl'],
+    paddingBottom: theme.spacing["4xl"],
   },
   hero: {
     minHeight: 420,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   heroImage: {
     ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   heroOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(17, 24, 28, 0.32)',
+    backgroundColor: "rgba(17, 24, 28, 0.32)",
   },
   heroTopRow: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     right: 0,
     paddingHorizontal: theme.spacing.lg,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: theme.spacing.md,
     zIndex: 2,
   },
   backButton: {
@@ -588,9 +846,36 @@ const styles = StyleSheet.create({
     height: 42,
     borderRadius: 21,
     borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderColor: 'transparent',
+    alignItems: "center",
+    justifyContent: "center",
+    borderColor: "transparent",
+  },
+  editRecipeButton: {
+    minHeight: 46,
+    borderRadius: theme.borderRadius.full,
+    paddingLeft: 6,
+    paddingRight: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: theme.brand.primary,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.5)",
+    ...theme.shadows.sm,
+  },
+  editRecipeIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: theme.neutral.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editRecipeButtonText: {
+    color: theme.neutral.white,
+    fontSize: 14,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
   },
   heroContent: {
     paddingHorizontal: theme.spacing.lg,
@@ -598,25 +883,25 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
   },
   tagRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: theme.spacing.sm,
-    flexWrap: 'wrap',
+    flexWrap: "wrap",
   },
   heroTag: {
-    backgroundColor: '#F4EEC7',
+    backgroundColor: "#F4EEC7",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: theme.borderRadius.full,
   },
   heroTagAlt: {
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
   },
   heroTagText: {
     color: theme.brand.tertiary,
     fontSize: 12,
     fontWeight: theme.typography.fontWeights.bold,
     fontFamily: theme.typography.fontFamily,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.8,
   },
   heroTitle: {
@@ -627,14 +912,14 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontFamily,
   },
   heroDescription: {
-    color: 'rgba(255,255,255,0.9)',
+    color: "rgba(255,255,255,0.9)",
     fontSize: 15,
     lineHeight: 22,
     fontFamily: theme.typography.fontFamily,
-    maxWidth: '88%',
+    maxWidth: "88%",
   },
   metaRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
   },
@@ -659,14 +944,14 @@ const styles = StyleSheet.create({
   timeMetaRow: {
     marginTop: theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: theme.spacing.sm,
   },
   updatedMetaRow: {
     marginTop: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
   },
   updatedMetaText: {
@@ -692,6 +977,76 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: theme.typography.fontFamily,
   },
+  ratingCard: {
+    marginTop: theme.spacing.lg,
+    marginHorizontal: theme.spacing.lg,
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  ratingHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+  },
+  ratingHeaderCopy: {
+    flex: 1,
+  },
+  ratingTitle: {
+    fontSize: theme.typography.fontSizes.h2,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  ratingSubtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    fontFamily: theme.typography.fontFamily,
+  },
+  ratingAverageBox: {
+    minWidth: 82,
+    borderRadius: 18,
+    backgroundColor: "#FFF7E7",
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+    alignItems: "center",
+  },
+  ratingAverageTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  ratingAverageValue: {
+    color: "#6F4B00",
+    fontSize: 22,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  ratingAverageLabel: {
+    marginTop: 2,
+    color: "#7A5A18",
+    fontSize: 11,
+    fontWeight: theme.typography.fontWeights.semibold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  starRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  starButton: {
+    padding: 2,
+  },
+  savingRatingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  savingRatingText: {
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily,
+  },
   sectionCard: {
     marginTop: theme.spacing.lg,
     marginHorizontal: theme.spacing.lg,
@@ -710,14 +1065,14 @@ const styles = StyleSheet.create({
   },
   overviewLabel: {
     fontSize: 12,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.8,
     fontWeight: theme.typography.fontWeights.bold,
     fontFamily: theme.typography.fontFamily,
   },
   chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: theme.spacing.sm,
   },
   tagChip: {
@@ -746,8 +1101,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
   },
   ingredientRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: theme.spacing.sm,
   },
   ingredientDot: {
@@ -757,10 +1112,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.brand.primary,
   },
   ingredientCopy: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+    flexDirection: "row",
+    alignItems: "baseline",
     gap: 8,
-    flexWrap: 'wrap',
+    flexWrap: "wrap",
     flex: 1,
   },
   ingredientAmount: {
@@ -778,17 +1133,17 @@ const styles = StyleSheet.create({
     gap: theme.spacing.xl,
   },
   stepRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: theme.spacing.md,
-    alignItems: 'flex-start',
+    alignItems: "flex-start",
   },
   stepBadge: {
     width: 28,
     height: 28,
     borderRadius: 14,
     backgroundColor: theme.brand.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginTop: 2,
   },
   stepBadgeText: {
@@ -826,13 +1181,13 @@ const styles = StyleSheet.create({
   missingState: {
     flex: 1,
     paddingHorizontal: theme.spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   loadingState: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   missingTitle: {
     marginTop: theme.spacing.lg,
@@ -842,7 +1197,7 @@ const styles = StyleSheet.create({
   },
   missingBody: {
     marginTop: theme.spacing.sm,
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: 15,
     lineHeight: 22,
     fontFamily: theme.typography.fontFamily,

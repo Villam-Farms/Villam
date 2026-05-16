@@ -68,12 +68,17 @@ type StoredRecipe = {
 
 const MEAL_TAGS = ["Breakfast", "Lunch", "Dinner"];
 
-const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+const asArray = <T,>(value: T[] | null | undefined): T[] => {
+  return Array.isArray(value) ? value : [];
+};
 
-const sortByPosition = <T extends { position?: number }>(items: T[]) =>
-  [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+const sortByPosition = <T extends { position?: number }>(items: T[]) => {
+  return [...items].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+};
 
-const getTags = (recipe: StoredRecipe) => asArray(recipe.tags).filter(Boolean);
+const getTags = (recipe: StoredRecipe) => {
+  return asArray(recipe.tags).filter(Boolean);
+};
 
 const getMealTags = (recipe: StoredRecipe) => {
   return getTags(recipe).filter((tag) =>
@@ -100,6 +105,7 @@ const getIngredientLabel = (ingredient: StoredIngredient) => {
 
 const formatMinutes = (minutes: number | null | undefined) => {
   const safeMinutes = Number(minutes || 0);
+
   if (safeMinutes <= 0) return "—";
 
   const hours = Math.floor(safeMinutes / 60);
@@ -107,6 +113,7 @@ const formatMinutes = (minutes: number | null | undefined) => {
 
   if (hours <= 0) return `${mins} min`;
   if (mins <= 0) return `${hours} hr`;
+
   return `${hours} hr ${mins} min`;
 };
 
@@ -126,12 +133,15 @@ const getStepPhotoUrls = (recipe: StoredRecipe) => {
 
 const getCoverImageUrl = (recipe: StoredRecipe) => {
   const coverImageUrl = recipe.cover_image_url?.trim();
+
   if (coverImageUrl) return coverImageUrl;
 
   const firstCoverMedia = sortByPosition(asArray(recipe.cover_media)).find((item) => item.url?.trim());
+
   if (firstCoverMedia?.url) return firstCoverMedia.url;
 
   const firstStepPhoto = getStepPhotoUrls(recipe).find((url) => url?.trim());
+
   if (firstStepPhoto) return firstStepPhoto;
 
   return null;
@@ -141,19 +151,20 @@ const resolveStorageUrl = async (path?: string | null, fallbackUrl?: string | nu
   const cleanPath = path?.trim();
   const cleanFallbackUrl = fallbackUrl?.trim() || null;
 
-  // Match the working detail page: try the Storage path first, then fall back to the saved URL.
-  if (cleanPath) {
-    const { data, error } = await supabase.storage
-      .from(RECIPE_BUCKET)
-      .createSignedUrl(cleanPath, 60 * 60);
+  if (!cleanPath) {
+    return cleanFallbackUrl;
+  }
 
-    if (!error && data?.signedUrl) {
-      return data.signedUrl;
-    }
+  const { data, error } = await supabase.storage
+    .from(RECIPE_BUCKET)
+    .createSignedUrl(cleanPath, 60 * 60);
 
-    if (error) {
-      console.warn("Could not create signed image URL:", cleanPath, error.message);
-    }
+  if (!error && data?.signedUrl) {
+    return data.signedUrl;
+  }
+
+  if (error) {
+    console.warn("Could not create signed image URL:", cleanPath, error.message);
   }
 
   return cleanFallbackUrl;
@@ -211,12 +222,14 @@ const hydrateRecipeImages = async (recipe: StoredRecipe): Promise<StoredRecipe> 
 
 export default function RecipesScreen() {
   const { colors } = useTheme();
+
   const [recipes, setRecipes] = useState<StoredRecipe[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const loadRecipes = useCallback(async ({ refreshing = false } = {}) => {
@@ -298,6 +311,7 @@ export default function RecipesScreen() {
 
   const averageTimeLabel = useMemo(() => {
     const timedRecipes = filteredRecipes.filter((recipe) => Number(recipe.total_time_minutes || 0) > 0);
+
     if (timedRecipes.length === 0) return "—";
 
     const average = Math.round(
@@ -322,7 +336,7 @@ export default function RecipesScreen() {
     }
 
     return (
-      <View style={[imageStyle, styles.imagePlaceholder, { backgroundColor: colors.input.background }]}> 
+      <View style={[imageStyle, styles.imagePlaceholder, { backgroundColor: colors.input.background }]}>
         <Ionicons name="restaurant-outline" size={28} color={colors.text.tertiary} />
       </View>
     );
@@ -336,7 +350,9 @@ export default function RecipesScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadRecipes({ refreshing: true })} />}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={() => loadRecipes({ refreshing: true })} />
+        }
       >
         <View style={styles.header}>
           <TouchableOpacity
@@ -359,14 +375,17 @@ export default function RecipesScreen() {
 
         <View style={styles.heroCopy}>
           <ThemedText style={[styles.eyebrow, { color: theme.brand.tertiary }]}>Recipe library</ThemedText>
-          <ThemedText style={[styles.heroTitle, { color: colors.text.primary }]}>Find something good to cook.</ThemedText>
-          <ThemedText style={[styles.heroSubtitle, { color: colors.text.secondary }]}> 
-            Browse your saved recipes by tag, meal, ingredient, or step.
+          <ThemedText style={[styles.heroTitle, { color: colors.text.primary }]}>
+            Find something good to cook.
+          </ThemedText>
+          <ThemedText style={[styles.heroSubtitle, { color: colors.text.secondary }]}>
+            Browse community recipes by tag, meal, ingredient, or step.
           </ThemedText>
         </View>
 
-        <View style={[styles.searchBar, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}> 
+        <View style={[styles.searchBar, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}>
           <Ionicons name="search" size={20} color={colors.text.tertiary} />
+
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -376,6 +395,7 @@ export default function RecipesScreen() {
             autoCorrect={false}
             autoCapitalize="none"
           />
+
           {searchQuery.trim().length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={18} color={colors.text.secondary} />
@@ -428,7 +448,7 @@ export default function RecipesScreen() {
             colors={colors}
             icon="book-outline"
             title="No recipes yet"
-            body="Create your first recipe and it will show up here."
+            body="Create the first community recipe and it will show up here."
             actionLabel="Create recipe"
             onAction={() => router.push("/recipe/new")}
           />
@@ -442,7 +462,7 @@ export default function RecipesScreen() {
         ) : (
           <>
             {heroRecipe && (
-              <View style={[styles.featuredCard, { backgroundColor: colors.card, borderColor: colors.border.light }]}> 
+              <View style={[styles.featuredCard, { backgroundColor: colors.card, borderColor: colors.border.light }]}>
                 {renderRecipeImage(heroRecipe, styles.featuredImage)}
                 <View style={styles.featuredOverlay} />
 
@@ -455,11 +475,14 @@ export default function RecipesScreen() {
 
                     <View style={styles.timePill}>
                       <Ionicons name="time-outline" size={13} color={theme.brand.primary} />
-                      <ThemedText style={styles.timePillText}>{formatMinutes(heroRecipe.total_time_minutes)}</ThemedText>
+                      <ThemedText style={styles.timePillText}>
+                        {formatMinutes(heroRecipe.total_time_minutes)}
+                      </ThemedText>
                     </View>
                   </View>
 
                   <ThemedText style={styles.featuredTitle}>{heroRecipe.title}</ThemedText>
+
                   <ThemedText style={styles.featuredDescription} numberOfLines={3}>
                     {heroRecipe.description || "No description added yet."}
                   </ThemedText>
@@ -467,6 +490,7 @@ export default function RecipesScreen() {
                   {getMealTags(heroRecipe).length > 0 && (
                     <View style={styles.featuredMealRow}>
                       <ThemedText style={styles.featuredMealLabel}>Meal of the day</ThemedText>
+
                       <View style={styles.featuredTagRow}>
                         {getMealTags(heroRecipe).map((tag) => (
                           <View key={tag} style={styles.featuredMealPill}>
@@ -492,7 +516,8 @@ export default function RecipesScreen() {
                     <View>
                       <ThemedText style={styles.featuredFooterLabel}>Recipe info</ThemedText>
                       <ThemedText style={styles.featuredFooterValue}>
-                        {heroRecipe.difficulty} • {heroRecipe.servings ? `${heroRecipe.servings} servings` : "Servings not set"}
+                        {heroRecipe.difficulty} •{" "}
+                        {heroRecipe.servings ? `${heroRecipe.servings} servings` : "Servings not set"}
                       </ThemedText>
                     </View>
 
@@ -509,29 +534,33 @@ export default function RecipesScreen() {
             )}
 
             <View style={styles.statsRow}>
-              <View style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
-                <ThemedText style={[styles.statValue, { color: colors.text.primary }]}>{filteredRecipes.length}</ThemedText>
+              <View style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+                <ThemedText style={[styles.statValue, { color: colors.text.primary }]}>
+                  {filteredRecipes.length}
+                </ThemedText>
                 <ThemedText style={[styles.statLabel, { color: colors.text.secondary }]}>recipes showing</ThemedText>
               </View>
-              <View style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
-                <ThemedText style={[styles.statValue, { color: colors.text.primary }]}>{averageTimeLabel}</ThemedText>
+
+              <View style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+                <ThemedText style={[styles.statValue, { color: colors.text.primary }]}>
+                  {averageTimeLabel}
+                </ThemedText>
                 <ThemedText style={[styles.statLabel, { color: colors.text.secondary }]}>average total time</ThemedText>
               </View>
             </View>
 
             {quickPicks.length > 0 && (
               <>
-                <SectionTitle
-                  colors={colors}
-                  title="Quick picks"
-                  subtitle="Your most recent matching recipes."
-                />
+                <SectionTitle colors={colors} title="Quick picks" subtitle="The most recent matching recipes." />
 
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickPicksRow}>
                   {quickPicks.map((recipe) => (
                     <TouchableOpacity
                       key={recipe.id}
-                      style={[styles.quickPickCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}
+                      style={[
+                        styles.quickPickCard,
+                        { backgroundColor: colors.background, borderColor: colors.border.light },
+                      ]}
                       activeOpacity={0.86}
                       onPress={() => router.push(`/recipe/${recipe.id}`)}
                     >
@@ -541,10 +570,12 @@ export default function RecipesScreen() {
                         <ThemedText style={[styles.quickPickCategory, { color: theme.brand.primary }]} numberOfLines={1}>
                           {getCategory(recipe)}
                         </ThemedText>
+
                         <ThemedText style={[styles.quickPickTitle, { color: colors.text.primary }]} numberOfLines={2}>
                           {recipe.title}
                         </ThemedText>
-                        <ThemedText style={[styles.quickPickMeta, { color: colors.text.secondary }]}> 
+
+                        <ThemedText style={[styles.quickPickMeta, { color: colors.text.secondary }]}>
                           {formatMinutes(recipe.total_time_minutes)} • {recipe.difficulty}
                         </ThemedText>
                       </View>
@@ -575,18 +606,25 @@ export default function RecipesScreen() {
 
                     <View style={styles.recipeTileBody}>
                       <View style={styles.recipeTileTopRow}>
-                        <ThemedText style={[styles.recipeTileCategory, { color: theme.brand.tertiary }]} numberOfLines={1}>
+                        <ThemedText
+                          style={[styles.recipeTileCategory, { color: theme.brand.tertiary }]}
+                          numberOfLines={1}
+                        >
                           {getCategory(recipe)}
                         </ThemedText>
+
                         <View style={styles.recipeTileDatePill}>
                           <Ionicons name="calendar-outline" size={12} color={colors.text.secondary} />
-                          <ThemedText style={[styles.recipeTileDateText, { color: colors.text.secondary }]}> 
+                          <ThemedText style={[styles.recipeTileDateText, { color: colors.text.secondary }]}>
                             {formatDate(recipe.created_at)}
                           </ThemedText>
                         </View>
                       </View>
 
-                      <ThemedText style={[styles.recipeTileTitle, { color: colors.text.primary }]}>{recipe.title}</ThemedText>
+                      <ThemedText style={[styles.recipeTileTitle, { color: colors.text.primary }]}>
+                        {recipe.title}
+                      </ThemedText>
+
                       <ThemedText style={[styles.recipeTileDescription, { color: colors.text.secondary }]} numberOfLines={2}>
                         {recipe.description || "No description added."}
                       </ThemedText>
@@ -594,7 +632,10 @@ export default function RecipesScreen() {
                       {tags.length > 0 && (
                         <View style={styles.tagRow}>
                           {tags.slice(0, 6).map((tag) => (
-                            <View key={`${recipe.id}-${tag}`} style={[styles.tagPill, { backgroundColor: colors.input.background }]}> 
+                            <View
+                              key={`${recipe.id}-${tag}`}
+                              style={[styles.tagPill, { backgroundColor: colors.input.background }]}
+                            >
                               <ThemedText style={[styles.tagText, { color: colors.text.secondary }]}>#{tag}</ThemedText>
                             </View>
                           ))}
@@ -670,14 +711,17 @@ function StateCard({
   onAction?: () => void;
 }) {
   return (
-    <View style={[styles.stateCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
+    <View style={[styles.stateCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
       {title === "Loading recipes..." ? (
         <ActivityIndicator size="small" color={theme.brand.primary} />
       ) : (
         <Ionicons name={icon} size={28} color={colors.text.tertiary} />
       )}
+
       <ThemedText style={[styles.stateTitle, { color: colors.text.primary }]}>{title}</ThemedText>
+
       {!!body && <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>{body}</ThemedText>}
+
       {!!actionLabel && !!onAction && (
         <TouchableOpacity style={styles.stateButton} onPress={onAction} activeOpacity={0.85}>
           <ThemedText style={styles.stateButtonText}>{actionLabel}</ThemedText>
