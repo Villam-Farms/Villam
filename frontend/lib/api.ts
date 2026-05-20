@@ -1,6 +1,8 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+const PRODUCTION_API_URL = "https://villam-backend.onrender.com";
+
 
 function getDevHostIp() {
   const hostUri =
@@ -14,11 +16,24 @@ function normalizeBaseUrl(url: string) {
   return url.trim().replace(/\/+$/, "");
 }
 
-function computeBaseUrl() {
+function getConfiguredApiUrl() {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (envUrl) return normalizeBaseUrl(envUrl);
+  if (envUrl) return envUrl;
 
-  // DEV defaults
+  const extraApiUrl = Constants.expoConfig?.extra?.apiUrl;
+  return typeof extraApiUrl === "string" ? extraApiUrl.trim() : "";
+}
+
+function isLocalNetworkUrl(url: string) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2)(?::|\/|$)/i.test(url);
+}
+
+function computeBaseUrl() {
+  const configuredUrl = getConfiguredApiUrl();
+  if (configuredUrl && (__DEV__ || !isLocalNetworkUrl(configuredUrl))) {
+    return normalizeBaseUrl(configuredUrl);
+  }
+
   if (__DEV__) {
     const ip = getDevHostIp();
     if (ip) return `http://${ip}:8001`;
@@ -28,13 +43,14 @@ function computeBaseUrl() {
     return "http://localhost:8001"; // iOS simulator / web / other
   }
 
-  // Production should set EXPO_PUBLIC_API_URL; this matches the current hosted backend.
-  return "https://villam-backend.onrender.com";
+  return PRODUCTION_API_URL;
 }
 
 export const apiBaseUrl = computeBaseUrl();
 
-console.log("apiBaseUrl =", apiBaseUrl);
+if (__DEV__) {
+  console.log("apiBaseUrl =", apiBaseUrl);
+}
 
 type ApiError = {
   detail?: string;
@@ -51,13 +67,13 @@ export async function apiRequest<T>(
     method?: "GET" | "POST" | "DELETE" | "PUT" | "PATCH";
     accessToken: string;
     body?: unknown;
-    timeoutMs?: number; // default 8s
+    timeoutMs?: number;
     signal?: AbortSignal; // optional external cancel signal
     headers?: Record<string, string>;
   }
 ): Promise<T> {
   const controller = new AbortController();
-  const timeoutMs = opts.timeoutMs ?? 8000;
+  const timeoutMs = opts.timeoutMs ?? (__DEV__ ? 8000 : 30000);
 
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
