@@ -7,6 +7,8 @@
     "backend:start": "uvicorn app.main:app --reload --app-dir backend"
   },
   "dependencies": {
-    "expo": "^55.0.18"
+    "expo": "~55.0.25",
+    "react": "19.2.0",
+    "react-native": "0.83.6"
   }
 }
