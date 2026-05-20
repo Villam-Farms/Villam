@@ -28,8 +28,8 @@ function computeBaseUrl() {
     return "http://localhost:8001"; // iOS simulator / web / other
   }
 
-  // Production should set EXPO_PUBLIC_API_URL; this is a last-resort fallback
-  return "http://127.0.0.1:8001";
+  // Production should set EXPO_PUBLIC_API_URL; this matches the current hosted backend.
+  return "https://villam-backend.onrender.com";
 }
 
 export const apiBaseUrl = computeBaseUrl();
