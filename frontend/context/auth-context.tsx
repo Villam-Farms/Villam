@@ -18,6 +18,12 @@ function getAuthRedirectUri() {
   });
 }
 
+function getHashParams(url: string) {
+  const hash = url.split("#")[1];
+  if (!hash) return new URLSearchParams();
+  return new URLSearchParams(hash);
+}
+
 type SignUpMetadata = {
   name?: string;
   username?: string;
@@ -83,10 +89,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!url || !active) return;
 
       try {
-        const { error } = await supabase.auth.getSessionFromUrl({
-          url,
-          storeSession: true,
-        });
+        const parsed = Linking.parse(url);
+        const code = typeof parsed.queryParams?.code === "string" ? parsed.queryParams.code : null;
+
+        let error: { message: string } | null = null;
+
+        if (code) {
+          const result = await supabase.auth.exchangeCodeForSession(code);
+          error = result.error;
+        } else {
+          const hashParams = getHashParams(url);
+          const accessToken = hashParams.get("access_token");
+          const refreshToken = hashParams.get("refresh_token");
+
+          if (!accessToken || !refreshToken) {
+            return;
+          }
+
+          const result = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          error = result.error;
+        }
 
         if (error) {
           console.log("Could not create auth session from deep link", error.message);
@@ -149,10 +174,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return "Google sign-in cancelled";
         }
 
-        const { error: sessionError } = await supabase.auth.getSessionFromUrl({
-          url: result.url,
-          storeSession: true,
-        });
+        const parsed = Linking.parse(result.url);
+        const code = typeof parsed.queryParams?.code === "string" ? parsed.queryParams.code : null;
+
+        if (!code) {
+          return "Unable to complete Google sign-in";
+        }
+
+        const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
 
         return sessionError?.message ?? null;
       },
