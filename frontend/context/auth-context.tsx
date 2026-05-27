@@ -1,4 +1,5 @@
 import * as AuthSession from "expo-auth-session";
+import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Platform } from "react-native";
@@ -7,6 +8,16 @@ import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
+
+const AUTH_CALLBACK_PATH = "login-callback";
+
+function getAuthRedirectUri() {
+  return AuthSession.makeRedirectUri({
+    scheme: "villam",
+    path: AUTH_CALLBACK_PATH,
+    useProxy: false,
+  });
+}
 
 type SignUpMetadata = {
   name?: string;
@@ -64,6 +75,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    let active = true;
+
+    const completeAuthFromUrl = async (url: string | null) => {
+      if (!url || !active) return;
+
+      try {
+        const { error } = await supabase.auth.getSessionFromUrl({
+          url,
+          storeSession: true,
+        });
+
+        if (error) {
+          console.log("Could not create auth session from deep link", error.message);
+        }
+      } catch (error) {
+        console.log("Could not process auth deep link", error);
+      }
+    };
+
+    Linking.getInitialURL().then(completeAuthFromUrl);
+
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      void completeAuthFromUrl(url);
+    });
+
+    return () => {
+      active = false;
+      subscription.remove();
+    };
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
@@ -78,14 +123,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           password,
           options: {
             data: metadata,
+            emailRedirectTo: getAuthRedirectUri(),
           },
         });
         return error?.message ?? null;
       },
       signInWithGoogle: async () => {
-        const redirectTo = AuthSession.makeRedirectUri({
-          useProxy: Platform.OS !== "web",
-        });
+        const redirectTo =
+          Platform.OS === "web"
+            ? AuthSession.makeRedirectUri({ useProxy: false })
+            : getAuthRedirectUri();
 
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: "google",
