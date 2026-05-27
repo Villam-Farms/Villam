@@ -15,7 +15,6 @@ function getAuthRedirectUri() {
   return AuthSession.makeRedirectUri({
     scheme: "villam",
     path: AUTH_CALLBACK_PATH,
-    useProxy: false,
   });
 }
 
@@ -130,9 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       signInWithGoogle: async () => {
         const redirectTo =
-          Platform.OS === "web"
-            ? AuthSession.makeRedirectUri({ useProxy: false })
-            : getAuthRedirectUri();
+          Platform.OS === "web" ? AuthSession.makeRedirectUri() : getAuthRedirectUri();
 
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: "google",
