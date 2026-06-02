@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
 } from 'react-native';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
@@ -17,35 +17,14 @@ import { useTheme } from '@/hooks/useTheme';
 import { theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  getLocalGroceryListById,
-  saveLocalGroceryList,
-  deleteLocalGroceryList,
-} from '@/lib/local-grocery-lists';
 import { supabase } from '@/lib/supabase';
-
-type TextStyle = {
-  bold?: boolean;
-  underline?: boolean;
-  italic?: boolean;
-};
 
 type ExtendedGroceryItem = {
   id: string;
   name: string;
   checked: boolean;
-  category?: string | null;
-  isPinned?: boolean;
   quantity?: string | null;
   unit?: string | null;
-  textStyle?: TextStyle;
-};
-
-type Category = {
-  id: string;
-  name: string | null;
-  isCollapsed: boolean;
-  items: ExtendedGroceryItem[];
 };
 
 type DBGroceryList = {
@@ -67,15 +46,6 @@ type DBGroceryListItem = {
   created_at: string;
 };
 
-const UNCATEGORIZED_KEY = '__uncategorized__';
-const DEFAULT_SUBCATEGORY_NAME = 'Ingredients';
-const NEW_CATEGORY_PREFIX = '__newcat_';
-
-const isUuid = (value: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-
-const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-
 const formatDisplayDate = (value?: string | null) => {
   if (!value) return 'Today';
 
@@ -89,49 +59,31 @@ const formatDisplayDate = (value?: string | null) => {
   });
 };
 
+const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 export default function GroceryListDetailScreen() {
   const { id } = useLocalSearchParams();
   const { colors } = useTheme();
 
   const listId = Array.isArray(id) ? id[0] : id;
   const isNewList = listId === 'new';
-  const isDbList = typeof listId === 'string' && isUuid(listId);
 
   const [isLoadingList, setIsLoadingList] = useState(!isNewList);
   const [listNotFound, setListNotFound] = useState(false);
-  const [displayDate, setDisplayDate] = useState(isNewList ? 'Today' : '');
-  const [items, setItems] = useState<ExtendedGroceryItem[]>([
-    {
-      id: uid(),
-      name: '',
-      checked: false,
-      category: DEFAULT_SUBCATEGORY_NAME,
-      isPinned: false,
-      quantity: null,
-      unit: null,
-      textStyle: {},
-    },
-  ]);
-
-  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
-  const [categoryNameDrafts, setCategoryNameDrafts] = useState<Record<string, string>>({});
-  const [isPinned, setIsPinned] = useState(false);
+  const [displayDate, setDisplayDate] = useState('Today');
+  const [items, setItems] = useState<ExtendedGroceryItem[]>([]);
   const [title, setTitle] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const itemRefs = useRef<Record<string, TextInput | null>>({});
-  const categoryInputRefs = useRef<Record<string, TextInput | null>>({});
   const scrollRef = useRef<ScrollView | null>(null);
 
-  const createEmptyItem = (category: string | null = DEFAULT_SUBCATEGORY_NAME): ExtendedGroceryItem => ({
+  const createEmptyItem = (): ExtendedGroceryItem => ({
     id: uid(),
     name: '',
     checked: false,
-    category,
-    isPinned: false,
     quantity: null,
     unit: null,
-    textStyle: {},
   });
 
   const scrollToBottom = (delay = 120) => {
@@ -143,6 +95,9 @@ export default function GroceryListDetailScreen() {
   useEffect(() => {
     const loadList = async () => {
       if (isNewList) {
+        setDisplayDate('Today');
+        setTitle('');
+        setItems([]);
         setIsLoadingList(false);
         return;
       }
@@ -154,123 +109,67 @@ export default function GroceryListDetailScreen() {
       }
 
       try {
-        if (isDbList) {
-          const { data: listData, error: listError } = await supabase
-            .from('grocery_lists')
-            .select('id, title, created_at, source_recipe_id')
-            .eq('id', listId)
-            .single();
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
 
-          if (listError || !listData) {
-            console.log('Grocery list load error:', listError);
-            setListNotFound(true);
-            return;
-          }
+        if (userError) throw userError;
 
-          const { data: itemData, error: itemError } = await supabase
-            .from('grocery_list_items')
-            .select('id, list_id, user_id, position, quantity, unit, name, is_checked, created_at')
-            .eq('list_id', listId)
-            .order('position', { ascending: true });
-
-          if (itemError) {
-            console.log('Grocery list items load error:', itemError);
-            setListNotFound(true);
-            return;
-          }
-
-          const mappedItems: ExtendedGroceryItem[] =
-            (itemData as DBGroceryListItem[] | null)?.map((item) => ({
-              id: item.id,
-              name: item.name,
-              checked: item.is_checked,
-              category: DEFAULT_SUBCATEGORY_NAME,
-              isPinned: false,
-              quantity: item.quantity,
-              unit: item.unit,
-              textStyle: {},
-            })) ?? [];
-
-          setItems(mappedItems.length > 0 ? mappedItems : []);
-          setTitle((listData as DBGroceryList).title ?? '');
-          setIsPinned(false);
-          setDisplayDate(formatDisplayDate((listData as DBGroceryList).created_at));
-          return;
-        }
-
-        const localList = await getLocalGroceryListById(listId);
-
-        if (!localList) {
+        if (!user) {
+          Alert.alert('Not signed in', 'Please sign in to view this grocery list.');
           setListNotFound(true);
           return;
         }
 
-        setItems(
-          localList.items.length > 0
-            ? localList.items.map((item: any) => ({
-                id: item.id ?? uid(),
-                name: item.name ?? '',
-                checked: Boolean(item.checked),
-                category: item.category ?? null,
-                isPinned: Boolean(item.isPinned),
-                quantity: item.quantity ?? null,
-                unit: item.unit ?? null,
-                textStyle: item.textStyle ?? {},
-              }))
-            : []
-        );
+        const { data: listData, error: listError } = await supabase
+          .from('grocery_lists')
+          .select('id, title, created_at, source_recipe_id')
+          .eq('id', listId)
+          .eq('user_id', user.id)
+          .single();
 
-        setTitle(localList.title ?? '');
-        setIsPinned(Boolean(localList.isPinned));
-        setDisplayDate(localList.date || '');
+        if (listError || !listData) {
+          console.log('Grocery list load error:', listError);
+          setListNotFound(true);
+          return;
+        }
+
+        const { data: itemData, error: itemError } = await supabase
+          .from('grocery_list_items')
+          .select('id, list_id, user_id, position, quantity, unit, name, is_checked, created_at')
+          .eq('list_id', listId)
+          .eq('user_id', user.id)
+          .order('position', { ascending: true });
+
+        if (itemError) {
+          console.log('Grocery list items load error:', itemError);
+          setListNotFound(true);
+          return;
+        }
+
+        const mappedItems: ExtendedGroceryItem[] =
+          ((itemData ?? []) as DBGroceryListItem[]).map((item) => ({
+            id: item.id,
+            name: item.name,
+            checked: item.is_checked,
+            quantity: item.quantity,
+            unit: item.unit,
+          })) ?? [];
+
+        setItems(mappedItems);
+        setTitle((listData as DBGroceryList).title ?? '');
+        setDisplayDate(formatDisplayDate((listData as DBGroceryList).created_at));
+      } catch (error) {
+        console.log('Load grocery list failed:', error);
+        setListNotFound(true);
       } finally {
         setIsLoadingList(false);
       }
     };
 
     loadList();
-  }, [isNewList, isDbList, listId]);
-
-  const categories = useMemo<Category[]>(() => {
-    const uncategorized: ExtendedGroceryItem[] = [];
-    const map: Record<string, ExtendedGroceryItem[]> = {};
-    const categoryOrder: string[] = [];
-
-    items.forEach((item) => {
-      if (!item.category) {
-        uncategorized.push(item);
-      } else {
-        const key = item.category.trim();
-        if (!map[key]) {
-          map[key] = [];
-          categoryOrder.push(key);
-        }
-        map[key].push(item);
-      }
-    });
-
-    const result: Category[] = [];
-
-    if (uncategorized.length > 0) {
-      result.push({
-        id: UNCATEGORIZED_KEY,
-        name: null,
-        isCollapsed: false,
-        items: uncategorized,
-      });
-    }
-
-    categoryOrder.forEach((name) => {
-      result.push({
-        id: name,
-        name,
-        isCollapsed: Boolean(collapsedCategories[name]),
-        items: map[name],
-      });
-    });
-
-    return result;
-  }, [items, collapsedCategories]);
+  }, [listId, isNewList]);
 
   const updateItem = (itemId: string, updates: Partial<ExtendedGroceryItem>) => {
     setItems((prev) =>
@@ -282,35 +181,14 @@ export default function GroceryListDetailScreen() {
     updateItem(itemId, { checked: !items.find((i) => i.id === itemId)?.checked });
   };
 
-  const toggleItemPin = (itemId: string) => {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.id === itemId ? { ...item, isPinned: !item.isPinned } : item
-      )
-    );
-  };
-
-  const toggleCategory = (id: string) => {
-    setCollapsedCategories((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const addNewItem = (categoryName: string | null) => {
-    const newItem = createEmptyItem(categoryName);
+  const addNewItem = () => {
+    const newItem = createEmptyItem();
     setItems((prev) => [...prev, newItem]);
 
     setTimeout(() => {
       itemRefs.current[newItem.id]?.focus();
       scrollToBottom(0);
     }, 100);
-  };
-
-  const addItemToCurrentList = () => {
-    const targetCategory =
-      isDbList
-        ? DEFAULT_SUBCATEGORY_NAME
-        : categories.find((category) => category.name !== null)?.name ?? DEFAULT_SUBCATEGORY_NAME;
-
-    addNewItem(targetCategory);
   };
 
   const removeItem = (itemId: string) => {
@@ -339,113 +217,47 @@ export default function GroceryListDetailScreen() {
     }, 50);
   };
 
-  const addNewCategory = () => {
-    const newCategoryKey = `${NEW_CATEGORY_PREFIX}${Date.now()}`;
-    const newItem: ExtendedGroceryItem = createEmptyItem(newCategoryKey);
-    newItem.id = uid();
-
-    setItems((prev) => [...prev, newItem]);
-
-    setTimeout(() => {
-      setCategoryNameDrafts((prev) => ({ ...prev, [newCategoryKey]: '' }));
-      categoryInputRefs.current[newCategoryKey]?.focus();
-      scrollToBottom(0);
-    }, 150);
-  };
-
-  const renameCategory = (oldName: string, newName: string) => {
-    setItems((prev) =>
-      prev.map((item) =>
-        item.category === oldName ? { ...item, category: newName } : item
-      )
-    );
-
-    if (categoryInputRefs.current[oldName]) {
-      categoryInputRefs.current[newName] = categoryInputRefs.current[oldName];
-      delete categoryInputRefs.current[oldName];
-    }
-  };
-
-  const deleteCategory = (categoryName: string) => {
-    const namedCategories = categories.filter((category) => category.name !== null);
-    if (namedCategories.length <= 1) {
-      Alert.alert('Cannot delete', 'Keep at least one subcategory in this list.');
-      return;
-    }
-
-    Alert.alert(
-      'Delete subcategory?',
-      `Delete "${categoryName}" and all its items?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setItems((prev) => prev.filter((item) => item.category !== categoryName));
-            setCategoryNameDrafts((prev) => {
-              const next = { ...prev };
-              delete next[categoryName];
-              return next;
-            });
-            setCollapsedCategories((prev) => {
-              const next = { ...prev };
-              delete next[categoryName];
-              return next;
-            });
-          },
-        },
-      ]
-    );
-  };
-
-  const toggleListPin = () => setIsPinned(!isPinned);
-
   const deleteList = async () => {
-    if (isDbList && listId) {
-      Alert.alert('Delete list?', 'This will permanently delete the grocery list.', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('grocery_lists')
-                .delete()
-                .eq('id', listId);
-
-              if (error) throw error;
-              router.replace('/(tabs)/grocerylist');
-            } catch (error: any) {
-              Alert.alert('Delete failed', error?.message ?? 'Could not delete the list.');
-            }
-          },
-        },
-      ]);
+    if (isNewList) {
+      router.back();
       return;
     }
 
-    if (!isNewList && listId) {
-      Alert.alert('Delete list?', 'This will remove the local grocery list.', [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteLocalGroceryList(listId);
-              router.replace('/(tabs)/grocerylist');
-            } catch (error: any) {
-              Alert.alert('Delete failed', error?.message ?? 'Could not delete the list.');
-            }
-          },
-        },
-      ]);
-      return;
-    }
+    if (!listId || typeof listId !== 'string') return;
 
-    router.back();
+    Alert.alert('Delete list?', 'This will permanently delete the grocery list.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const {
+              data: { user },
+              error: userError,
+            } = await supabase.auth.getUser();
+
+            if (userError) throw userError;
+            if (!user) {
+              Alert.alert('Not signed in', 'Please sign in to delete this grocery list.');
+              return;
+            }
+
+            const { error } = await supabase
+              .from('grocery_lists')
+              .delete()
+              .eq('id', listId)
+              .eq('user_id', user.id);
+
+            if (error) throw error;
+
+            router.replace('/(tabs)/grocerylist');
+          } catch (error: any) {
+            Alert.alert('Delete failed', error?.message ?? 'Could not delete the list.');
+          }
+        },
+      },
+    ]);
   };
 
   const handleSave = async () => {
@@ -458,82 +270,104 @@ export default function GroceryListDetailScreen() {
     setIsSaving(true);
 
     try {
-      if (isDbList && listId) {
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-        if (userError) throw userError;
-        if (!user) {
-          Alert.alert('Not signed in', 'Please sign in to save this grocery list.');
-          return;
-        }
+      if (userError) throw userError;
 
-        const cleanDbItems = items
-          .map((item, index) => ({
-            list_id: listId,
-            user_id: user.id,
-            position: index,
-            quantity: item.quantity?.trim() || null,
-            unit: item.unit?.trim() || null,
-            name: item.name.trim(),
-            is_checked: Boolean(item.checked),
-          }))
-          .filter((item) => item.name.length > 0);
+      if (!user) {
+        Alert.alert('Not signed in', 'Please sign in to save this grocery list.');
+        return;
+      }
 
-        const { error: updateListError } = await supabase
+      const cleanDbItems = items
+        .map((item, index) => ({
+          position: index,
+          quantity: item.quantity?.trim() || null,
+          unit: item.unit?.trim() || null,
+          name: item.name.trim(),
+          is_checked: Boolean(item.checked),
+        }))
+        .filter((item) => item.name.length > 0);
+
+      if (isNewList) {
+        const { data: newList, error: createListError } = await supabase
           .from('grocery_lists')
-          .update({ title: trimmedTitle })
-          .eq('id', listId);
+          .insert({
+            user_id: user.id,
+            title: trimmedTitle,
+            source_recipe_id: null,
+          })
+          .select('id, created_at')
+          .single();
 
-        if (updateListError) throw updateListError;
-
-        const { error: deleteItemsError } = await supabase
-          .from('grocery_list_items')
-          .delete()
-          .eq('list_id', listId);
-
-        if (deleteItemsError) throw deleteItemsError;
+        if (createListError) throw createListError;
 
         if (cleanDbItems.length > 0) {
+          const itemsPayload = cleanDbItems.map((item) => ({
+            list_id: newList.id,
+            user_id: user.id,
+            position: item.position,
+            quantity: item.quantity,
+            unit: item.unit,
+            name: item.name,
+            is_checked: item.is_checked,
+          }));
+
           const { error: insertItemsError } = await supabase
             .from('grocery_list_items')
-            .insert(cleanDbItems);
+            .insert(itemsPayload);
 
           if (insertItemsError) throw insertItemsError;
         }
 
-        Alert.alert('Saved', 'Your grocery list was updated.');
+        Alert.alert('Saved', 'Your grocery list was created.');
+        router.replace(`/grocery-list/${newList.id}`);
         return;
       }
 
-      const cleanItems = items
-        .map((item, index) => ({
-          id: item.id || `${Date.now()}-${index}`,
-          name: item.name.trim(),
-          quantity: item.quantity?.trim() || null,
-          unit: item.unit?.trim() || null,
-          checked: Boolean(item.checked),
-          category:
-            item.category && !item.category.startsWith(NEW_CATEGORY_PREFIX)
-              ? item.category.trim()
-              : null,
-          isPinned: Boolean(item.isPinned),
-          sortOrder: index,
-          textStyle: item.textStyle ?? {},
-        }))
-        .filter((item) => item.name.length > 0);
+      if (!listId || typeof listId !== 'string') {
+        Alert.alert('Invalid list', 'This grocery list could not be saved.');
+        return;
+      }
 
-      await saveLocalGroceryList({
-        id: isNewList ? undefined : listId,
-        title: trimmedTitle,
-        date: displayDate || undefined,
-        isPinned,
-        items: cleanItems as any,
-      });
+      const { error: updateListError } = await supabase
+        .from('grocery_lists')
+        .update({ title: trimmedTitle })
+        .eq('id', listId)
+        .eq('user_id', user.id);
 
-      router.replace('/(tabs)/grocerylist');
+      if (updateListError) throw updateListError;
+
+      const { error: deleteItemsError } = await supabase
+        .from('grocery_list_items')
+        .delete()
+        .eq('list_id', listId)
+        .eq('user_id', user.id);
+
+      if (deleteItemsError) throw deleteItemsError;
+
+      if (cleanDbItems.length > 0) {
+        const itemsPayload = cleanDbItems.map((item) => ({
+          list_id: listId,
+          user_id: user.id,
+          position: item.position,
+          quantity: item.quantity,
+          unit: item.unit,
+          name: item.name,
+          is_checked: item.is_checked,
+        }));
+
+        const { error: insertItemsError } = await supabase
+          .from('grocery_list_items')
+          .insert(itemsPayload);
+
+        if (insertItemsError) throw insertItemsError;
+      }
+
+      Alert.alert('Saved', 'Your grocery list was updated.');
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unable to save grocery list.';
@@ -542,9 +376,6 @@ export default function GroceryListDetailScreen() {
       setIsSaving(false);
     }
   };
-
-  const displayCategoryName = (key: string) =>
-    key.startsWith(NEW_CATEGORY_PREFIX) ? '' : key;
 
   if (isLoadingList) {
     return (
@@ -556,7 +387,7 @@ export default function GroceryListDetailScreen() {
     );
   }
 
-  if (!isNewList && listNotFound) {
+  if (listNotFound) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
         <ThemedView style={styles.loadingContainer}>
@@ -579,21 +410,9 @@ export default function GroceryListDetailScreen() {
           ),
           headerRight: () => (
             <View style={styles.headerRight}>
-              {!isNewList && !isDbList && (
-                <TouchableOpacity onPress={toggleListPin}>
-                  <Ionicons
-                    name={isPinned ? 'pin' : 'pin-outline'}
-                    size={24}
-                    color={isPinned ? theme.brand.red : colors.text.primary}
-                  />
-                </TouchableOpacity>
-              )}
-
-              {!isNewList && (
-                <TouchableOpacity onPress={deleteList}>
-                  <Ionicons name="trash-outline" size={24} color={colors.text.primary} />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity onPress={deleteList}>
+                <Ionicons name="trash-outline" size={24} color={colors.text.primary} />
+              </TouchableOpacity>
 
               <TouchableOpacity onPress={handleSave} disabled={isSaving}>
                 <ThemedText
@@ -619,7 +438,7 @@ export default function GroceryListDetailScreen() {
         >
           <ThemedView style={styles.container}>
             <ThemedText style={[styles.date, { color: colors.text.secondary }]}>
-              {isNewList ? 'Today' : displayDate}
+              {displayDate}
             </ThemedText>
 
             <TextInput
@@ -632,7 +451,7 @@ export default function GroceryListDetailScreen() {
 
             <TouchableOpacity
               style={[styles.addItemButton, { borderColor: theme.brand.primary }]}
-              onPress={addItemToCurrentList}
+              onPress={addNewItem}
               activeOpacity={0.8}
             >
               <Ionicons name="add" size={18} color={theme.brand.primary} />
@@ -647,209 +466,93 @@ export default function GroceryListDetailScreen() {
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled"
             >
-              {categories.length === 0 ? (
+              {items.length === 0 ? (
                 <View style={styles.emptyState}>
                   <ThemedText style={{ color: colors.text.tertiary }}>
                     No items yet. Tap “Add item” to start your list.
                   </ThemedText>
                 </View>
               ) : (
-                categories.map((category) => (
-                  <View key={category.id} style={styles.categorySection}>
-                    {category.name !== null &&
-                      (isDbList ? (
-                        <View style={styles.categoryHeaderStatic}>
-                          <ThemedText style={[styles.categoryStaticTitle, { color: colors.text.primary }]}>
-                            {displayCategoryName(category.name)}
-                          </ThemedText>
-                        </View>
-                      ) : (
-                        <View style={styles.categoryHeader}>
-                          <TextInput
-                            ref={(ref) => {
-                              if (category.name) {
-                                categoryInputRefs.current[category.name] = ref;
-                              }
-                            }}
-                            value={
-                              categoryNameDrafts[category.name] ??
-                              displayCategoryName(category.name)
-                            }
-                            onChangeText={(text) =>
-                              setCategoryNameDrafts((prev) => ({
-                                ...prev,
-                                [category.name!]: text,
-                              }))
-                            }
-                            onEndEditing={() => {
-                              const draft = categoryNameDrafts[category.name!];
-                              const trimmed = draft?.trim();
-                              const fallback = `Category ${
-                                categories.filter((c) => c.name !== null).length
-                              }`;
-                              const finalName = trimmed || fallback;
-
-                              if (finalName !== category.name) {
-                                renameCategory(category.name!, finalName);
-                              }
-
-                              setCategoryNameDrafts((prev) => {
-                                const next = { ...prev };
-                                delete next[category.name!];
-                                return next;
-                              });
-
-                              const firstItem = category.items[0];
-                              if (firstItem) {
-                                setTimeout(() => itemRefs.current[firstItem.id]?.focus(), 100);
-                              }
-                            }}
-                            style={[styles.categoryTitle, { color: colors.text.primary }]}
-                            placeholder="Category name..."
-                            placeholderTextColor={colors.text.tertiary}
-                            returnKeyType="done"
-                          />
-                          <View style={styles.categoryHeaderActions}>
-                            <TouchableOpacity
-                              onPress={() => addNewItem(category.name)}
-                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            >
-                              <Ionicons name="add-circle-outline" size={20} color={theme.brand.primary} />
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              onPress={() => deleteCategory(category.name!)}
-                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            >
-                              <Ionicons name="trash-outline" size={18} color={colors.text.tertiary} />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => toggleCategory(category.id)}>
-                              <Ionicons
-                                name={category.isCollapsed ? 'chevron-forward' : 'chevron-down'}
-                                size={20}
-                                color={colors.text.secondary}
-                              />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))}
-
-                    {!category.isCollapsed &&
-                      category.items.map((item) => {
-                        const inCategory = category.name !== null;
-
-                        return (
-                          <View key={item.id} style={styles.itemRow}>
-                            {inCategory ? (
-                              <TouchableOpacity
-                                onPress={() => toggleItem(item.id)}
-                                style={[
-                                  styles.checkbox,
-                                  { borderColor: colors.border.default },
-                                  item.checked && {
-                                    backgroundColor: theme.brand.primary,
-                                    borderColor: theme.brand.primary,
-                                  },
-                                ]}
-                              >
-                                {item.checked && (
-                                  <Ionicons name="checkmark" size={18} color={colors.background} />
-                                )}
-                              </TouchableOpacity>
-                            ) : (
-                              <View style={[styles.bulletDot, { backgroundColor: colors.text.tertiary }]} />
-                            )}
-
-                            <TextInput
-                              value={item.quantity ?? ''}
-                              onChangeText={(text) => updateItem(item.id, { quantity: text })}
-                              placeholder="1"
-                              placeholderTextColor={colors.text.tertiary}
-                              style={[
-                                styles.qtyInput,
-                                {
-                                  backgroundColor: colors.input.background,
-                                  borderColor: colors.border.default,
-                                  color: colors.text.primary,
-                                },
-                              ]}
-                            />
-
-                            <TextInput
-                              value={item.unit ?? ''}
-                              onChangeText={(text) => updateItem(item.id, { unit: text })}
-                              placeholder="unit"
-                              placeholderTextColor={colors.text.tertiary}
-                              style={[
-                                styles.unitInput,
-                                {
-                                  backgroundColor: colors.input.background,
-                                  borderColor: colors.border.default,
-                                  color: colors.text.primary,
-                                },
-                              ]}
-                            />
-
-                            <TextInput
-                              ref={(ref) => {
-                                itemRefs.current[item.id] = ref;
-                              }}
-                              value={item.name}
-                              onChangeText={(text) => updateItem(item.id, { name: text })}
-                              placeholder="Item name"
-                              placeholderTextColor={colors.text.tertiary}
-                              multiline={false}
-                              style={[
-                                styles.itemText,
-                                item.checked && styles.itemTextChecked,
-                                { color: colors.text.primary },
-                                item.textStyle?.bold && { fontWeight: '700' },
-                                item.textStyle?.italic && { fontStyle: 'italic' },
-                                item.textStyle?.underline && { textDecorationLine: 'underline' },
-                                item.checked && item.textStyle?.underline && {
-                                  textDecorationLine: 'underline line-through',
-                                },
-                              ]}
-                              onSubmitEditing={() => addNewItem(item.category ?? null)}
-                              returnKeyType="next"
-                              blurOnSubmit={false}
-                            />
-
-                            <TouchableOpacity onPress={() => toggleItemPin(item.id)} style={styles.rowIconButton}>
-                              {item.isPinned ? (
-                                <Ionicons name="pin" size={18} color={colors.text.primary} />
-                              ) : (
-                                <Ionicons name="pin-outline" size={18} color={colors.text.tertiary} />
-                              )}
-                            </TouchableOpacity>
-
-                            <TouchableOpacity onPress={() => removeItem(item.id)} style={styles.rowIconButton}>
-                              <Ionicons name="remove-circle-outline" size={20} color={colors.text.tertiary} />
-                            </TouchableOpacity>
-                          </View>
-                        );
-                      })}
-
-                    {category.name !== null && !category.isCollapsed && !isDbList && (
-                      <View>
-                        <View style={[styles.itemRow, { opacity: 0.3 }]}>
-                          <View style={[styles.subcatGhostIcon, { borderColor: colors.border.default }]}>
-                            <Ionicons name="list-outline" size={13} color={colors.text.tertiary} />
-                          </View>
-                          <TextInput
-                            placeholder="Add subcategory..."
-                            placeholderTextColor={colors.text.tertiary}
-                            style={[
-                              styles.itemText,
-                              { color: colors.text.primary, fontSize: theme.typography.fontSizes.h4 - 1 },
-                            ]}
-                            onFocus={() => addNewCategory()}
-                            blurOnSubmit={false}
-                          />
-                        </View>
-                      </View>
-                    )}
+                <View style={styles.categorySection}>
+                  <View style={styles.categoryHeaderStatic}>
+                    <ThemedText style={[styles.categoryStaticTitle, { color: colors.text.primary }]}>
+                      Ingredients
+                    </ThemedText>
                   </View>
-                ))
+
+                  {items.map((item) => (
+                    <View key={item.id} style={styles.itemRow}>
+                      <TouchableOpacity
+                        onPress={() => toggleItem(item.id)}
+                        style={[
+                          styles.checkbox,
+                          { borderColor: colors.border.default },
+                          item.checked && {
+                            backgroundColor: theme.brand.primary,
+                            borderColor: theme.brand.primary,
+                          },
+                        ]}
+                      >
+                        {item.checked && (
+                          <Ionicons name="checkmark" size={18} color={colors.background} />
+                        )}
+                      </TouchableOpacity>
+
+                      <TextInput
+                        value={item.quantity ?? ''}
+                        onChangeText={(text) => updateItem(item.id, { quantity: text })}
+                        placeholder="1"
+                        placeholderTextColor={colors.text.tertiary}
+                        style={[
+                          styles.qtyInput,
+                          {
+                            backgroundColor: colors.input.background,
+                            borderColor: colors.border.default,
+                            color: colors.text.primary,
+                          },
+                        ]}
+                      />
+
+                      <TextInput
+                        value={item.unit ?? ''}
+                        onChangeText={(text) => updateItem(item.id, { unit: text })}
+                        placeholder="unit"
+                        placeholderTextColor={colors.text.tertiary}
+                        style={[
+                          styles.unitInput,
+                          {
+                            backgroundColor: colors.input.background,
+                            borderColor: colors.border.default,
+                            color: colors.text.primary,
+                          },
+                        ]}
+                      />
+
+                      <TextInput
+                        ref={(ref) => {
+                          itemRefs.current[item.id] = ref;
+                        }}
+                        value={item.name}
+                        onChangeText={(text) => updateItem(item.id, { name: text })}
+                        placeholder="Item name"
+                        placeholderTextColor={colors.text.tertiary}
+                        multiline={false}
+                        style={[
+                          styles.itemText,
+                          item.checked && styles.itemTextChecked,
+                          { color: colors.text.primary },
+                        ]}
+                        onSubmitEditing={addNewItem}
+                        returnKeyType="next"
+                        blurOnSubmit={false}
+                      />
+
+                      <TouchableOpacity onPress={() => removeItem(item.id)} style={styles.rowIconButton}>
+                        <Ionicons name="remove-circle-outline" size={20} color={colors.text.tertiary} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
               )}
             </ScrollView>
           </ThemedView>
@@ -910,29 +613,12 @@ const styles = StyleSheet.create({
   categorySection: {
     marginBottom: theme.spacing.lg,
   },
-  categoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: theme.spacing.sm,
-  },
   categoryHeaderStatic: {
     marginBottom: theme.spacing.sm,
   },
   categoryStaticTitle: {
     fontSize: theme.typography.fontSizes.h3,
     fontWeight: '600',
-  },
-  categoryTitle: {
-    fontSize: theme.typography.fontSizes.h3,
-    fontWeight: '600',
-    flex: 1,
-  },
-  categoryHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    marginLeft: theme.spacing.sm,
   },
   itemRow: {
     flexDirection: 'row',
@@ -948,24 +634,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 4,
-  },
-  bulletDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 10,
-    marginLeft: 9,
-    opacity: 0.4,
-  },
-  subcatGhostIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: theme.spacing.md,
   },
   qtyInput: {
     width: 48,
