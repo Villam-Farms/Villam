@@ -1,4 +1,3 @@
-// app/grocery-list/[id].tsx
 import {
   StyleSheet,
   View,
@@ -18,12 +17,12 @@ import { useTheme } from '@/hooks/useTheme';
 import { theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { getLocalGroceryListById, saveLocalGroceryList } from '@/lib/local-grocery-lists';
+import {
+  getLocalGroceryListById,
+  saveLocalGroceryList,
+  deleteLocalGroceryList,
+} from '@/lib/local-grocery-lists';
 import { supabase } from '@/lib/supabase';
-
-/* =========================
-   TYPES
-========================= */
 
 type TextStyle = {
   bold?: boolean;
@@ -89,10 +88,6 @@ const formatDisplayDate = (value?: string | null) => {
     year: 'numeric',
   });
 };
-
-/* =========================
-   SCREEN
-========================= */
 
 export default function GroceryListDetailScreen() {
   const { id } = useLocalSearchParams();
@@ -196,7 +191,7 @@ export default function GroceryListDetailScreen() {
               textStyle: {},
             })) ?? [];
 
-          setItems(mappedItems.length > 0 ? mappedItems : [createEmptyItem(DEFAULT_SUBCATEGORY_NAME)]);
+          setItems(mappedItems.length > 0 ? mappedItems : []);
           setTitle((listData as DBGroceryList).title ?? '');
           setIsPinned(false);
           setDisplayDate(formatDisplayDate((listData as DBGroceryList).created_at));
@@ -222,7 +217,7 @@ export default function GroceryListDetailScreen() {
                 unit: item.unit ?? null,
                 textStyle: item.textStyle ?? {},
               }))
-            : [createEmptyItem()]
+            : []
         );
 
         setTitle(localList.title ?? '');
@@ -235,10 +230,6 @@ export default function GroceryListDetailScreen() {
 
     loadList();
   }, [isNewList, isDbList, listId]);
-
-  /* =========================
-     DERIVED CATEGORIES
-  ========================= */
 
   const categories = useMemo<Category[]>(() => {
     const uncategorized: ExtendedGroceryItem[] = [];
@@ -281,10 +272,6 @@ export default function GroceryListDetailScreen() {
     return result;
   }, [items, collapsedCategories]);
 
-  /* =========================
-     ACTIONS
-  ========================= */
-
   const updateItem = (itemId: string, updates: Partial<ExtendedGroceryItem>) => {
     setItems((prev) =>
       prev.map((item) => (item.id === itemId ? { ...item, ...updates } : item))
@@ -317,20 +304,29 @@ export default function GroceryListDetailScreen() {
     }, 100);
   };
 
+  const addItemToCurrentList = () => {
+    const targetCategory =
+      isDbList
+        ? DEFAULT_SUBCATEGORY_NAME
+        : categories.find((category) => category.name !== null)?.name ?? DEFAULT_SUBCATEGORY_NAME;
+
+    addNewItem(targetCategory);
+  };
+
   const removeItem = (itemId: string) => {
     let focusTargetId: string | null = null;
 
     setItems((prev) => {
-      if (prev.length <= 1) {
-        return prev;
-      }
-
       const removeIndex = prev.findIndex((item) => item.id === itemId);
-      if (removeIndex === -1) {
-        return prev;
-      }
+      if (removeIndex === -1) return prev;
 
       const next = prev.filter((item) => item.id !== itemId);
+
+      if (next.length === 0) {
+        focusTargetId = null;
+        return [];
+      }
+
       const fallbackIndex = Math.max(0, removeIndex - 1);
       focusTargetId = next[fallbackIndex]?.id ?? next[0]?.id ?? null;
       return next;
@@ -430,6 +426,25 @@ export default function GroceryListDetailScreen() {
       return;
     }
 
+    if (!isNewList && listId) {
+      Alert.alert('Delete list?', 'This will remove the local grocery list.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteLocalGroceryList(listId);
+              router.replace('/(tabs)/grocerylist');
+            } catch (error: any) {
+              Alert.alert('Delete failed', error?.message ?? 'Could not delete the list.');
+            }
+          },
+        },
+      ]);
+      return;
+    }
+
     router.back();
   };
 
@@ -460,8 +475,8 @@ export default function GroceryListDetailScreen() {
             list_id: listId,
             user_id: user.id,
             position: index,
-            quantity: item.quantity ?? null,
-            unit: item.unit ?? null,
+            quantity: item.quantity?.trim() || null,
+            unit: item.unit?.trim() || null,
             name: item.name.trim(),
             is_checked: Boolean(item.checked),
           }))
@@ -497,8 +512,8 @@ export default function GroceryListDetailScreen() {
         .map((item, index) => ({
           id: item.id || `${Date.now()}-${index}`,
           name: item.name.trim(),
-          quantity: item.quantity ?? null,
-          unit: item.unit ?? null,
+          quantity: item.quantity?.trim() || null,
+          unit: item.unit?.trim() || null,
           checked: Boolean(item.checked),
           category:
             item.category && !item.category.startsWith(NEW_CATEGORY_PREFIX)
@@ -531,10 +546,6 @@ export default function GroceryListDetailScreen() {
   const displayCategoryName = (key: string) =>
     key.startsWith(NEW_CATEGORY_PREFIX) ? '' : key;
 
-  /* =========================
-     EMPTY STATE
-  ========================= */
-
   if (isLoadingList) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -554,10 +565,6 @@ export default function GroceryListDetailScreen() {
       </SafeAreaView>
     );
   }
-
-  /* =========================
-     RENDER
-  ========================= */
 
   return (
     <>
@@ -623,118 +630,164 @@ export default function GroceryListDetailScreen() {
               placeholderTextColor={colors.text.tertiary}
             />
 
+            <TouchableOpacity
+              style={[styles.addItemButton, { borderColor: theme.brand.primary }]}
+              onPress={addItemToCurrentList}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={18} color={theme.brand.primary} />
+              <ThemedText style={[styles.addItemButtonText, { color: theme.brand.primary }]}>
+                Add item
+              </ThemedText>
+            </TouchableOpacity>
+
             <ScrollView
               ref={scrollRef}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled"
             >
-              {categories.map((category) => (
-                <View key={category.id} style={styles.categorySection}>
-                  {category.name !== null &&
-                    (isDbList ? (
-                      <View style={styles.categoryHeaderStatic}>
-                        <ThemedText style={[styles.categoryStaticTitle, { color: colors.text.primary }]}>
-                          {displayCategoryName(category.name)}
-                        </ThemedText>
-                      </View>
-                    ) : (
-                      <View style={styles.categoryHeader}>
-                        <TextInput
-                          ref={(ref) => {
-                            if (category.name) {
-                              categoryInputRefs.current[category.name] = ref;
-                            }
-                          }}
-                          value={
-                            categoryNameDrafts[category.name] ??
-                            displayCategoryName(category.name)
-                          }
-                          onChangeText={(text) =>
-                            setCategoryNameDrafts((prev) => ({
-                              ...prev,
-                              [category.name!]: text,
-                            }))
-                          }
-                          onEndEditing={() => {
-                            const draft = categoryNameDrafts[category.name!];
-                            const trimmed = draft?.trim();
-                            const fallback = `Category ${
-                              categories.filter((c) => c.name !== null).length
-                            }`;
-                            const finalName = trimmed || fallback;
-
-                            if (finalName !== category.name) {
-                              renameCategory(category.name!, finalName);
-                            }
-
-                            setCategoryNameDrafts((prev) => {
-                              const next = { ...prev };
-                              delete next[category.name!];
-                              return next;
-                            });
-
-                            const firstItem = category.items[0];
-                            if (firstItem) {
-                              setTimeout(() => itemRefs.current[firstItem.id]?.focus(), 100);
-                            }
-                          }}
-                          style={[styles.categoryTitle, { color: colors.text.primary }]}
-                          placeholder="Category name..."
-                          placeholderTextColor={colors.text.tertiary}
-                          returnKeyType="done"
-                        />
-                        <View style={styles.categoryHeaderActions}>
-                          <TouchableOpacity
-                            onPress={() => deleteCategory(category.name!)}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          >
-                            <Ionicons name="trash-outline" size={18} color={colors.text.tertiary} />
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => toggleCategory(category.id)}>
-                            <Ionicons
-                              name={category.isCollapsed ? 'chevron-forward' : 'chevron-down'}
-                              size={20}
-                              color={colors.text.secondary}
-                            />
-                          </TouchableOpacity>
+              {categories.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <ThemedText style={{ color: colors.text.tertiary }}>
+                    No items yet. Tap “Add item” to start your list.
+                  </ThemedText>
+                </View>
+              ) : (
+                categories.map((category) => (
+                  <View key={category.id} style={styles.categorySection}>
+                    {category.name !== null &&
+                      (isDbList ? (
+                        <View style={styles.categoryHeaderStatic}>
+                          <ThemedText style={[styles.categoryStaticTitle, { color: colors.text.primary }]}>
+                            {displayCategoryName(category.name)}
+                          </ThemedText>
                         </View>
-                      </View>
-                    ))}
+                      ) : (
+                        <View style={styles.categoryHeader}>
+                          <TextInput
+                            ref={(ref) => {
+                              if (category.name) {
+                                categoryInputRefs.current[category.name] = ref;
+                              }
+                            }}
+                            value={
+                              categoryNameDrafts[category.name] ??
+                              displayCategoryName(category.name)
+                            }
+                            onChangeText={(text) =>
+                              setCategoryNameDrafts((prev) => ({
+                                ...prev,
+                                [category.name!]: text,
+                              }))
+                            }
+                            onEndEditing={() => {
+                              const draft = categoryNameDrafts[category.name!];
+                              const trimmed = draft?.trim();
+                              const fallback = `Category ${
+                                categories.filter((c) => c.name !== null).length
+                              }`;
+                              const finalName = trimmed || fallback;
 
-                  {!category.isCollapsed &&
-                    category.items.map((item) => {
-                      const inCategory = category.name !== null;
-                      const amount = [item.quantity, item.unit].filter(Boolean).join(' ');
+                              if (finalName !== category.name) {
+                                renameCategory(category.name!, finalName);
+                              }
 
-                      return (
-                        <View key={item.id} style={styles.itemRow}>
-                          {inCategory ? (
+                              setCategoryNameDrafts((prev) => {
+                                const next = { ...prev };
+                                delete next[category.name!];
+                                return next;
+                              });
+
+                              const firstItem = category.items[0];
+                              if (firstItem) {
+                                setTimeout(() => itemRefs.current[firstItem.id]?.focus(), 100);
+                              }
+                            }}
+                            style={[styles.categoryTitle, { color: colors.text.primary }]}
+                            placeholder="Category name..."
+                            placeholderTextColor={colors.text.tertiary}
+                            returnKeyType="done"
+                          />
+                          <View style={styles.categoryHeaderActions}>
                             <TouchableOpacity
-                              onPress={() => toggleItem(item.id)}
+                              onPress={() => addNewItem(category.name)}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Ionicons name="add-circle-outline" size={20} color={theme.brand.primary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => deleteCategory(category.name!)}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                              <Ionicons name="trash-outline" size={18} color={colors.text.tertiary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => toggleCategory(category.id)}>
+                              <Ionicons
+                                name={category.isCollapsed ? 'chevron-forward' : 'chevron-down'}
+                                size={20}
+                                color={colors.text.secondary}
+                              />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+
+                    {!category.isCollapsed &&
+                      category.items.map((item) => {
+                        const inCategory = category.name !== null;
+
+                        return (
+                          <View key={item.id} style={styles.itemRow}>
+                            {inCategory ? (
+                              <TouchableOpacity
+                                onPress={() => toggleItem(item.id)}
+                                style={[
+                                  styles.checkbox,
+                                  { borderColor: colors.border.default },
+                                  item.checked && {
+                                    backgroundColor: theme.brand.primary,
+                                    borderColor: theme.brand.primary,
+                                  },
+                                ]}
+                              >
+                                {item.checked && (
+                                  <Ionicons name="checkmark" size={18} color={colors.background} />
+                                )}
+                              </TouchableOpacity>
+                            ) : (
+                              <View style={[styles.bulletDot, { backgroundColor: colors.text.tertiary }]} />
+                            )}
+
+                            <TextInput
+                              value={item.quantity ?? ''}
+                              onChangeText={(text) => updateItem(item.id, { quantity: text })}
+                              placeholder="1"
+                              placeholderTextColor={colors.text.tertiary}
                               style={[
-                                styles.checkbox,
-                                { borderColor: colors.border.default },
-                                item.checked && {
-                                  backgroundColor: theme.brand.primary,
-                                  borderColor: theme.brand.primary,
+                                styles.qtyInput,
+                                {
+                                  backgroundColor: colors.input.background,
+                                  borderColor: colors.border.default,
+                                  color: colors.text.primary,
                                 },
                               ]}
-                            >
-                              {item.checked && (
-                                <Ionicons name="checkmark" size={18} color={colors.background} />
-                              )}
-                            </TouchableOpacity>
-                          ) : (
-                            <View style={[styles.bulletDot, { backgroundColor: colors.text.tertiary }]} />
-                          )}
+                            />
 
-                          <View style={styles.itemCopy}>
-                            {!!amount && (
-                              <ThemedText style={[styles.itemAmount, { color: theme.brand.tertiary }]}>
-                                {amount}
-                              </ThemedText>
-                            )}
+                            <TextInput
+                              value={item.unit ?? ''}
+                              onChangeText={(text) => updateItem(item.id, { unit: text })}
+                              placeholder="unit"
+                              placeholderTextColor={colors.text.tertiary}
+                              style={[
+                                styles.unitInput,
+                                {
+                                  backgroundColor: colors.input.background,
+                                  borderColor: colors.border.default,
+                                  color: colors.text.primary,
+                                },
+                              ]}
+                            />
 
                             <TextInput
                               ref={(ref) => {
@@ -757,49 +810,47 @@ export default function GroceryListDetailScreen() {
                                 },
                               ]}
                               onSubmitEditing={() => addNewItem(item.category ?? null)}
-                              onKeyPress={(e) => {
-                                if (
-                                  e.nativeEvent.key === 'Backspace' &&
-                                  item.name.length === 0
-                                ) {
-                                  removeItem(item.id);
-                                }
-                              }}
                               returnKeyType="next"
                               blurOnSubmit={false}
                             />
+
+                            <TouchableOpacity onPress={() => toggleItemPin(item.id)} style={styles.rowIconButton}>
+                              {item.isPinned ? (
+                                <Ionicons name="pin" size={18} color={colors.text.primary} />
+                              ) : (
+                                <Ionicons name="pin-outline" size={18} color={colors.text.tertiary} />
+                              )}
+                            </TouchableOpacity>
+
+                            <TouchableOpacity onPress={() => removeItem(item.id)} style={styles.rowIconButton}>
+                              <Ionicons name="remove-circle-outline" size={20} color={colors.text.tertiary} />
+                            </TouchableOpacity>
                           </View>
+                        );
+                      })}
 
-                          <TouchableOpacity onPress={() => toggleItemPin(item.id)}>
-                            {item.isPinned && (
-                              <Ionicons name="pin" size={18} color={colors.text.primary} />
-                            )}
-                          </TouchableOpacity>
+                    {category.name !== null && !category.isCollapsed && !isDbList && (
+                      <View>
+                        <View style={[styles.itemRow, { opacity: 0.3 }]}>
+                          <View style={[styles.subcatGhostIcon, { borderColor: colors.border.default }]}>
+                            <Ionicons name="list-outline" size={13} color={colors.text.tertiary} />
+                          </View>
+                          <TextInput
+                            placeholder="Add subcategory..."
+                            placeholderTextColor={colors.text.tertiary}
+                            style={[
+                              styles.itemText,
+                              { color: colors.text.primary, fontSize: theme.typography.fontSizes.h4 - 1 },
+                            ]}
+                            onFocus={() => addNewCategory()}
+                            blurOnSubmit={false}
+                          />
                         </View>
-                      );
-                    })}
-
-                  {category.name !== null && !category.isCollapsed && !isDbList && (
-                    <View>
-                      <View style={[styles.itemRow, { opacity: 0.3 }]}>
-                        <View style={[styles.subcatGhostIcon, { borderColor: colors.border.default }]}>
-                          <Ionicons name="list-outline" size={13} color={colors.text.tertiary} />
-                        </View>
-                        <TextInput
-                          placeholder="Add subcategory..."
-                          placeholderTextColor={colors.text.tertiary}
-                          style={[
-                            styles.itemText,
-                            { color: colors.text.primary, fontSize: theme.typography.fontSizes.h4 - 1 },
-                          ]}
-                          onFocus={() => addNewCategory()}
-                          blurOnSubmit={false}
-                        />
                       </View>
-                    </View>
-                  )}
-                </View>
-              ))}
+                    )}
+                  </View>
+                ))
+              )}
             </ScrollView>
           </ThemedView>
         </KeyboardAvoidingView>
@@ -807,10 +858,6 @@ export default function GroceryListDetailScreen() {
     </>
   );
 }
-
-/* =========================
-   STYLES
-========================= */
 
 const styles = StyleSheet.create({
   container: {
@@ -839,7 +886,26 @@ const styles = StyleSheet.create({
   title: {
     fontSize: theme.typography.fontSizes.h2,
     fontWeight: '700',
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: theme.spacing.md,
+  },
+  addItemButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyState: {
+    paddingVertical: theme.spacing.lg,
   },
   categorySection: {
     marginBottom: theme.spacing.lg,
@@ -872,6 +938,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: theme.spacing.sm,
+    gap: 8,
   },
   checkbox: {
     width: 24,
@@ -880,13 +947,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: theme.spacing.md,
+    marginRight: 4,
   },
   bulletDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    marginRight: theme.spacing.md,
+    marginRight: 10,
     marginLeft: 9,
     opacity: 0.4,
   },
@@ -900,23 +967,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: theme.spacing.md,
   },
-  itemCopy: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  qtyInput: {
+    width: 48,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 8,
+    fontSize: 13,
+    textAlign: 'center',
   },
-  itemAmount: {
-    fontSize: 14,
-    fontWeight: '700',
+  unitInput: {
+    width: 64,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 8,
+    fontSize: 13,
+    textAlign: 'center',
   },
   itemText: {
     flex: 1,
     fontSize: theme.typography.fontSizes.h4,
+    minHeight: 36,
   },
   itemTextChecked: {
     textDecorationLine: 'line-through',
     opacity: 0.5,
+  },
+  rowIconButton: {
+    padding: 2,
   },
   listContent: {
     paddingBottom: theme.spacing.xl * 3,

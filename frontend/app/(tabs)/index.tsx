@@ -368,10 +368,6 @@ export default function HomeScreen() {
 
   const farmsWithDistance = addDistanceAndSort(farms, userCoords);
 
-  const mostRecentGroceryList = useMemo(() => {
-    return homeGroceryLists[0] ?? null;
-  }, [homeGroceryLists]);
-
   useEffect(() => {
     let cancelled = false;
 
@@ -529,6 +525,16 @@ export default function HomeScreen() {
     return homeRecipes.filter((recipe) => recipeSearchIndex[recipe.id]?.includes(q));
   }, [homeRecipes, recipeSearchIndex, searchQuery]);
 
+  const filteredHomeGroceryLists = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return homeGroceryLists;
+
+    return homeGroceryLists.filter((list) => {
+      const haystack = [list.title, list.date].join(' ').toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [homeGroceryLists, searchQuery]);
+
   const handleFarmPress = (farmId: string) => {
     router.push(`/farm/${farmId}`);
   };
@@ -613,23 +619,51 @@ export default function HomeScreen() {
         </View>
 
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Your Grocery List</ThemedText>
+          <View style={styles.sectionHeaderRow}>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+              Your Grocery Lists
+            </ThemedText>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/grocerylist')} activeOpacity={0.7}>
+              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>
+                View All
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
 
           {groceryListsLoading ? (
-            <ThemedText style={{ color: colors.text.tertiary }}>Loading grocery list…</ThemedText>
+            <ThemedText style={{ color: colors.text.tertiary }}>Loading grocery lists…</ThemedText>
           ) : groceryListsError ? (
             <ThemedText style={{ color: colors.text.tertiary }}>{groceryListsError}</ThemedText>
-          ) : mostRecentGroceryList ? (
-            <TouchableOpacity activeOpacity={0.85} onPress={() => handleGroceryListPress(mostRecentGroceryList.id)}>
-              <GroceryListCard list={mostRecentGroceryList} style={styles.homeGroceryCard} />
-            </TouchableOpacity>
-          ) : (
+          ) : filteredHomeGroceryLists.length === 0 ? (
             <ThemedText style={{ color: colors.text.tertiary }}>No grocery lists yet.</ThemedText>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.groceryListsScroll}
+              contentContainerStyle={styles.groceryListsScrollContent}
+              decelerationRate="fast"
+              snapToInterval={316}
+              snapToAlignment="start"
+            >
+              {filteredHomeGroceryLists.map((list) => (
+                <TouchableOpacity
+                  key={list.id}
+                  activeOpacity={0.85}
+                  onPress={() => handleGroceryListPress(list.id)}
+                  style={styles.groceryListCardWrap}
+                >
+                  <GroceryListCard list={list} style={styles.homeGroceryCard} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           )}
         </ThemedView>
 
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>In Season Now</ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+            In Season Now
+          </ThemedText>
 
           {produceLoading ? (
             <ThemedText style={{ color: colors.text.tertiary }}>Loading produce…</ThemedText>
@@ -664,7 +698,9 @@ export default function HomeScreen() {
         </ThemedView>
 
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Close Farms Near You</ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+            Close Farms Near You
+          </ThemedText>
 
           <ThemedText style={{ color: colors.text.tertiary, marginTop: 2, marginBottom: 2 }}>
             📍 {locationText}
@@ -703,18 +739,28 @@ export default function HomeScreen() {
 
         <ThemedView style={[styles.section, { marginBottom: 80 }]}>
           <View style={styles.sectionHeaderRow}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Top Recipes of the Week</ThemedText>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+              Top Recipes of the Week
+            </ThemedText>
             <TouchableOpacity onPress={() => router.push('/recipe/recipes')} activeOpacity={0.7}>
-              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>Browse All</ThemedText>
+              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>
+                Browse All
+              </ThemedText>
             </TouchableOpacity>
           </View>
 
           {recipesLoading ? (
-            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>Loading recipes…</ThemedText>
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>
+              Loading recipes…
+            </ThemedText>
           ) : recipesError ? (
-            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>{recipesError}</ThemedText>
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>
+              {recipesError}
+            </ThemedText>
           ) : filteredHomeRecipes.length === 0 ? (
-            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>No recipes found.</ThemedText>
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>
+              No recipes found.
+            </ThemedText>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recipesScroll}>
               {filteredHomeRecipes.map((recipe) => (
@@ -812,6 +858,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
+  },
+  groceryListsScroll: {
+    marginTop: theme.spacing.sm,
+    marginLeft: -theme.spacing.md,
+    paddingLeft: theme.spacing.md,
+  },
+  groceryListsScrollContent: {
+    gap: theme.spacing.md,
+    paddingRight: theme.spacing.md,
+    paddingVertical: 4,
+  },
+  groceryListCardWrap: {
+    width: 300,
   },
   produceScroll: {
     marginTop: theme.spacing.md,

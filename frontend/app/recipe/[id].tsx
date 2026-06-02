@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Modal,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
@@ -17,6 +18,11 @@ import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { recipes as localRecipes } from "@/lib/recipes";
 import { supabase } from "@/lib/supabase";
+import {
+  getLocalGroceryListById,
+  getLocalGroceryLists,
+  saveLocalGroceryList,
+} from "@/lib/local-grocery-lists";
 
 type DBIngredient = {
   id?: string;
@@ -65,7 +71,13 @@ type DBGroceryListItem = {
   unit: string | null;
   name: string;
   is_checked: boolean;
-  created_at?: string;
+};
+
+type GroceryListChoice = {
+  id: string;
+  title: string;
+  subtitle: string;
+  source: "db" | "local";
 };
 
 type NormalizedRecipe = {
@@ -98,6 +110,19 @@ const normalizeText = (value?: string | null) => (value ?? "").trim().toLowerCas
 const buildIngredientKey = (name?: string | null, unit?: string | null) =>
   `${normalizeText(name)}__${normalizeText(unit)}`;
 
+const formatChoiceDate = (value?: string | null) => {
+  if (!value) return "Recent";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recent";
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 export default function RecipeDetailScreen() {
   const { colors } = useTheme();
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -105,7 +130,9 @@ export default function RecipeDetailScreen() {
 
   const [dbRecipe, setDbRecipe] = useState<DBRecipe | null>(null);
   const [loading, setLoading] = useState(false);
-  const [creatingList, setCreatingList] = useState(false);
+  const [choosingList, setChoosingList] = useState(false);
+  const [addingToList, setAddingToList] = useState(false);
+  const [groceryListChoices, setGroceryListChoices] = useState<GroceryListChoice[]>([]);
 
   const localRecipe = useMemo(
     () => localRecipes.find((item) => item.id === id),
@@ -230,26 +257,242 @@ export default function RecipeDetailScreen() {
     return null;
   }, [dbRecipe, localRecipe]);
 
-  const handleCreateGroceryList = async () => {
+  const ingredientRows = useMemo(() => {
+    if (!recipe) return [];
+    return recipe.ingredients
+      .filter((item) => item.name.trim().length > 0)
+      .map((item) => ({
+        quantity: item.quantity.trim() || null,
+        unit: item.unit.trim() || null,
+        name: item.name.trim(),
+        dedupeKey: buildIngredientKey(item.name, item.unit),
+      }));
+  }, [recipe]);
+
+  const loadGroceryListChoices = async () => {
+    const localLists = await getLocalGroceryLists();
+    const localChoices: GroceryListChoice[] = localLists.map((list) => ({
+      id: list.id,
+      title: list.title,
+      subtitle: `On device • ${list.date ?? "Today"}`,
+      source: "local",
+    }));
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) throw userError;
+
+    if (!user) {
+      return localChoices;
+    }
+
+    const { data: dbLists, error: dbListsError } = await supabase
+      .from("grocery_lists")
+      .select("id, title, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (dbListsError) throw dbListsError;
+
+    const dbChoices: GroceryListChoice[] = ((dbLists ?? []) as DBGroceryList[]).map((list) => ({
+      id: list.id,
+      title: list.title,
+      subtitle: `Account list • ${formatChoiceDate(list.created_at)}`,
+      source: "db",
+    }));
+
+    return [...dbChoices, ...localChoices];
+  };
+
+  const openGroceryListPicker = async () => {
     try {
       if (!recipe) {
         Alert.alert("Recipe not found", "Try again in a moment.");
         return;
       }
 
-      const ingredientRows = recipe.ingredients
-        .filter((item) => item.name.trim().length > 0)
-        .map((item) => ({
-          quantity: item.quantity.trim() || null,
-          unit: item.unit.trim() || null,
-          name: item.name.trim(),
-          dedupeKey: buildIngredientKey(item.name, item.unit),
-        }));
-
       if (ingredientRows.length === 0) {
         Alert.alert("No ingredients", "This recipe has no ingredients to add.");
         return;
       }
+
+      setAddingToList(true);
+      const choices = await loadGroceryListChoices();
+      setGroceryListChoices(choices);
+      setChoosingList(true);
+    } catch (error: any) {
+      console.log("Load grocery list choices error:", error);
+      Alert.alert(
+        "Could not load grocery lists",
+        error?.message ?? "Something went wrong."
+      );
+    } finally {
+      setAddingToList(false);
+    }
+  };
+
+  const addIngredientsToDbList = async (listId: string) => {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError) throw userError;
+    if (!user) {
+      Alert.alert("Not signed in", "Please sign in to update this grocery list.");
+      return;
+    }
+
+    const { data: existingItems, error: existingItemsError } = await supabase
+      .from("grocery_list_items")
+      .select("id, list_id, user_id, position, quantity, unit, name, is_checked")
+      .eq("list_id", listId)
+      .order("position", { ascending: true });
+
+    if (existingItemsError) throw existingItemsError;
+
+    const typedExistingItems = (existingItems ?? []) as DBGroceryListItem[];
+
+    const existingKeys = new Set(
+      typedExistingItems.map((item) => buildIngredientKey(item.name, item.unit))
+    );
+
+    const maxPosition = typedExistingItems.reduce(
+      (max, item) => Math.max(max, Number(item.position ?? 0)),
+      -1
+    );
+
+    const itemsToInsert = ingredientRows
+      .filter((item) => !existingKeys.has(item.dedupeKey))
+      .map((item, index) => ({
+        list_id: listId,
+        user_id: user.id,
+        position: maxPosition + index + 1,
+        quantity: item.quantity,
+        unit: item.unit,
+        name: item.name,
+        is_checked: false,
+      }));
+
+    if (itemsToInsert.length > 0) {
+      const { error: insertItemsError } = await supabase
+        .from("grocery_list_items")
+        .insert(itemsToInsert);
+
+      if (insertItemsError) throw insertItemsError;
+    }
+
+    const skippedCount = ingredientRows.length - itemsToInsert.length;
+
+    if (itemsToInsert.length === 0) {
+      Alert.alert(
+        "Nothing new to add",
+        "All of this recipe’s ingredients are already in that grocery list."
+      );
+    } else if (skippedCount > 0) {
+      Alert.alert(
+        "Grocery list updated",
+        `${itemsToInsert.length} ingredient(s) added. ${skippedCount} duplicate item(s) skipped.`
+      );
+    } else {
+      Alert.alert(
+        "Grocery list updated",
+        `${itemsToInsert.length} ingredient(s) added.`
+      );
+    }
+
+    router.push(`/grocery-list/${listId}`);
+  };
+
+  const addIngredientsToLocalList = async (listId: string) => {
+    const localList = await getLocalGroceryListById(listId);
+
+    if (!localList) {
+      Alert.alert("List not found", "That local grocery list could not be found.");
+      return;
+    }
+
+    const existingKeys = new Set(
+      (localList.items ?? []).map((item) => buildIngredientKey(item.name, item.unit))
+    );
+
+    const newItems = ingredientRows
+      .filter((item) => !existingKeys.has(item.dedupeKey))
+      .map((item, index) => ({
+        id: uid(),
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        checked: false,
+        category: null,
+        isPinned: false,
+        sortOrder: (localList.items?.length ?? 0) + index,
+        textStyle: {},
+      }));
+
+    await saveLocalGroceryList({
+      id: localList.id,
+      title: localList.title,
+      date: localList.date,
+      isPinned: localList.isPinned,
+      items: [...(localList.items ?? []), ...newItems] as any,
+    });
+
+    const skippedCount = ingredientRows.length - newItems.length;
+
+    if (newItems.length === 0) {
+      Alert.alert(
+        "Nothing new to add",
+        "All of this recipe’s ingredients are already in that grocery list."
+      );
+    } else if (skippedCount > 0) {
+      Alert.alert(
+        "Grocery list updated",
+        `${newItems.length} ingredient(s) added. ${skippedCount} duplicate item(s) skipped.`
+      );
+    } else {
+      Alert.alert(
+        "Grocery list updated",
+        `${newItems.length} ingredient(s) added.`
+      );
+    }
+
+    router.push(`/grocery-list/${listId}`);
+  };
+
+  const handleChooseGroceryList = async (choice: GroceryListChoice) => {
+    try {
+      setChoosingList(false);
+      setAddingToList(true);
+
+      if (choice.source === "db") {
+        await addIngredientsToDbList(choice.id);
+      } else {
+        await addIngredientsToLocalList(choice.id);
+      }
+    } catch (error: any) {
+      console.log("Choose grocery list error:", error);
+      Alert.alert(
+        "Could not update grocery list",
+        error?.message ?? "Something went wrong."
+      );
+    } finally {
+      setAddingToList(false);
+    }
+  };
+
+  const handleCreateNewGroceryList = async () => {
+    try {
+      if (!recipe) {
+        Alert.alert("Recipe not found", "Try again in a moment.");
+        return;
+      }
+
+      setChoosingList(false);
+      setAddingToList(true);
 
       const {
         data: { user },
@@ -258,107 +501,69 @@ export default function RecipeDetailScreen() {
 
       if (userError) throw userError;
 
-      if (!user) {
-        Alert.alert("Not signed in", "Please sign in to update your grocery list.");
-        return;
-      }
-
-      setCreatingList(true);
-
-      const { data: existingList, error: existingListError } = await supabase
-        .from("grocery_lists")
-        .select("id, title, created_at")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (existingListError) throw existingListError;
-
-      let activeList: DBGroceryList | null = existingList as DBGroceryList | null;
-
-      if (!activeList) {
+      if (user) {
         const { data: newList, error: newListError } = await supabase
           .from("grocery_lists")
           .insert({
             user_id: user.id,
-            title: "My Grocery List",
+            title: `${recipe.title} List`,
             source_recipe_id: isUuid(recipe.id) ? recipe.id : null,
           })
-          .select("id, title, created_at")
+          .select("id")
           .single();
 
         if (newListError) throw newListError;
-        activeList = newList as DBGroceryList;
-      }
 
-      const { data: existingItems, error: existingItemsError } = await supabase
-        .from("grocery_list_items")
-        .select("id, list_id, user_id, position, quantity, unit, name, is_checked, created_at")
-        .eq("list_id", activeList.id)
-        .order("position", { ascending: true });
-
-      if (existingItemsError) throw existingItemsError;
-
-      const typedExistingItems = (existingItems ?? []) as DBGroceryListItem[];
-
-      const existingKeys = new Set(
-        typedExistingItems.map((item) => buildIngredientKey(item.name, item.unit))
-      );
-
-      const maxPosition = typedExistingItems.reduce(
-        (max, item) => Math.max(max, Number(item.position ?? 0)),
-        -1
-      );
-
-      const itemsToInsert = ingredientRows
-        .filter((item) => !existingKeys.has(item.dedupeKey))
-        .map((item, index) => ({
-          list_id: activeList!.id,
+        const itemsToInsert = ingredientRows.map((item, index) => ({
+          list_id: newList.id,
           user_id: user.id,
-          position: maxPosition + index + 1,
+          position: index,
           quantity: item.quantity,
           unit: item.unit,
           name: item.name,
           is_checked: false,
         }));
 
-      if (itemsToInsert.length > 0) {
-        const { error: insertItemsError } = await supabase
-          .from("grocery_list_items")
-          .insert(itemsToInsert);
+        if (itemsToInsert.length > 0) {
+          const { error: insertItemsError } = await supabase
+            .from("grocery_list_items")
+            .insert(itemsToInsert);
 
-        if (insertItemsError) throw insertItemsError;
+          if (insertItemsError) throw insertItemsError;
+        }
+
+        Alert.alert("Grocery list created", "A new grocery list was created for this recipe.");
+        router.push(`/grocery-list/${newList.id}`);
+        return;
       }
 
-      const skippedCount = ingredientRows.length - itemsToInsert.length;
+      const savedLocalList = await saveLocalGroceryList({
+        title: `${recipe.title} List`,
+        date: undefined,
+        isPinned: false,
+        items: ingredientRows.map((item, index) => ({
+          id: uid(),
+          name: item.name,
+          quantity: item.quantity,
+          unit: item.unit,
+          checked: false,
+          category: null,
+          isPinned: false,
+          sortOrder: index,
+          textStyle: {},
+        })) as any,
+      });
 
-      if (itemsToInsert.length === 0) {
-        Alert.alert(
-          "Nothing new to add",
-          "All of this recipe’s ingredients are already in your current grocery list."
-        );
-      } else if (skippedCount > 0) {
-        Alert.alert(
-          "Grocery list updated",
-          `${itemsToInsert.length} ingredient(s) added. ${skippedCount} duplicate item(s) skipped.`
-        );
-      } else {
-        Alert.alert(
-          "Grocery list updated",
-          `${itemsToInsert.length} ingredient(s) added to your current grocery list.`
-        );
-      }
-
-      router.push(`/grocery-list/${activeList.id}`);
+      Alert.alert("Grocery list created", "A new local grocery list was created for this recipe.");
+      router.push(`/grocery-list/${savedLocalList.id}`);
     } catch (error: any) {
       console.log("Create grocery list error:", error);
       Alert.alert(
-        "Could not update grocery list",
+        "Could not create grocery list",
         error?.message ?? "Something went wrong."
       );
     } finally {
-      setCreatingList(false);
+      setAddingToList(false);
     }
   };
 
@@ -403,191 +608,270 @@ export default function RecipeDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["bottom"]}>
-      <Stack.Screen options={{ headerShown: false }} />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.hero}>
-          {recipe.imageUrl ? (
-            <>
-              <Image source={{ uri: recipe.imageUrl }} style={styles.heroImage} />
-              <View style={styles.heroOverlay} />
-            </>
-          ) : (
+    <>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["bottom"]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+          <View style={styles.hero}>
+            {recipe.imageUrl ? (
+              <>
+                <Image source={{ uri: recipe.imageUrl }} style={styles.heroImage} />
+                <View style={styles.heroOverlay} />
+              </>
+            ) : (
+              <View
+                style={[
+                  styles.heroFallback,
+                  { backgroundColor: colors.input.background, borderColor: colors.border.light },
+                ]}
+              />
+            )}
+
+            <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}>
+              <TouchableOpacity
+                style={[
+                  styles.backButton,
+                  {
+                    backgroundColor: recipe.imageUrl ? "rgba(17, 24, 28, 0.45)" : colors.background,
+                    borderColor: recipe.imageUrl ? "transparent" : colors.border.light,
+                  },
+                ]}
+                onPress={() => router.back()}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="arrow-back"
+                  size={20}
+                  color={recipe.imageUrl ? theme.neutral.white : colors.text.primary}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.heroContent, { paddingTop: insets.top + 72 }]}>
+              <ThemedText
+                style={[
+                  styles.heroTitle,
+                  { color: recipe.imageUrl ? theme.neutral.white : colors.text.primary },
+                ]}
+              >
+                {recipe.title}
+              </ThemedText>
+
+              {!!recipe.description && (
+                <ThemedText
+                  style={[
+                    styles.heroDescription,
+                    {
+                      color: recipe.imageUrl ? "rgba(255,255,255,0.9)" : colors.text.secondary,
+                    },
+                  ]}
+                >
+                  {recipe.description}
+                </ThemedText>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.metaRow}>
             <View
               style={[
-                styles.heroFallback,
-                { backgroundColor: colors.input.background, borderColor: colors.border.light },
+                styles.metaCard,
+                { backgroundColor: colors.background, borderColor: colors.border.light },
               ]}
-            />
-          )}
+            >
+              <Ionicons name="time-outline" size={18} color={theme.brand.primary} />
+              <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>
+                {recipe.duration}
+              </ThemedText>
+              <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>
+                Total time
+              </ThemedText>
+            </View>
 
-          <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}>
-            <TouchableOpacity
+            <View
               style={[
-                styles.backButton,
-                {
-                  backgroundColor: recipe.imageUrl ? "rgba(17, 24, 28, 0.45)" : colors.background,
-                  borderColor: recipe.imageUrl ? "transparent" : colors.border.light,
-                },
+                styles.metaCard,
+                { backgroundColor: colors.background, borderColor: colors.border.light },
               ]}
-              onPress={() => router.back()}
-              activeOpacity={0.8}
             >
               <Ionicons
-                name="arrow-back"
-                size={20}
-                color={recipe.imageUrl ? theme.neutral.white : colors.text.primary}
+                name={recipe.servings ? "people-outline" : "restaurant-outline"}
+                size={18}
+                color={theme.brand.primary}
               />
+              <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>
+                {recipe.servings ?? recipe.rating ?? "—"}
+              </ThemedText>
+              <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>
+                {recipe.servings ? "Servings" : recipe.ratingsCount ? `${recipe.ratingsCount} ratings` : "Recipe"}
+              </ThemedText>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.actionCard,
+              { backgroundColor: colors.background, borderColor: colors.border.light },
+            ]}
+          >
+            <TouchableOpacity
+              style={[
+                styles.addToListBtn,
+                {
+                  backgroundColor: addingToList ? colors.border.light : theme.brand.primary,
+                },
+              ]}
+              onPress={openGroceryListPicker}
+              activeOpacity={0.85}
+              disabled={addingToList}
+            >
+              {addingToList ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="cart-outline" size={18} color="#fff" />
+              )}
+              <ThemedText style={styles.addToListBtnText}>
+                {addingToList ? "Loading lists..." : "Add ingredients to grocery list"}
+              </ThemedText>
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.heroContent, { paddingTop: insets.top + 72 }]}>
-            <ThemedText
-              style={[
-                styles.heroTitle,
-                { color: recipe.imageUrl ? theme.neutral.white : colors.text.primary },
-              ]}
-            >
-              {recipe.title}
-            </ThemedText>
-
-            {!!recipe.description && (
-              <ThemedText
-                style={[
-                  styles.heroDescription,
-                  {
-                    color: recipe.imageUrl ? "rgba(255,255,255,0.9)" : colors.text.secondary,
-                  },
-                ]}
-              >
-                {recipe.description}
-              </ThemedText>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.metaRow}>
           <View
             style={[
-              styles.metaCard,
+              styles.sectionCard,
               { backgroundColor: colors.background, borderColor: colors.border.light },
             ]}
           >
-            <Ionicons name="time-outline" size={18} color={theme.brand.primary} />
-            <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>
-              {recipe.duration}
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+              Ingredients
             </ThemedText>
-            <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>
-              Total time
-            </ThemedText>
-          </View>
 
-          <View
-            style={[
-              styles.metaCard,
-              { backgroundColor: colors.background, borderColor: colors.border.light },
-            ]}
-          >
-            <Ionicons
-              name={recipe.servings ? "people-outline" : "restaurant-outline"}
-              size={18}
-              color={theme.brand.primary}
-            />
-            <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>
-              {recipe.servings ?? recipe.rating ?? "—"}
-            </ThemedText>
-            <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>
-              {recipe.servings ? "Servings" : recipe.ratingsCount ? `${recipe.ratingsCount} ratings` : "Recipe"}
-            </ThemedText>
-          </View>
-        </View>
+            <View style={styles.ingredientList}>
+              {recipe.ingredients.map((ingredient) => {
+                const amount = [ingredient.quantity, ingredient.unit].filter(Boolean).join(" ");
 
-        <View
-          style={[
-            styles.actionCard,
-            { backgroundColor: colors.background, borderColor: colors.border.light },
-          ]}
-        >
-          <TouchableOpacity
-            style={[
-              styles.addToListBtn,
-              {
-                backgroundColor: creatingList ? colors.border.light : theme.brand.primary,
-              },
-            ]}
-            onPress={handleCreateGroceryList}
-            activeOpacity={0.85}
-            disabled={creatingList}
-          >
-            {creatingList ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Ionicons name="cart-outline" size={18} color="#fff" />
-            )}
-            <ThemedText style={styles.addToListBtnText}>
-              {creatingList ? "Updating list..." : "Add ingredients to grocery list"}
-            </ThemedText>
-          </TouchableOpacity>
-        </View>
-
-        <View
-          style={[
-            styles.sectionCard,
-            { backgroundColor: colors.background, borderColor: colors.border.light },
-          ]}
-        >
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            Ingredients
-          </ThemedText>
-
-          <View style={styles.ingredientList}>
-            {recipe.ingredients.map((ingredient) => {
-              const amount = [ingredient.quantity, ingredient.unit].filter(Boolean).join(" ");
-
-              return (
-                <View key={ingredient.id} style={styles.ingredientRow}>
-                  <View style={styles.ingredientDot} />
-                  <View style={styles.ingredientCopy}>
-                    {!!amount && (
-                      <ThemedText style={[styles.ingredientAmount, { color: theme.brand.tertiary }]}>
-                        {amount}
+                return (
+                  <View key={ingredient.id} style={styles.ingredientRow}>
+                    <View style={styles.ingredientDot} />
+                    <View style={styles.ingredientCopy}>
+                      {!!amount && (
+                        <ThemedText style={[styles.ingredientAmount, { color: theme.brand.tertiary }]}>
+                          {amount}
+                        </ThemedText>
+                      )}
+                      <ThemedText style={[styles.ingredientName, { color: colors.text.primary }]}>
+                        {ingredient.name}
                       </ThemedText>
-                    )}
-                    <ThemedText style={[styles.ingredientName, { color: colors.text.primary }]}>
-                      {ingredient.name}
-                    </ThemedText>
+                    </View>
                   </View>
-                </View>
-              );
-            })}
+                );
+              })}
+            </View>
           </View>
-        </View>
 
-        <View
-          style={[
-            styles.sectionCard,
-            { backgroundColor: colors.background, borderColor: colors.border.light },
-          ]}
-        >
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            Directions
-          </ThemedText>
+          <View
+            style={[
+              styles.sectionCard,
+              { backgroundColor: colors.background, borderColor: colors.border.light },
+            ]}
+          >
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+              Directions
+            </ThemedText>
 
-          <View style={styles.stepsList}>
-            {recipe.steps.map((step, index) => (
-              <View key={step.id} style={styles.stepRow}>
-                <View style={styles.stepBadge}>
-                  <ThemedText style={styles.stepBadgeText}>{index + 1}</ThemedText>
+            <View style={styles.stepsList}>
+              {recipe.steps.map((step, index) => (
+                <View key={step.id} style={styles.stepRow}>
+                  <View style={styles.stepBadge}>
+                    <ThemedText style={styles.stepBadgeText}>{index + 1}</ThemedText>
+                  </View>
+                  <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>
+                    {step.instruction}
+                  </ThemedText>
                 </View>
-                <ThemedText style={[styles.stepText, { color: colors.text.secondary }]}>
-                  {step.instruction}
+              ))}
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+
+      <Modal
+        visible={choosingList}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setChoosingList(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View
+            style={[
+              styles.modalCard,
+              { backgroundColor: colors.background, borderColor: colors.border.light },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <ThemedText style={[styles.modalTitle, { color: colors.text.primary }]}>
+                Choose a grocery list
+              </ThemedText>
+              <TouchableOpacity onPress={() => setChoosingList(false)}>
+                <Ionicons name="close" size={22} color={colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.createNewListButton, { borderColor: theme.brand.primary }]}
+              onPress={handleCreateNewGroceryList}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add-circle-outline" size={18} color={theme.brand.primary} />
+              <ThemedText style={[styles.createNewListText, { color: theme.brand.primary }]}>
+                Create new grocery list
+              </ThemedText>
+            </TouchableOpacity>
+
+            <ScrollView
+              style={styles.choiceList}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.choiceListContent}
+            >
+              {groceryListChoices.length === 0 ? (
+                <ThemedText style={[styles.emptyChoiceText, { color: colors.text.tertiary }]}>
+                  No grocery lists yet. Create a new one to get started.
                 </ThemedText>
-              </View>
-            ))}
+              ) : (
+                groceryListChoices.map((choice) => (
+                  <TouchableOpacity
+                    key={`${choice.source}-${choice.id}`}
+                    style={[
+                      styles.choiceRow,
+                      { backgroundColor: colors.input.background, borderColor: colors.border.light },
+                    ]}
+                    onPress={() => handleChooseGroceryList(choice)}
+                    activeOpacity={0.85}
+                  >
+                    <View style={styles.choiceIconWrap}>
+                      <Ionicons
+                        name={choice.source === "db" ? "cloud-outline" : "phone-portrait-outline"}
+                        size={18}
+                        color={theme.brand.primary}
+                      />
+                    </View>
+                    <View style={styles.choiceCopy}>
+                      <ThemedText style={[styles.choiceTitle, { color: colors.text.primary }]}>
+                        {choice.title}
+                      </ThemedText>
+                      <ThemedText style={[styles.choiceSubtitle, { color: colors.text.secondary }]}>
+                        {choice.subtitle}
+                      </ThemedText>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={colors.text.tertiary} />
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
           </View>
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      </Modal>
+    </>
   );
 }
 
@@ -788,6 +1072,81 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 15,
     lineHeight: 22,
+    fontFamily: theme.typography.fontFamily,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(17,24,28,0.38)",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    maxHeight: "75%",
+    padding: 18,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: theme.spacing.md,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  createNewListButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: theme.spacing.md,
+  },
+  createNewListText: {
+    fontSize: 14,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  choiceList: {
+    flexGrow: 0,
+  },
+  choiceListContent: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  emptyChoiceText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  choiceRow: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  choiceIconWrap: {
+    width: 34,
+    alignItems: "center",
+  },
+  choiceCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  choiceTitle: {
+    fontSize: 15,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  choiceSubtitle: {
+    fontSize: 12,
     fontFamily: theme.typography.fontFamily,
   },
 });
