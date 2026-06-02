@@ -2,7 +2,7 @@ import { apiRequest } from "@/lib/api";
 
 export type CreateGroceryListItemInput = {
   name: string;
-  quantity?: number | null;
+  quantity?: string | null;
   unit?: string | null;
   checked?: boolean;
   category?: string | null;

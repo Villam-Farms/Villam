@@ -18,13 +18,13 @@ import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { addDistanceAndSort } from '@/lib/location';
 import { useAuth } from '@/context/auth-context';
 import { useFarms } from '@/hooks/useFarms';
-import { mockGroceryLists } from '@/mockdata/GroceryList';
 import { openDirections } from '@/lib/directions';
 import { formatAddress } from '@/lib/address';
 import { shareFarm } from '@/lib/share-farm';
 import { supabase } from '@/lib/supabase';
 import { useMyProfile } from '@/hooks/useMyProfile';
 import { getProfileDisplay } from '@/lib/profile-display';
+import { getLocalGroceryLists } from '@/lib/local-grocery-lists';
 
 const RECIPE_BUCKET = 'recipes';
 const FALLBACK_RECIPE_IMAGE =
@@ -106,6 +106,32 @@ type HomeRecipeCardData = {
   imageUrl?: string;
 };
 
+type HomeGroceryList = {
+  id: string;
+  title: string;
+  date: string;
+  isPinned: boolean;
+  itemCount: number;
+  checkedCount: number;
+  items: any[];
+  updatedAt: number;
+};
+
+type DBGroceryList = {
+  id: string;
+  title: string;
+  created_at: string;
+  user_id: string;
+  is_pinned?: boolean | null;
+};
+
+type DBGroceryListItem = {
+  id: string;
+  list_id: string;
+  name: string;
+  is_checked: boolean;
+};
+
 const asArray = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
 
 const sortByPosition = <T extends { position?: number }>(items: T[]) =>
@@ -153,6 +179,18 @@ const getFirstCoverUrl = (recipe: StoredRecipe) => {
   const firstMediaWithUrl = media.find((item) => typeof item?.url === 'string' && item.url.trim().length > 0);
 
   return firstMediaWithUrl?.url?.trim() ?? null;
+};
+
+const formatGroceryListDate = (value?: string | null) => {
+  if (!value) return 'Today';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const year = String(date.getFullYear()).slice(-2);
+  return `${month}/${day}/${year}`;
 };
 
 async function resolveRecipeImageUrl(recipe: StoredRecipe) {
@@ -216,6 +254,86 @@ async function getRecipeRatingSummaries(
   }, {});
 }
 
+async function loadHomeGroceryLists(userId: string | null): Promise<HomeGroceryList[]> {
+  const localLists = await getLocalGroceryLists();
+
+  if (!userId) {
+    return localLists.map((list) => ({
+      id: list.id,
+      title: list.title,
+      date: list.date ?? 'Today',
+      isPinned: Boolean(list.isPinned),
+      itemCount: list.itemCount ?? list.items.length,
+      checkedCount: list.checkedCount ?? list.items.filter((item) => item.checked).length,
+      items: list.items ?? [],
+      updatedAt: list.updatedAt ?? 0,
+    }));
+  }
+
+  const { data: dbLists, error: listsError } = await supabase
+    .from('grocery_lists')
+    .select('id, title, created_at, user_id, is_pinned')
+    .order('created_at', { ascending: false });
+
+  if (listsError) throw listsError;
+
+  const typedDbLists = (dbLists ?? []) as DBGroceryList[];
+  const dbListIds = typedDbLists.map((list) => list.id);
+
+  let itemMap: Record<string, DBGroceryListItem[]> = {};
+
+  if (dbListIds.length > 0) {
+    const { data: dbItems, error: itemsError } = await supabase
+      .from('grocery_list_items')
+      .select('id, list_id, name, is_checked')
+      .in('list_id', dbListIds);
+
+    if (itemsError) throw itemsError;
+
+    itemMap = ((dbItems ?? []) as DBGroceryListItem[]).reduce<Record<string, DBGroceryListItem[]>>(
+      (acc, item) => {
+        if (!acc[item.list_id]) acc[item.list_id] = [];
+        acc[item.list_id].push(item);
+        return acc;
+      },
+      {}
+    );
+  }
+
+  const remoteLists: HomeGroceryList[] = typedDbLists.map((list) => {
+    const items = itemMap[list.id] ?? [];
+    const createdAtMs = list.created_at ? new Date(list.created_at).getTime() : 0;
+
+    return {
+      id: list.id,
+      title: list.title,
+      date: formatGroceryListDate(list.created_at),
+      isPinned: Boolean(list.is_pinned),
+      itemCount: items.length,
+      checkedCount: items.filter((item) => item.is_checked).length,
+      items,
+      updatedAt: createdAtMs,
+    };
+  });
+
+  const normalizedLocalLists: HomeGroceryList[] = localLists.map((list) => ({
+    id: list.id,
+    title: list.title,
+    date: list.date ?? 'Today',
+    isPinned: Boolean(list.isPinned),
+    itemCount: list.itemCount ?? list.items.length,
+    checkedCount: list.checkedCount ?? list.items.filter((item) => item.checked).length,
+    items: list.items ?? [],
+    updatedAt: list.updatedAt ?? 0,
+  }));
+
+  return [...remoteLists, ...normalizedLocalLists].sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    return b.updatedAt - a.updatedAt;
+  });
+}
+
 export default function HomeScreen() {
   const { colors } = useTheme();
   const { session } = useAuth();
@@ -234,6 +352,10 @@ export default function HomeScreen() {
   const [homeRecipes, setHomeRecipes] = useState<HomeRecipeCardData[]>([]);
   const [recipeSearchIndex, setRecipeSearchIndex] = useState<Record<string, string>>({});
 
+  const [groceryListsLoading, setGroceryListsLoading] = useState(false);
+  const [groceryListsError, setGroceryListsError] = useState<string | null>(null);
+  const [homeGroceryLists, setHomeGroceryLists] = useState<HomeGroceryList[]>([]);
+
   const metadata = session?.user?.user_metadata as
     | { name?: string; full_name?: string; username?: string }
     | undefined;
@@ -245,21 +367,6 @@ export default function HomeScreen() {
   );
 
   const farmsWithDistance = addDistanceAndSort(farms, userCoords);
-
-  const mostRecentGroceryList = useMemo(() => {
-    const toTime = (dateStr: string) => {
-      if (!dateStr) return 0;
-      if (dateStr.toLowerCase() === 'today') return Date.now();
-
-      const [m, d, yy] = dateStr.split('/').map(Number);
-      if (!m || !d || !yy) return 0;
-
-      const fullYear = yy < 100 ? 2000 + yy : yy;
-      return new Date(fullYear, m - 1, d).getTime();
-    };
-
-    return [...mockGroceryLists].sort((a, b) => toTime(b.date) - toTime(a.date))[0] ?? null;
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -379,10 +486,27 @@ export default function HomeScreen() {
     }
   }, [session?.user?.id]);
 
+  const loadGroceryLists = useCallback(async () => {
+    try {
+      setGroceryListsLoading(true);
+      setGroceryListsError(null);
+
+      const lists = await loadHomeGroceryLists(session?.user?.id ?? null);
+      setHomeGroceryLists(lists);
+    } catch (error: any) {
+      console.error('Home grocery lists load failed:', error);
+      setGroceryListsError(error?.message ?? 'Could not load grocery lists.');
+      setHomeGroceryLists([]);
+    } finally {
+      setGroceryListsLoading(false);
+    }
+  }, [session?.user?.id]);
+
   useFocusEffect(
     useCallback(() => {
       loadHomeRecipes();
-    }, [loadHomeRecipes])
+      loadGroceryLists();
+    }, [loadHomeRecipes, loadGroceryLists])
   );
 
   const filteredProduce = useMemo(() => {
@@ -400,6 +524,16 @@ export default function HomeScreen() {
 
     return homeRecipes.filter((recipe) => recipeSearchIndex[recipe.id]?.includes(q));
   }, [homeRecipes, recipeSearchIndex, searchQuery]);
+
+  const filteredHomeGroceryLists = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return homeGroceryLists;
+
+    return homeGroceryLists.filter((list) => {
+      const haystack = [list.title, list.date].join(' ').toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [homeGroceryLists, searchQuery]);
 
   const handleFarmPress = (farmId: string) => {
     router.push(`/farm/${farmId}`);
@@ -438,6 +572,10 @@ export default function HomeScreen() {
 
   const handleProducePress = (produceId: string) => {
     router.push(`/produce/${produceId}`);
+  };
+
+  const handleGroceryListPress = (groceryListId: string) => {
+    router.push(`/grocery-list/${groceryListId}`);
   };
 
   return (
@@ -481,16 +619,51 @@ export default function HomeScreen() {
         </View>
 
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Your Grocery List</ThemedText>
-          {mostRecentGroceryList ? (
-            <GroceryListCard list={mostRecentGroceryList} style={styles.homeGroceryCard} />
-          ) : (
+          <View style={styles.sectionHeaderRow}>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+              Your Grocery Lists
+            </ThemedText>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/grocerylist')} activeOpacity={0.7}>
+              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>
+                View All
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          {groceryListsLoading ? (
+            <ThemedText style={{ color: colors.text.tertiary }}>Loading grocery lists…</ThemedText>
+          ) : groceryListsError ? (
+            <ThemedText style={{ color: colors.text.tertiary }}>{groceryListsError}</ThemedText>
+          ) : filteredHomeGroceryLists.length === 0 ? (
             <ThemedText style={{ color: colors.text.tertiary }}>No grocery lists yet.</ThemedText>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.groceryListsScroll}
+              contentContainerStyle={styles.groceryListsScrollContent}
+              decelerationRate="fast"
+              snapToInterval={316}
+              snapToAlignment="start"
+            >
+              {filteredHomeGroceryLists.map((list) => (
+                <TouchableOpacity
+                  key={list.id}
+                  activeOpacity={0.85}
+                  onPress={() => handleGroceryListPress(list.id)}
+                  style={styles.groceryListCardWrap}
+                >
+                  <GroceryListCard list={list} style={styles.homeGroceryCard} />
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           )}
         </ThemedView>
 
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>In Season Now</ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+            In Season Now
+          </ThemedText>
 
           {produceLoading ? (
             <ThemedText style={{ color: colors.text.tertiary }}>Loading produce…</ThemedText>
@@ -525,7 +698,9 @@ export default function HomeScreen() {
         </ThemedView>
 
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Close Farms Near You</ThemedText>
+          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+            Close Farms Near You
+          </ThemedText>
 
           <ThemedText style={{ color: colors.text.tertiary, marginTop: 2, marginBottom: 2 }}>
             📍 {locationText}
@@ -564,18 +739,28 @@ export default function HomeScreen() {
 
         <ThemedView style={[styles.section, { marginBottom: 80 }]}>
           <View style={styles.sectionHeaderRow}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Top Recipes of the Week</ThemedText>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+              Top Recipes of the Week
+            </ThemedText>
             <TouchableOpacity onPress={() => router.push('/recipe/recipes')} activeOpacity={0.7}>
-              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>Browse All</ThemedText>
+              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>
+                Browse All
+              </ThemedText>
             </TouchableOpacity>
           </View>
 
           {recipesLoading ? (
-            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>Loading recipes…</ThemedText>
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>
+              Loading recipes…
+            </ThemedText>
           ) : recipesError ? (
-            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>{recipesError}</ThemedText>
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>
+              {recipesError}
+            </ThemedText>
           ) : filteredHomeRecipes.length === 0 ? (
-            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>No recipes found.</ThemedText>
+            <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>
+              No recipes found.
+            </ThemedText>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recipesScroll}>
               {filteredHomeRecipes.map((recipe) => (
@@ -673,6 +858,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
+  },
+  groceryListsScroll: {
+    marginTop: theme.spacing.sm,
+    marginLeft: -theme.spacing.md,
+    paddingLeft: theme.spacing.md,
+  },
+  groceryListsScrollContent: {
+    gap: theme.spacing.md,
+    paddingRight: theme.spacing.md,
+    paddingVertical: 4,
+  },
+  groceryListCardWrap: {
+    width: 300,
   },
   produceScroll: {
     marginTop: theme.spacing.md,
