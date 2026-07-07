@@ -6,6 +6,8 @@ import {
   Pressable,
   Modal,
   TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import React, { useCallback, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,6 +27,7 @@ import { RecipeCard } from "@/components/ui/recipes/recipecard";
 
 const RECIPE_BUCKET = "recipes";
 const FALLBACK_RECIPE_IMAGE = "https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=1200&auto=format&fit=crop";
+const DESCRIPTION_LIMIT = 280;
 
 type RecipeRow = {
   id: string;
@@ -419,37 +422,83 @@ export default function ProfileScreen() {
       <Modal
         visible={editDescOpen}
         transparent
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setEditDescOpen(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border.default }]}>
-            <ThemedText type="title" style={{ color: colors.text.primary }}>
-              Edit description
-            </ThemedText>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.modalBackdrop}
+        >
+          <Pressable style={styles.modalDismissArea} onPress={() => setEditDescOpen(false)} />
+          <View style={[styles.modalSheet, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+            <View style={styles.modalGrabber} />
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleGroup}>
+                <ThemedText type="title" style={[styles.modalTitle, { color: colors.text.primary }]}>
+                  Edit description
+                </ThemedText>
+                <ThemedText style={[styles.modalSubtitle, { color: colors.text.secondary }]}>
+                  Share a short note for people viewing your profile.
+                </ThemedText>
+              </View>
+              <Pressable
+                style={[styles.modalCloseButton, { backgroundColor: colors.card }]}
+                onPress={() => setEditDescOpen(false)}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={20} color={colors.text.primary} />
+              </Pressable>
+            </View>
 
-            <TextInput
-              value={descDraft}
-              onChangeText={setDescDraft}
-              placeholder="Write something about you…"
-              placeholderTextColor={colors.input.placeholder}
-              multiline
-              maxLength={280}
+            <View
               style={[
-                styles.modalInput,
+                styles.descriptionEditor,
                 {
-                  color: colors.input.text,
                   backgroundColor: colors.input.background,
                   borderColor: colors.border.light,
                 },
               ]}
-            />
+            >
+              <TextInput
+                value={descDraft}
+                onChangeText={setDescDraft}
+                placeholder="Write something about you..."
+                placeholderTextColor={colors.input.placeholder}
+                multiline
+                maxLength={DESCRIPTION_LIMIT}
+                style={[
+                  styles.modalInput,
+                  {
+                    color: colors.input.text,
+                  },
+                ]}
+              />
+              <View style={styles.editorFooter}>
+                <ThemedText style={[styles.editorHint, { color: colors.text.tertiary }]}>
+                  Keep it friendly and concise.
+                </ThemedText>
+                <ThemedText
+                  style={[
+                    styles.characterCount,
+                    {
+                      color:
+                        descDraft.length > DESCRIPTION_LIMIT - 24
+                          ? theme.brand.darkerOrange
+                          : colors.text.tertiary,
+                    },
+                  ]}
+                >
+                  {descDraft.length}/{DESCRIPTION_LIMIT}
+                </ThemedText>
+              </View>
+            </View>
 
             <View style={styles.modalActions}>
               <Button
                 variant="outline"
                 onPress={() => setEditDescOpen(false)}
                 disabled={savingDesc}
+                style={styles.modalActionButton}
               >
                 Cancel
               </Button>
@@ -457,12 +506,13 @@ export default function ProfileScreen() {
                 variant="primary"
                 onPress={saveDescription}
                 disabled={savingDesc}
+                style={styles.modalActionButton}
               >
                 {savingDesc ? "Saving..." : "Save"}
               </Button>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -562,30 +612,96 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: theme.spacing.lg,
+    backgroundColor: "rgba(17,24,39,0.45)",
+    justifyContent: "flex-end",
   },
-  modalCard: {
-    borderRadius: theme.borderRadius.lg,
+  modalDismissArea: {
+    flex: 1,
+  },
+  modalSheet: {
+    borderTopLeftRadius: theme.borderRadius.xl,
+    borderTopRightRadius: theme.borderRadius.xl,
     borderWidth: 1,
-    padding: theme.spacing.lg,
+    borderBottomWidth: 0,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.lg,
+    gap: theme.spacing.lg,
+  },
+  modalGrabber: {
+    alignSelf: "center",
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.neutral[300],
+    marginBottom: theme.spacing.xs,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
     gap: theme.spacing.md,
   },
-  modalInput: {
+  modalTitleGroup: {
+    flex: 1,
+  },
+  modalTitle: {
+    fontSize: theme.typography.fontSizes.h2,
+    lineHeight: 28,
+  },
+  modalSubtitle: {
+    marginTop: 3,
+    fontSize: theme.typography.fontSizes.h5,
+    lineHeight: 19,
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  descriptionEditor: {
+    minHeight: 156,
     borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    minHeight: 100,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+  },
+  modalInput: {
+    minHeight: 104,
     textAlignVertical: "top",
     fontSize: theme.typography.fontSizes.h4,
+    lineHeight: 22,
+    fontFamily: theme.typography.fontFamily,
+    padding: 0,
+  },
+  editorFooter: {
+    minHeight: 24,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+    marginTop: theme.spacing.sm,
+  },
+  editorHint: {
+    flex: 1,
+    fontSize: theme.typography.fontSizes.h5,
+    lineHeight: 18,
+  },
+  characterCount: {
+    fontSize: theme.typography.fontSizes.h5,
+    fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
   },
   modalActions: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    alignItems: "center",
     gap: theme.spacing.sm,
+  },
+  modalActionButton: {
+    flex: 1,
   },
   recipesHeader: {
     flexDirection: "row",
