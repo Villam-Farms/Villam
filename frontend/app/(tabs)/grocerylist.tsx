@@ -261,7 +261,23 @@ export default function GroceryListScreen() {
           </View>
         ) : filteredLists.length === 0 ? (
           <View style={styles.stateWrap}>
-            <ThemedText style={{ color: colors.text.tertiary }}>No grocery lists yet.</ThemedText>
+            <View style={[styles.emptyIconWrap, { backgroundColor: colors.card }]}>
+              <Ionicons name="cart-outline" size={30} color={theme.brand.primary} />
+            </View>
+            <ThemedText style={[styles.emptyTitle, { color: colors.text.primary }]}>
+              No grocery lists yet
+            </ThemedText>
+            <ThemedText style={[styles.emptyBody, { color: colors.text.secondary }]}>
+              Start a list for your next market run, recipe plan, or weekly essentials.
+            </ThemedText>
+            <TouchableOpacity
+              style={styles.emptyActionButton}
+              onPress={() => router.push('/grocery-list/new')}
+              activeOpacity={0.86}
+            >
+              <Ionicons name="add" size={20} color={theme.neutral.white} />
+              <ThemedText style={styles.emptyActionText}>New grocery list</ThemedText>
+            </TouchableOpacity>
           </View>
         ) : (
           <FlatList
@@ -327,7 +343,46 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
   },
   stateWrap: {
-    paddingTop: theme.spacing.md,
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing['2xl'],
+  },
+  emptyIconWrap: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  emptyTitle: {
+    fontSize: theme.typography.fontSizes.h3,
+    fontWeight: theme.typography.fontWeights.bold,
+    textAlign: 'center',
+  },
+  emptyBody: {
+    marginTop: theme.spacing.sm,
+    fontSize: theme.typography.fontSizes.h4,
+    lineHeight: 22,
+    textAlign: 'center',
+  },
+  emptyActionButton: {
+    marginTop: theme.spacing.lg,
+    minHeight: 48,
+    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: theme.spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    backgroundColor: theme.brand.primary,
+  },
+  emptyActionText: {
+    color: theme.neutral.white,
+    fontSize: theme.typography.fontSizes.h4,
+    fontWeight: theme.typography.fontWeights.semibold,
   },
   listRow: {
     flexDirection: 'row',
