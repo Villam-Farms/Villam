@@ -304,7 +304,7 @@ export default function ProfileScreen() {
                     Description
                   </ThemedText>
                   <Pressable onPress={openEditDescription} hitSlop={8}>
-                    <Ionicons name="pencil" size={16} color={colors.text.secondary} />
+                    <Ionicons name="pencil" size={15} color={colors.text.secondary} />
                   </Pressable>
                 </View>
                 <Pressable onPress={openEditDescription}>
@@ -601,11 +601,11 @@ const styles = StyleSheet.create({
   descriptionHeader: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    alignSelf: "flex-start",
+    gap: theme.spacing.xs,
   },
   descriptionTitle: {
     fontSize: theme.typography.fontSizes.h3,
-    marginBottom: theme.spacing.xs,
   },
   descriptionText: {
     fontSize: theme.typography.fontSizes.h4,
