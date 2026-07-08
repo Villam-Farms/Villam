@@ -58,7 +58,8 @@
           "locationWhenInUsePermission": "Allow Villam to use your location to show nearby farms and your position on the map."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

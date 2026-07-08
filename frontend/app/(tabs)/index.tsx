@@ -12,7 +12,6 @@ import { theme } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import FarmCard from '@/components/ui/farmcard';
 import { RecipeCard } from '@/components/ui/recipes/recipecard';
-import { GroceryListCard } from '@/components/ui/grocerylist/GroceryListCard';
 
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { addDistanceAndSort } from '@/lib/location';
@@ -113,7 +112,12 @@ type HomeGroceryList = {
   isPinned: boolean;
   itemCount: number;
   checkedCount: number;
-  items: any[];
+  items: Array<{
+    id?: string;
+    name?: string;
+    checked?: boolean;
+    is_checked?: boolean;
+  }>;
   updatedAt: number;
 };
 
@@ -578,6 +582,48 @@ export default function HomeScreen() {
     router.push(`/grocery-list/${groceryListId}`);
   };
 
+  const renderGroceryPreviewItems = (list: HomeGroceryList) => {
+    const previewItems = list.items.slice(0, 3);
+
+    if (previewItems.length === 0) {
+      return (
+        <ThemedText style={[styles.groceryEmptyCopy, { color: colors.text.tertiary }]}>
+          No items yet. Tap to start building this list.
+        </ThemedText>
+      );
+    }
+
+    return previewItems.map((item, index) => {
+      const checked = Boolean(item?.checked || item?.is_checked);
+      const label = item?.name?.trim() || `Item ${index + 1}`;
+
+      return (
+        <View key={`${list.id}-preview-${item?.id ?? index}`} style={styles.groceryPreviewRow}>
+          <View
+            style={[
+              styles.groceryPreviewDot,
+              checked
+                ? { backgroundColor: theme.brand.primary, borderColor: theme.brand.primary }
+                : { borderColor: colors.border.light, backgroundColor: 'transparent' },
+            ]}
+          >
+            {checked && <Ionicons name="checkmark" size={10} color="#fff" />}
+          </View>
+          <ThemedText
+            style={[
+              styles.groceryPreviewText,
+              { color: checked ? colors.text.tertiary : colors.text.primary },
+              checked && styles.groceryPreviewTextChecked,
+            ]}
+            numberOfLines={1}
+          >
+            {label}
+          </ThemedText>
+        </View>
+      );
+    });
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <ScrollView style={styles.container}>
@@ -620,9 +666,24 @@ export default function HomeScreen() {
 
         <ThemedView style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-              Your Grocery Lists
-            </ThemedText>
+            <View style={styles.sectionTitleWrap}>
+              <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
+                Your Grocery Lists
+              </ThemedText>
+              {filteredHomeGroceryLists.length > 0 && (
+                <View
+                  style={[
+                    styles.sectionBadge,
+                    { backgroundColor: colors.input.background, borderColor: colors.border.light },
+                  ]}
+                >
+                  <ThemedText style={[styles.sectionBadgeText, { color: colors.text.secondary }]}>
+                    {filteredHomeGroceryLists.length}
+                  </ThemedText>
+                </View>
+              )}
+            </View>
+
             <TouchableOpacity onPress={() => router.push('/(tabs)/grocerylist')} activeOpacity={0.7}>
               <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>
                 View All
@@ -635,7 +696,20 @@ export default function HomeScreen() {
           ) : groceryListsError ? (
             <ThemedText style={{ color: colors.text.tertiary }}>{groceryListsError}</ThemedText>
           ) : filteredHomeGroceryLists.length === 0 ? (
-            <ThemedText style={{ color: colors.text.tertiary }}>No grocery lists yet.</ThemedText>
+            <View
+              style={[
+                styles.groceryEmptyCard,
+                { backgroundColor: colors.input.background, borderColor: colors.border.light },
+              ]}
+            >
+              <Ionicons name="cart-outline" size={22} color={theme.brand.primary} />
+              <ThemedText style={[styles.groceryEmptyTitle, { color: colors.text.primary }]}>
+                No grocery lists yet
+              </ThemedText>
+              <ThemedText style={[styles.groceryEmptyBody, { color: colors.text.secondary }]}>
+                Create one from a recipe or from the Create tab.
+              </ThemedText>
+            </View>
           ) : (
             <ScrollView
               horizontal
@@ -643,19 +717,87 @@ export default function HomeScreen() {
               style={styles.groceryListsScroll}
               contentContainerStyle={styles.groceryListsScrollContent}
               decelerationRate="fast"
-              snapToInterval={316}
+              snapToInterval={292}
               snapToAlignment="start"
             >
-              {filteredHomeGroceryLists.map((list) => (
-                <TouchableOpacity
-                  key={list.id}
-                  activeOpacity={0.85}
-                  onPress={() => handleGroceryListPress(list.id)}
-                  style={styles.groceryListCardWrap}
-                >
-                  <GroceryListCard list={list} style={styles.homeGroceryCard} />
-                </TouchableOpacity>
-              ))}
+              {filteredHomeGroceryLists.map((list) => {
+                const progress =
+                  list.itemCount > 0 ? Math.min(list.checkedCount / list.itemCount, 1) : 0;
+
+                return (
+                  <TouchableOpacity
+                    key={list.id}
+                    activeOpacity={0.88}
+                    onPress={() => handleGroceryListPress(list.id)}
+                    style={[
+                      styles.grocerySummaryCard,
+                      {
+                        backgroundColor: colors.input.background,
+                        borderColor: colors.border.light,
+                      },
+                    ]}
+                  >
+                    <View style={styles.groceryCardTopRow}>
+                      <View style={styles.groceryMetaWrap}>
+                        <View style={styles.groceryTitleRow}>
+                          <ThemedText
+                            style={[styles.groceryCardTitle, { color: colors.text.primary }]}
+                            numberOfLines={1}
+                          >
+                            {list.title}
+                          </ThemedText>
+
+                          {list.isPinned && (
+                            <View style={styles.groceryPinnedPill}>
+                              <Ionicons name="pin" size={10} color="#fff" />
+                            </View>
+                          )}
+                        </View>
+
+                        <ThemedText style={[styles.groceryCardDate, { color: colors.text.tertiary }]}>
+                          {list.date}
+                        </ThemedText>
+                      </View>
+
+                      <View style={[styles.groceryChevronWrap, { backgroundColor: colors.background }]}>
+                        <Ionicons name="chevron-forward" size={16} color={colors.text.secondary} />
+                      </View>
+                    </View>
+
+                    <View style={styles.groceryStatsRow}>
+                      <View
+                        style={[
+                          styles.groceryStatChip,
+                          { backgroundColor: colors.background, borderColor: colors.border.light },
+                        ]}
+                      >
+                        <Ionicons name="list-outline" size={14} color={theme.brand.primary} />
+                        <ThemedText style={[styles.groceryStatText, { color: colors.text.primary }]}>
+                          {list.itemCount} items
+                        </ThemedText>
+                      </View>
+
+                      <View
+                        style={[
+                          styles.groceryStatChip,
+                          { backgroundColor: colors.background, borderColor: colors.border.light },
+                        ]}
+                      >
+                        <Ionicons name="checkmark-circle-outline" size={14} color={theme.brand.primary} />
+                        <ThemedText style={[styles.groceryStatText, { color: colors.text.primary }]}>
+                          {list.checkedCount} done
+                        </ThemedText>
+                      </View>
+                    </View>
+
+                    <View style={[styles.progressTrack, { backgroundColor: colors.background }]}>
+                      <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+                    </View>
+
+                    <View style={styles.groceryPreviewList}>{renderGroceryPreviewItems(list)}</View>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           )}
         </ThemedView>
@@ -848,11 +990,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: theme.spacing.md,
   },
+  sectionTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
   sectionTitle: {
     fontSize: theme.typography.fontSizes.h3,
     fontWeight: theme.typography.fontWeights.bold,
     fontFamily: theme.typography.fontFamily,
     marginBottom: theme.spacing.sm,
+  },
+  sectionBadge: {
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.spacing.sm,
+  },
+  sectionBadgeText: {
+    fontSize: 12,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
   },
   sectionLink: {
     fontSize: 14,
@@ -870,7 +1033,132 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   groceryListCardWrap: {
-    width: 300,
+    width: 276,
+  },
+  grocerySummaryCard: {
+    width: 276,
+    minHeight: 188,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: theme.spacing.lg,
+    justifyContent: 'space-between',
+    ...theme.shadows.sm,
+  },
+  groceryCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  groceryMetaWrap: {
+    flex: 1,
+  },
+  groceryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  groceryCardTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  groceryCardDate: {
+    marginTop: 4,
+    fontSize: 12,
+    fontFamily: theme.typography.fontFamily,
+  },
+  groceryPinnedPill: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: theme.brand.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groceryChevronWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groceryStatsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: theme.spacing.md,
+  },
+  groceryStatChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  groceryStatText: {
+    fontSize: 12,
+    fontWeight: theme.typography.fontWeights.medium,
+    fontFamily: theme.typography.fontFamily,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginTop: theme.spacing.md,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: theme.brand.primary,
+    borderRadius: 999,
+  },
+  groceryPreviewList: {
+    marginTop: theme.spacing.md,
+    gap: 8,
+  },
+  groceryPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  groceryPreviewDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groceryPreviewText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily,
+  },
+  groceryPreviewTextChecked: {
+    textDecorationLine: 'line-through',
+  },
+  groceryEmptyCard: {
+    marginTop: theme.spacing.sm,
+    borderWidth: 1,
+    borderRadius: 20,
+    padding: theme.spacing.lg,
+    gap: 8,
+  },
+  groceryEmptyTitle: {
+    fontSize: 16,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  groceryEmptyBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontFamily: theme.typography.fontFamily,
+  },
+  groceryEmptyCopy: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: theme.typography.fontFamily,
   },
   produceScroll: {
     marginTop: theme.spacing.md,
@@ -905,9 +1193,6 @@ const styles = StyleSheet.create({
     paddingRight: theme.spacing.md,
     paddingVertical: 6,
   },
-  homeGroceryCard: {
-    marginBottom: 0,
-  },
   recipesScroll: {
     marginTop: theme.spacing.md,
     marginLeft: -theme.spacing.md,
@@ -928,4 +1213,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  
 });
