@@ -15,11 +15,17 @@ import { useTheme } from '@/hooks/useTheme';
 import { theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { GroceryListCard } from '@/components/ui/grocerylist/GroceryListCard';
 import { useFocusEffect } from '@react-navigation/native';
 import { getLocalGroceryLists, deleteLocalGroceryList } from '@/lib/local-grocery-lists';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/auth-context';
+
+type DisplayGroceryListItem = {
+  id?: string;
+  name?: string;
+  checked?: boolean;
+  is_checked?: boolean;
+};
 
 type DisplayGroceryList = {
   id: string;
@@ -28,7 +34,7 @@ type DisplayGroceryList = {
   isPinned: boolean;
   itemCount: number;
   checkedCount: number;
-  items: any[];
+  items: DisplayGroceryListItem[];
   updatedAt: number;
   source: 'db' | 'local';
 };
@@ -59,6 +65,10 @@ const formatGroceryListDate = (value?: string | null) => {
   const year = String(date.getFullYear()).slice(-2);
 
   return `${month}/${day}/${year}`;
+};
+
+const getPreviewItems = (items: DisplayGroceryListItem[]) => {
+  return items.slice(0, 3);
 };
 
 export default function GroceryListScreen() {
@@ -218,7 +228,7 @@ export default function GroceryListScreen() {
                 await deleteLocalGroceryList(list.id);
               }
 
-              setLists((prev) => prev.filter((item) => item.id !== list.id));
+              setLists((prev) => prev.filter((item) => !(item.id === list.id && item.source === list.source)));
             } catch (error: any) {
               Alert.alert('Delete failed', error?.message ?? 'Could not delete the grocery list.');
             }
@@ -228,9 +238,174 @@ export default function GroceryListScreen() {
     );
   };
 
+  const renderListCard = ({ item }: { item: DisplayGroceryList }) => {
+    const previewItems = getPreviewItems(item.items);
+    const progress = item.itemCount > 0 ? item.checkedCount / item.itemCount : 0;
+
+    return (
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => handleListPress(item.id)}
+        style={[
+          styles.listCard,
+          {
+            backgroundColor: colors.input.background,
+            borderColor: colors.border.light,
+          },
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.cardHeaderLeft}>
+            <View style={styles.cardTitleRow}>
+              <ThemedText
+                style={[styles.cardTitle, { color: colors.text.primary }]}
+                numberOfLines={1}
+              >
+                {item.title}
+              </ThemedText>
+
+              {item.isPinned && (
+                <View style={styles.pinBadge}>
+                  <Ionicons name="pin" size={10} color={theme.neutral.white} />
+                </View>
+              )}
+            </View>
+
+            <View style={styles.metaRow}>
+              <View
+                style={[
+                  styles.metaChip,
+                  {
+                    backgroundColor: colors.background,
+                    borderColor: colors.border.light,
+                  },
+                ]}
+              >
+                <ThemedText style={[styles.metaChipText, { color: colors.text.secondary }]}>
+                  {item.source === 'db' ? 'Account' : 'Local'}
+                </ThemedText>
+              </View>
+
+              <ThemedText style={[styles.cardDate, { color: colors.text.tertiary }]}>
+                {item.date}
+              </ThemedText>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={[
+              styles.deleteButton,
+              {
+                backgroundColor: colors.background,
+                borderColor: colors.border.light,
+              },
+            ]}
+            onPress={() => handleDeleteList(item)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.text.primary} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.statsRow}>
+          <View
+            style={[
+              styles.statPill,
+              {
+                backgroundColor: colors.background,
+                borderColor: colors.border.light,
+              },
+            ]}
+          >
+            <Ionicons name="list-outline" size={14} color={theme.brand.primary} />
+            <ThemedText style={[styles.statText, { color: colors.text.primary }]}>
+              {item.itemCount} items
+            </ThemedText>
+          </View>
+
+          <View
+            style={[
+              styles.statPill,
+              {
+                backgroundColor: colors.background,
+                borderColor: colors.border.light,
+              },
+            ]}
+          >
+            <Ionicons name="checkmark-circle-outline" size={14} color={theme.brand.primary} />
+            <ThemedText style={[styles.statText, { color: colors.text.primary }]}>
+              {item.checkedCount} done
+            </ThemedText>
+          </View>
+        </View>
+
+        <View style={[styles.progressTrack, { backgroundColor: colors.background }]}>
+          <View style={[styles.progressFill, { width: `${progress * 100}%` }]} />
+        </View>
+
+        <View style={styles.previewList}>
+          {previewItems.length === 0 ? (
+            <ThemedText style={[styles.emptyPreviewText, { color: colors.text.tertiary }]}>
+              No items yet
+            </ThemedText>
+          ) : (
+            previewItems.map((previewItem, index) => {
+              const checked = Boolean(previewItem?.checked || previewItem?.is_checked);
+
+              return (
+                <View key={`${item.source}-${item.id}-${previewItem?.id ?? index}`} style={styles.previewRow}>
+                  <View
+                    style={[
+                      styles.previewDot,
+                      checked
+                        ? { backgroundColor: theme.brand.primary, borderColor: theme.brand.primary }
+                        : { backgroundColor: 'transparent', borderColor: colors.border.light },
+                    ]}
+                  >
+                    {checked && <Ionicons name="checkmark" size={10} color={theme.neutral.white} />}
+                  </View>
+
+                  <ThemedText
+                    style={[
+                      styles.previewText,
+                      { color: checked ? colors.text.tertiary : colors.text.primary },
+                      checked && styles.previewTextChecked,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {previewItem?.name || `Item ${index + 1}`}
+                  </ThemedText>
+                </View>
+              );
+            })
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.topHeader}>
+          <View>
+            <ThemedText style={[styles.screenTitle, { color: colors.text.primary }]}>
+              Grocery Lists
+            </ThemedText>
+            <ThemedText style={[styles.screenSubtitle, { color: colors.text.secondary }]}>
+              Keep track of your shopping in one place
+            </ThemedText>
+          </View>
+
+          <TouchableOpacity
+            style={styles.createButton}
+            onPress={() => router.push('/grocery-list/new')}
+            activeOpacity={0.86}
+          >
+            <Ionicons name="add" size={18} color={theme.neutral.white} />
+          </TouchableOpacity>
+        </View>
+
         <View
           style={[
             styles.searchContainer,
@@ -241,10 +416,10 @@ export default function GroceryListScreen() {
             },
           ]}
         >
-          <Ionicons name="search" size={30} color={colors.text.tertiary} style={styles.searchIcon} />
+          <Ionicons name="search" size={22} color={colors.text.tertiary} style={styles.searchIcon} />
           <TextInput
             style={[styles.searchInput, { color: colors.input.text }]}
-            placeholder="Search through your grocery lists"
+            placeholder="Search your grocery lists"
             placeholderTextColor={colors.input.placeholder}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -261,7 +436,7 @@ export default function GroceryListScreen() {
           </View>
         ) : filteredLists.length === 0 ? (
           <View style={styles.stateWrap}>
-            <View style={[styles.emptyIconWrap, { backgroundColor: colors.card }]}>
+            <View style={[styles.emptyIconWrap, { backgroundColor: colors.input.background }]}>
               <Ionicons name="cart-outline" size={30} color={theme.brand.primary} />
             </View>
             <ThemedText style={[styles.emptyTitle, { color: colors.text.primary }]}>
@@ -283,31 +458,7 @@ export default function GroceryListScreen() {
           <FlatList
             data={filteredLists}
             keyExtractor={(item) => `${item.source}-${item.id}`}
-            renderItem={({ item }) => (
-              <View style={styles.listRow}>
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() => handleListPress(item.id)}
-                  style={styles.cardWrap}
-                >
-                  <GroceryListCard list={item} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.deleteButton,
-                    {
-                      backgroundColor: colors.input.background,
-                      borderColor: colors.border.light,
-                    },
-                  ]}
-                  onPress={() => handleDeleteList(item)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="trash-outline" size={20} color={colors.text.primary} />
-                </TouchableOpacity>
-              </View>
-            )}
+            renderItem={renderListCard}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.listContent}
           />
@@ -320,7 +471,32 @@ export default function GroceryListScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  topHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: theme.spacing.md,
+  },
+  screenTitle: {
+    fontSize: theme.typography.fontSizes.h2,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  screenSubtitle: {
+    marginTop: 4,
+    fontSize: 14,
+    fontFamily: theme.typography.fontFamily,
+  },
+  createButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.brand.primary,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -339,8 +515,129 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontFamily,
   },
   listContent: {
-    paddingBottom: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+    gap: theme.spacing.md,
+  },
+  listCard: {
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: theme.spacing.lg,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
     gap: theme.spacing.sm,
+  },
+  cardHeaderLeft: {
+    flex: 1,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cardTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  pinBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: theme.brand.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    flexWrap: 'wrap',
+  },
+  metaChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  metaChipText: {
+    fontSize: 11,
+    fontWeight: theme.typography.fontWeights.medium,
+    fontFamily: theme.typography.fontFamily,
+  },
+  cardDate: {
+    fontSize: 12,
+    fontFamily: theme.typography.fontFamily,
+  },
+  deleteButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: theme.spacing.md,
+  },
+  statPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  statText: {
+    fontSize: 12,
+    fontWeight: theme.typography.fontWeights.medium,
+    fontFamily: theme.typography.fontFamily,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginTop: theme.spacing.md,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: theme.brand.primary,
+    borderRadius: 999,
+  },
+  previewList: {
+    marginTop: theme.spacing.md,
+    gap: 8,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  previewDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily,
+  },
+  previewTextChecked: {
+    textDecorationLine: 'line-through',
+  },
+  emptyPreviewText: {
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily,
   },
   stateWrap: {
     flex: 1,
@@ -361,12 +658,14 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.fontSizes.h3,
     fontWeight: theme.typography.fontWeights.bold,
     textAlign: 'center',
+    fontFamily: theme.typography.fontFamily,
   },
   emptyBody: {
     marginTop: theme.spacing.sm,
     fontSize: theme.typography.fontSizes.h4,
     lineHeight: 22,
     textAlign: 'center',
+    fontFamily: theme.typography.fontFamily,
   },
   emptyActionButton: {
     marginTop: theme.spacing.lg,
@@ -383,21 +682,6 @@ const styles = StyleSheet.create({
     color: theme.neutral.white,
     fontSize: theme.typography.fontSizes.h4,
     fontWeight: theme.typography.fontWeights.semibold,
-  },
-  listRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-  },
-  cardWrap: {
-    flex: 1,
-  },
-  deleteButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    fontFamily: theme.typography.fontFamily,
   },
 });
