@@ -7,8 +7,8 @@ import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { AntDesign } from '@expo/vector-icons';
 import { router, Stack } from "expo-router";
-import React, { useState } from "react";
-import { Keyboard, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/context/auth-context";
@@ -18,8 +18,23 @@ export default function SignUp() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const { signUpWithPassword, signInWithGoogle } = useAuth();
   const { colors } = useTheme();
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener("keyboardDidShow", () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const handleSignUp = async () => {
     Keyboard.dismiss();
@@ -49,16 +64,26 @@ export default function SignUp() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <ScrollView 
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
-            <View style={styles.illustrationWrapper}>
-              <ArtSignup width={320} height={180}/>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.keyboardAvoidingView}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+            <ScrollView
+              contentContainerStyle={[
+                styles.scrollContent,
+                isKeyboardVisible && styles.scrollContentWithKeyboard,
+              ]}
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+            {!isKeyboardVisible && (
+              <View style={styles.illustrationWrapper}>
+                <ArtSignup width={320} height={180}/>
+              </View>
+            )}
 
             {/* Title */}
             <Animated.View entering={FadeInUp.delay(300)}>
@@ -159,8 +184,9 @@ export default function SignUp() {
                 </Typography.H5>
               </TouchableOpacity>
             </View>
-          </ScrollView>
-        </TouchableWithoutFeedback>
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </>
   );
@@ -170,11 +196,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  keyboardAvoidingView: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.md,
     paddingBottom: theme.spacing.xl,
+  },
+  scrollContentWithKeyboard: {
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.md,
   },
   title: {
     textAlign: 'center',
