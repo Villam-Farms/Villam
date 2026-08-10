@@ -86,6 +86,10 @@ export default function FollowersScreen() {
     }
   };
 
+  const openProfile = (userId: string) => {
+    router.push({ pathname: "/user/[id]", params: { id: userId, from: "followers" } });
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top"]}>
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -128,20 +132,21 @@ export default function FollowersScreen() {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
             <View style={styles.userItem}>
-              {item.avatar_url ? (
-                <Image source={{ uri: item.avatar_url }} style={styles.profilePic} contentFit="cover" />
-              ) : (
-                <View style={[styles.profilePic, { backgroundColor: theme.neutral[400] }]} />
-              )}
-
-              <View style={styles.userInfo}>
-                <ThemedText style={[styles.userName, { color: colors.text.primary }]}>
-                  {item.full_name ?? item.username ?? "Unknown user"}
-                </ThemedText>
-                <ThemedText style={[styles.userHandle, { color: colors.text.secondary }]}>
-                  {item.username ? `@${item.username}` : ""}
-                </ThemedText>
-              </View>
+              <TouchableOpacity style={styles.profileLink} onPress={() => openProfile(item.id)} activeOpacity={0.7}>
+                {item.avatar_url ? (
+                  <Image source={{ uri: item.avatar_url }} style={styles.profilePic} contentFit="cover" />
+                ) : (
+                  <View style={[styles.profilePic, { backgroundColor: theme.neutral[400] }]} />
+                )}
+                <View style={styles.userInfo}>
+                  <ThemedText style={[styles.userName, { color: colors.text.primary }]}>
+                    {item.full_name ?? item.username ?? "Unknown user"}
+                  </ThemedText>
+                  <ThemedText style={[styles.userHandle, { color: colors.text.secondary }]}>
+                    {item.username ? `@${item.username}` : ""}
+                  </ThemedText>
+                </View>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 onPress={() => toggleFollow(item.id)}
@@ -221,6 +226,11 @@ const styles = StyleSheet.create({
   },
   userInfo: {
     flex: 1,
+  },
+  profileLink: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
   },
   userName: {
     fontSize: theme.typography.fontSizes.h3,

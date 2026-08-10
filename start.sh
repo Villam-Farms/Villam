@@ -9,7 +9,8 @@ else
 fi
 
 # Start frontend (Expo)
-frontend_cmd=(npm --prefix frontend run start)
+# Clear Expo's cached environment so API URL changes reach physical devices.
+frontend_cmd=(npm --prefix frontend run start -- --clear)
 
 "${backend_cmd[@]}" &
 backend_pid=$!
