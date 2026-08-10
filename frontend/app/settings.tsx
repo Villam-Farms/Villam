@@ -1,10 +1,10 @@
 // app/settings.tsx
-import { StyleSheet, TouchableOpacity, View, Alert } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, Alert, Switch } from 'react-native';
 import { router } from 'expo-router';
 import { theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/hooks/useTheme';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -13,11 +13,48 @@ import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/context/auth-context';
 import { useMyProfile } from '@/hooks/useMyProfile';
 import { getProfileDisplay } from '@/lib/profile-display';
+import {
+  getShowGroceryListQuantities,
+  getShowGroceryListUnits,
+  setShowGroceryListQuantities,
+  setShowGroceryListUnits,
+} from '@/lib/grocery-list-preferences';
 
 export default function SettingsScreen() {
   const { colors } = useTheme();
   const { signOut, session } = useAuth();
   const { data: profile } = useMyProfile();
+  const [showGroceryListUnits, setShowUnits] = useState(true);
+  const [showGroceryListQuantities, setShowQuantities] = useState(true);
+
+  useEffect(() => {
+    Promise.all([getShowGroceryListUnits(), getShowGroceryListQuantities()])
+      .then(([showUnits, showQuantities]) => {
+        setShowUnits(showUnits);
+        setShowQuantities(showQuantities);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const handleShowUnitsChange = async (value: boolean) => {
+    setShowUnits(value);
+    try {
+      await setShowGroceryListUnits(value);
+    } catch {
+      setShowUnits(!value);
+      Alert.alert('Setting not saved', 'Please try again.');
+    }
+  };
+
+  const handleShowQuantitiesChange = async (value: boolean) => {
+    setShowQuantities(value);
+    try {
+      await setShowGroceryListQuantities(value);
+    } catch {
+      setShowQuantities(!value);
+      Alert.alert('Setting not saved', 'Please try again.');
+    }
+  };
   const metadata = session?.user?.user_metadata as
     | { name?: string; full_name?: string; username?: string }
     | undefined;
@@ -121,7 +158,39 @@ export default function SettingsScreen() {
           </ThemedText>
         </TouchableOpacity>
 
-        {/* Settings Options */}
+        <ThemedText style={[styles.sectionLabel, { color: colors.text.secondary }]}>Grocery lists</ThemedText>
+        <View style={[styles.optionsContainer, {
+          backgroundColor: colors.card,
+          borderColor: colors.border.default,
+        }]}>
+          <View style={[styles.option, { borderBottomColor: colors.border.default }]}>
+            <View style={styles.optionCopy}>
+              <ThemedText style={[styles.optionText, { color: colors.text.primary }]}>Show quantities</ThemedText>
+              <ThemedText style={[styles.optionDescription, { color: colors.text.secondary }]}>Display item amounts such as 1, 2, or 12.</ThemedText>
+            </View>
+            <Switch
+              value={showGroceryListQuantities}
+              onValueChange={handleShowQuantitiesChange}
+              trackColor={{ false: colors.border.strong, true: theme.brand.light }}
+              thumbColor={showGroceryListQuantities ? theme.brand.primary : theme.neutral.white}
+            />
+          </View>
+          <View style={[styles.option, { borderBottomWidth: 0 }]}>
+            <View style={styles.optionCopy}>
+              <ThemedText style={[styles.optionText, { color: colors.text.primary }]}>Show units</ThemedText>
+              <ThemedText style={[styles.optionDescription, { color: colors.text.secondary }]}>Display units such as cups, pounds, and gallons.</ThemedText>
+            </View>
+            <Switch
+              value={showGroceryListUnits}
+              onValueChange={handleShowUnitsChange}
+              trackColor={{ false: colors.border.strong, true: theme.brand.light }}
+              thumbColor={showGroceryListUnits ? theme.brand.primary : theme.neutral.white}
+            />
+          </View>
+        </View>
+
+        <ThemedText style={[styles.sectionLabel, { color: colors.text.secondary }]}>Account</ThemedText>
+        {/* Account Options */}
         <View style={[styles.optionsContainer, { 
           backgroundColor: colors.card,
           borderColor: colors.border.default,
@@ -209,7 +278,14 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
     overflow: 'hidden',
-    marginTop: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+  },
+  sectionLabel: {
+    marginTop: theme.spacing.lg,
+    marginLeft: theme.spacing.xs,
+    fontSize: theme.typography.fontSizes.h5,
+    fontWeight: theme.typography.fontWeights.semibold,
+    textTransform: 'uppercase',
   },
   option: {
     flexDirection: 'row',
@@ -223,5 +299,14 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.fontSizes.h4,
     fontWeight: theme.typography.fontWeights.medium,
     fontFamily: theme.typography.fontFamily,
+  },
+  optionCopy: {
+    flex: 1,
+    paddingRight: theme.spacing.md,
+  },
+  optionDescription: {
+    marginTop: 3,
+    fontSize: theme.typography.fontSizes.h5,
+    lineHeight: 18,
   },
 });

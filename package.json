@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "./start.sh",
+    "dev:ios": "EXPO_PUBLIC_API_URL=http://127.0.0.1:8001 ./start.sh",
     "frontend:start": "npm --prefix frontend run start",
     "backend:start": "uvicorn app.main:app --reload --app-dir backend"
   },
