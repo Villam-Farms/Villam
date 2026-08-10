@@ -18,10 +18,23 @@ export type MeResponse = {
   counts: FollowCounts;
 };
 
+export type UserProfileResponse = MeResponse & {
+  is_following: boolean;
+};
+
 export type SearchUser = ProfileRow & { is_following: boolean };
 
 export async function getMe(accessToken: string): Promise<MeResponse> {
   return apiRequest<MeResponse>("/me", { accessToken });
+}
+
+export async function getUserProfile(
+  accessToken: string,
+  userId: string,
+): Promise<UserProfileResponse> {
+  return apiRequest<UserProfileResponse>(`/users/${encodeURIComponent(userId)}/profile`, {
+    accessToken,
+  });
 }
 
 export async function updateMyDescription(

@@ -98,6 +98,10 @@ class MeOut(BaseModel):
     counts: CountsOut
 
 
+class UserProfileOut(MeOut):
+    is_following: bool
+
+
 class ListingImageOut(BaseModel):
     id: str
     image_url: str | None = None
@@ -292,6 +296,52 @@ def get_me(user_id: str = Depends(get_current_user_id)) -> MeOut:
     return MeOut(
         profile=profile,
         counts=CountsOut(followers=_safe_count(followers_resp), following=_safe_count(following_resp)),
+    )
+
+
+@app.get("/users/{profile_id}/profile", response_model=UserProfileOut)
+def get_user_profile(
+    profile_id: str, user_id: str = Depends(get_current_user_id)
+) -> UserProfileOut:
+    profile_resp = (
+        supabase.table("profiles")
+        .select("id,username,full_name,avatar_url,description")
+        .eq("id", profile_id)
+        .maybe_single()
+        .execute()
+    )
+    profile_data = getattr(profile_resp, "data", None)
+    if not isinstance(profile_data, dict):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    followers_resp = (
+        supabase.table("follows")
+        .select("*", count="exact")
+        .eq("following_id", profile_id)
+        .execute()
+    )
+    following_resp = (
+        supabase.table("follows")
+        .select("*", count="exact")
+        .eq("follower_id", profile_id)
+        .execute()
+    )
+    relationship_resp = (
+        supabase.table("follows")
+        .select("following_id")
+        .eq("follower_id", user_id)
+        .eq("following_id", profile_id)
+        .limit(1)
+        .execute()
+    )
+
+    return UserProfileOut(
+        profile=ProfileOut(**profile_data),
+        counts=CountsOut(
+            followers=_safe_count(followers_resp),
+            following=_safe_count(following_resp),
+        ),
+        is_following=bool(getattr(relationship_resp, "data", None)),
     )
 
 

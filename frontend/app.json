@@ -15,7 +15,6 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "extra": {
-      "apiUrl": "https://villam-backend.onrender.com",
       "eas": {
         "projectId": "109f1832-bb06-441c-bbeb-a3f7bd4f1567"
       }
@@ -27,7 +26,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.villamfarms.villam",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
       }
     },
     "android": {
@@ -37,6 +39,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+      "usesCleartextTraffic": true,
       "package": "com.villamfarms.villam"
     },
     "web": {
