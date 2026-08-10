@@ -3,7 +3,7 @@ import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/themed-text";
@@ -75,6 +75,7 @@ async function loadUserRecipes(userId: string): Promise<UserRecipe[]> {
 
 export default function UserProfileScreen() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id, from } = useLocalSearchParams<{
     id: string;
@@ -167,9 +168,18 @@ export default function UserProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={["top", "bottom"]}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.headerBackground, { backgroundColor: theme.brand.light }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={["bottom"]}>
+      <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={[styles.content, { backgroundColor: colors.background }]}>
+        <View
+          style={[
+            styles.headerBackground,
+            {
+              height: 133 + insets.top,
+              paddingTop: insets.top + theme.spacing.sm,
+              backgroundColor: theme.brand.light,
+            },
+          ]}
+        >
           <Pressable
             onPress={goBack}
             style={[styles.backButton, { backgroundColor: colors.background }]}

@@ -369,6 +369,7 @@ export default function HomeScreen() {
     metadata,
     session?.user?.email
   );
+  const firstName = displayName.trim().split(/\s+/)[0] || displayName;
 
   const farmsWithDistance = addDistanceAndSort(farms, userCoords);
 
@@ -640,8 +641,21 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <ThemedText type="defaultSemiBold" style={[styles.welcome, { color: colors.text.primary }]}>
-            {`Welcome ${displayName}!`}
+            {`Welcome ${firstName}!`}
           </ThemedText>
+
+          <TouchableOpacity
+            style={[
+              styles.settingsButton,
+              { backgroundColor: colors.card, borderColor: colors.border.light },
+            ]}
+            onPress={() => router.push('/settings')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+          >
+            <Ionicons name="settings-outline" size={21} color={colors.text.primary} />
+          </TouchableOpacity>
         </ThemedView>
 
         <View
@@ -935,13 +949,13 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: theme.spacing.md,
     paddingVertical: theme.spacing.md,
   },
   avatar: {
-    width: 40,
-    height: 40,
+    width: 46,
+    height: 46,
     borderRadius: theme.borderRadius.full,
-    marginRight: theme.spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -955,6 +969,15 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.fontSizes.h3,
     fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
+    textAlign: 'left',
+  },
+  settingsButton: {
+    width: 46,
+    height: 46,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   aiText: {
     color: theme.neutral.white,
