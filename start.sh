@@ -15,8 +15,11 @@ frontend_cmd=(npm --prefix frontend run start -- --clear)
 "${backend_cmd[@]}" &
 backend_pid=$!
 
-"${frontend_cmd[@]}" &
-frontend_pid=$!
+cleanup() {
+  kill "$backend_pid" 2>/dev/null || true
+}
 
-trap 'kill "$backend_pid" "$frontend_pid"' INT TERM
-wait "$backend_pid" "$frontend_pid"
+trap cleanup EXIT INT TERM
+
+# Keep Expo in the foreground so keyboard shortcuts such as i, a, and w work.
+"${frontend_cmd[@]}"

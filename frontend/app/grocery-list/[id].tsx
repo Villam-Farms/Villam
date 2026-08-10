@@ -18,6 +18,7 @@ import { theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
+import { getShowGroceryListQuantities, getShowGroceryListUnits } from '@/lib/grocery-list-preferences';
 
 type ExtendedGroceryItem = {
   id: string;
@@ -74,9 +75,20 @@ export default function GroceryListDetailScreen() {
   const [items, setItems] = useState<ExtendedGroceryItem[]>([]);
   const [title, setTitle] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [showUnits, setShowUnits] = useState(true);
+  const [showQuantities, setShowQuantities] = useState(true);
 
   const itemRefs = useRef<Record<string, TextInput | null>>({});
   const scrollRef = useRef<ScrollView | null>(null);
+
+  useEffect(() => {
+    Promise.all([getShowGroceryListUnits(), getShowGroceryListQuantities()])
+      .then(([unitsVisible, quantitiesVisible]) => {
+        setShowUnits(unitsVisible);
+        setShowQuantities(quantitiesVisible);
+      })
+      .catch(() => undefined);
+  }, []);
 
   const createEmptyItem = (): ExtendedGroceryItem => ({
     id: uid(),
@@ -498,35 +510,39 @@ export default function GroceryListDetailScreen() {
                         )}
                       </TouchableOpacity>
 
-                      <TextInput
-                        value={item.quantity ?? ''}
-                        onChangeText={(text) => updateItem(item.id, { quantity: text })}
-                        placeholder="1"
-                        placeholderTextColor={colors.text.tertiary}
-                        style={[
-                          styles.qtyInput,
-                          {
-                            backgroundColor: colors.input.background,
-                            borderColor: colors.border.default,
-                            color: colors.text.primary,
-                          },
-                        ]}
-                      />
+                      {showQuantities ? (
+                        <TextInput
+                          value={item.quantity ?? ''}
+                          onChangeText={(text) => updateItem(item.id, { quantity: text })}
+                          placeholder="1"
+                          placeholderTextColor={colors.text.tertiary}
+                          style={[
+                            styles.qtyInput,
+                            {
+                              backgroundColor: colors.input.background,
+                              borderColor: colors.border.default,
+                              color: colors.text.primary,
+                            },
+                          ]}
+                        />
+                      ) : null}
 
-                      <TextInput
-                        value={item.unit ?? ''}
-                        onChangeText={(text) => updateItem(item.id, { unit: text })}
-                        placeholder="unit"
-                        placeholderTextColor={colors.text.tertiary}
-                        style={[
-                          styles.unitInput,
-                          {
-                            backgroundColor: colors.input.background,
-                            borderColor: colors.border.default,
-                            color: colors.text.primary,
-                          },
-                        ]}
-                      />
+                      {showUnits ? (
+                        <TextInput
+                          value={item.unit ?? ''}
+                          onChangeText={(text) => updateItem(item.id, { unit: text })}
+                          placeholder="unit"
+                          placeholderTextColor={colors.text.tertiary}
+                          style={[
+                            styles.unitInput,
+                            {
+                              backgroundColor: colors.input.background,
+                              borderColor: colors.border.default,
+                              color: colors.text.primary,
+                            },
+                          ]}
+                        />
+                      ) : null}
 
                       <TextInput
                         ref={(ref) => {
