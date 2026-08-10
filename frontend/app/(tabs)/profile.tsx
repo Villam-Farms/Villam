@@ -17,7 +17,7 @@ import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/useTheme";
 import { theme } from "@/constants/theme";
 import { Button } from "@/components/ui/button";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/context/auth-context";
 import { getMe, uploadMyAvatar, updateMyDescription, type ProfileRow } from "@/lib/follows";
@@ -95,6 +95,7 @@ async function resolveRecipeImageUrl(recipe: RecipeRow) {
 
 export default function ProfileScreen() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
@@ -250,7 +251,24 @@ export default function ProfileScreen() {
             styles.headerBackground,
             { backgroundColor: theme.brand.light },
           ]}
-        />
+        >
+          <Pressable
+            onPress={() => router.push("/settings")}
+            style={[
+              styles.settingsButton,
+              {
+                top: insets.top + theme.spacing.sm,
+                backgroundColor: colors.background,
+                borderColor: colors.border.light,
+              },
+            ]}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+          >
+            <Ionicons name="settings-outline" size={22} color={colors.text.primary} />
+          </Pressable>
+        </View>
 
         <View style={styles.profileSection}>
           <Pressable
@@ -533,6 +551,18 @@ const styles = StyleSheet.create({
   headerBackground: {
     height: 133,
     width: "100%",
+    position: "relative",
+  },
+  settingsButton: {
+    position: "absolute",
+    right: theme.spacing.lg,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    ...theme.shadows.sm,
   },
   profileSection: {
     paddingHorizontal: theme.spacing.lg,
