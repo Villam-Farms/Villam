@@ -1,7 +1,7 @@
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 import type { Session } from "@supabase/supabase-js";
 
 import { clearLocalAuthSession, supabase } from "@/lib/supabase";
@@ -31,6 +31,64 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 function isInvalidRefreshTokenError(message?: string | null) {
   if (!message) return false;
   return message.toLowerCase().includes("invalid refresh token");
+}
+
+function getAuthRedirectUrl() {
+  return AuthSession.makeRedirectUri(
+    Platform.OS === "web" ? undefined : { scheme: "villam" }
+  );
+}
+
+const callbackPromises = new Map<string, Promise<string | null>>();
+const completedCallbacks = new Set<string>();
+
+function readCallbackParam(url: URL, name: string) {
+  const queryValue = url.searchParams.get(name);
+  if (queryValue) return queryValue;
+
+  const fragment = new URLSearchParams(url.hash.replace(/^#/, ""));
+  return fragment.get(name);
+}
+
+async function createSessionFromCallbackUrl(url: string): Promise<string | null> {
+  if (completedCallbacks.has(url)) return null;
+
+  const existingPromise = callbackPromises.get(url);
+  if (existingPromise) return existingPromise;
+
+  const callbackPromise = (async () => {
+    const callbackUrl = new URL(url);
+    const callbackError =
+      readCallbackParam(callbackUrl, "error_description") ??
+      readCallbackParam(callbackUrl, "error");
+
+    if (callbackError) return callbackError;
+
+    const code = readCallbackParam(callbackUrl, "code");
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (!error) completedCallbacks.add(url);
+      return error?.message ?? null;
+    }
+
+    const accessToken = readCallbackParam(callbackUrl, "access_token");
+    const refreshToken = readCallbackParam(callbackUrl, "refresh_token");
+    if (!accessToken || !refreshToken) return null;
+
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (!error) completedCallbacks.add(url);
+    return error?.message ?? null;
+  })();
+
+  callbackPromises.set(url, callbackPromise);
+  try {
+    return await callbackPromise;
+  } finally {
+    callbackPromises.delete(url);
+  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -64,6 +122,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    const handleUrl = async (url: string | null) => {
+      if (!url) return;
+      const error = await createSessionFromCallbackUrl(url);
+      if (error) console.warn("Unable to complete authentication callback:", error);
+    };
+
+    void Linking.getInitialURL().then(handleUrl);
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      void handleUrl(url);
+    });
+
+    return () => subscription.remove();
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
@@ -78,14 +153,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           password,
           options: {
             data: metadata,
+            emailRedirectTo: getAuthRedirectUrl(),
           },
         });
         return error?.message ?? null;
       },
       signInWithGoogle: async () => {
-        const redirectTo = AuthSession.makeRedirectUri(
-          Platform.OS === "web" ? undefined : { scheme: "villam" }
-        );
+        const redirectTo = getAuthRedirectUrl();
 
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: "google",
@@ -108,19 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return "Google sign-in cancelled";
         }
 
-        const callbackUrl = new URL(result.url);
-        const callbackError =
-          callbackUrl.searchParams.get("error_description") ??
-          callbackUrl.searchParams.get("error");
-
-        if (callbackError) return callbackError;
-
-        const code = callbackUrl.searchParams.get("code");
-        if (!code) return "Google sign-in did not return an authorization code";
-
-        const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-
-        return sessionError?.message ?? null;
+        return createSessionFromCallbackUrl(result.url);
       },
       signOut: async () => {
         try {
