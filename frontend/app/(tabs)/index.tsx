@@ -24,6 +24,7 @@ import { supabase } from '@/lib/supabase';
 import { useMyProfile } from '@/hooks/useMyProfile';
 import { getProfileDisplay } from '@/lib/profile-display';
 import { getLocalGroceryLists } from '@/lib/local-grocery-lists';
+import { getListingVisuals } from '@/lib/listing-visuals';
 
 const RECIPE_BUCKET = 'recipes';
 const FALLBACK_RECIPE_IMAGE =
@@ -816,42 +817,87 @@ export default function HomeScreen() {
           )}
         </ThemedView>
 
-        <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            In Season Now
+        <View style={styles.seasonSection}>
+          <View style={styles.seasonHeaderRow}>
+            <View style={styles.seasonTitleRow}>
+              <View style={[styles.seasonIconWrap, { backgroundColor: colors.card }]}>
+                <Ionicons name="sunny-outline" size={20} color="#6E7B37" />
+              </View>
+              <View style={styles.seasonHeadingCopy}>
+                <ThemedText style={styles.seasonEyebrow}>Fresh this month</ThemedText>
+                <ThemedText style={styles.seasonTitle}>In season now</ThemedText>
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/produce')} activeOpacity={0.7}>
+              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>View All</ThemedText>
+            </TouchableOpacity>
+          </View>
+
+          <ThemedText style={styles.seasonSubtitle}>
+            Discover what local farms are harvesting at its freshest.
           </ThemedText>
 
           {produceLoading ? (
-            <ThemedText style={{ color: colors.text.tertiary }}>Loading produce…</ThemedText>
+            <View style={styles.produceStateRow}>
+              <Ionicons name="leaf-outline" size={18} color="#6E7B37" />
+              <ThemedText style={styles.produceStateText}>Gathering this month&apos;s harvest…</ThemedText>
+            </View>
           ) : produceError ? (
-            <ThemedText style={{ color: colors.text.tertiary }}>{produceError}</ThemedText>
+            <View style={styles.produceStateRow}>
+              <Ionicons name="cloud-offline-outline" size={18} color="#7A5A18" />
+              <ThemedText style={styles.produceStateText}>{produceError}</ThemedText>
+            </View>
           ) : filteredProduce.length === 0 ? (
-            <ThemedText style={{ color: colors.text.tertiary }}>No seasonal produce found.</ThemedText>
+            <View style={styles.produceStateRow}>
+              <Ionicons name="basket-outline" size={18} color="#6E7B37" />
+              <ThemedText style={styles.produceStateText}>The next seasonal harvest is coming soon.</ThemedText>
+            </View>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.produceScroll}>
-              {filteredProduce.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[
-                    styles.produceChip,
-                    {
-                      backgroundColor: colors.input.background,
-                      borderColor: colors.border.light,
-                    },
-                  ]}
-                  onPress={() => handleProducePress(item.id)}
-                >
-                  <ThemedText style={[styles.produceName, { color: colors.text.primary }]}>
-                    {item.name}
-                  </ThemedText>
-                  <ThemedText style={[styles.produceMeta, { color: colors.text.tertiary }]}>
-                    {item.category} • {item.default_sold_by}
-                  </ThemedText>
-                </TouchableOpacity>
-              ))}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.produceScroll}
+              contentContainerStyle={styles.produceScrollContent}
+              decelerationRate="fast"
+              snapToInterval={176}
+            >
+              {filteredProduce.map((item) => {
+                const visuals = getListingVisuals(item.category);
+
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.produceCard, { backgroundColor: visuals.color }]}
+                    onPress={() => handleProducePress(item.id)}
+                    activeOpacity={0.86}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${item.name}`}
+                  >
+                    <View style={[styles.produceIconWrap, { backgroundColor: visuals.badgeColor }]}>
+                      <Ionicons name={visuals.icon} size={27} color={visuals.badgeTextColor} />
+                    </View>
+                    <View style={styles.produceCardCopy}>
+                      <ThemedText style={styles.produceName} numberOfLines={1}>
+                        {item.name}
+                      </ThemedText>
+                      <View style={[styles.produceCategoryPill, { backgroundColor: visuals.badgeColor }]}>
+                        <ThemedText style={[styles.produceCategoryText, { color: visuals.badgeTextColor }]} numberOfLines={1}>
+                          {item.category}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.produceFooter}>
+                        <ThemedText style={styles.produceMeta}>per {item.default_sold_by}</ThemedText>
+                        <View style={styles.produceArrow}>
+                          <Ionicons name="arrow-forward" size={14} color="#2E2A1F" />
+                        </View>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           )}
-        </ThemedView>
+        </View>
 
         <ThemedView style={styles.section}>
           <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
@@ -1183,28 +1229,137 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontFamily: theme.typography.fontFamily,
   },
+  seasonSection: {
+    marginVertical: theme.spacing.md,
+  },
+  seasonHeaderRow: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.sm,
+  },
+  seasonTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  seasonIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.72)',
+  },
+  seasonHeadingCopy: {
+    flex: 1,
+  },
+  seasonEyebrow: {
+    color: '#6E7B37',
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    fontWeight: theme.typography.fontWeights.bold,
+  },
+  seasonTitle: {
+    color: '#2E2A1F',
+    fontSize: 22,
+    lineHeight: 28,
+    fontWeight: theme.typography.fontWeights.bold,
+  },
+  seasonSubtitle: {
+    position: 'relative',
+    color: '#5A564B',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: theme.spacing.sm,
+    maxWidth: 340,
+  },
+  produceStateRow: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: theme.spacing.md,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+  },
+  produceStateText: {
+    flex: 1,
+    color: '#5A564B',
+    fontSize: 13,
+    lineHeight: 18,
+  },
   produceScroll: {
     marginTop: theme.spacing.md,
-    marginLeft: -theme.spacing.md,
-    paddingLeft: theme.spacing.md,
+    marginHorizontal: -theme.spacing.md,
   },
-  produceChip: {
-    borderWidth: 1,
-    borderRadius: theme.borderRadius.lg,
-    paddingVertical: theme.spacing.sm,
+  produceScrollContent: {
+    gap: 10,
     paddingHorizontal: theme.spacing.md,
-    marginRight: theme.spacing.sm,
-    minWidth: 150,
+    paddingBottom: 2,
+  },
+  produceCard: {
+    width: 166,
+    minHeight: 170,
+    borderRadius: 20,
+    padding: theme.spacing.md,
+    justifyContent: 'space-between',
+  },
+  produceIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  produceCardCopy: {
+    marginTop: theme.spacing.md,
   },
   produceName: {
-    fontSize: theme.typography.fontSizes.h4,
-    fontWeight: theme.typography.fontWeights.semibold,
+    color: '#2E2A1F',
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: theme.typography.fontWeights.bold,
     fontFamily: theme.typography.fontFamily,
   },
+  produceCategoryPill: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 6,
+  },
+  produceCategoryText: {
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: theme.typography.fontWeights.semibold,
+  },
+  produceFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
   produceMeta: {
-    marginTop: 2,
-    fontSize: 12,
+    flex: 1,
+    color: '#5A564B',
+    fontSize: 11,
+    lineHeight: 15,
     fontFamily: theme.typography.fontFamily,
+  },
+  produceArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.68)',
   },
   farmsScroll: {
     marginTop: theme.spacing.sm,
