@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { Platform } from "react-native";
 import type { Session } from "@supabase/supabase-js";
 
-import { supabase } from "@/lib/supabase";
+import { clearLocalAuthSession, supabase } from "@/lib/supabase";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(async ({ data, error }) => {
       if (!isMounted) return;
       if (error && isInvalidRefreshTokenError(error.message)) {
-        await supabase.auth.signOut({ scope: "local" });
+        await clearLocalAuthSession();
         setSession(null);
         setInitialized(true);
         return;
@@ -83,13 +83,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return error?.message ?? null;
       },
       signInWithGoogle: async () => {
-        const redirectTo = AuthSession.makeRedirectUri({
-          useProxy: Platform.OS !== "web",
-        });
+        const redirectTo = AuthSession.makeRedirectUri(
+          Platform.OS === "web" ? undefined : { scheme: "villam" }
+        );
 
         const { data, error } = await supabase.auth.signInWithOAuth({
           provider: "google",
-          options: { redirectTo },
+          options: {
+            redirectTo,
+            skipBrowserRedirect: Platform.OS !== "web",
+          },
         });
 
         if (error) return error.message;
@@ -105,20 +108,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return "Google sign-in cancelled";
         }
 
-        const { error: sessionError } = await supabase.auth.getSessionFromUrl({
-          url: result.url,
-          storeSession: true,
-        });
+        const callbackUrl = new URL(result.url);
+        const callbackError =
+          callbackUrl.searchParams.get("error_description") ??
+          callbackUrl.searchParams.get("error");
+
+        if (callbackError) return callbackError;
+
+        const code = callbackUrl.searchParams.get("code");
+        if (!code) return "Google sign-in did not return an authorization code";
+
+        const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
 
         return sessionError?.message ?? null;
       },
       signOut: async () => {
-        const { error } = await supabase.auth.signOut();
-        if (error && isInvalidRefreshTokenError(error.message)) {
-          await supabase.auth.signOut({ scope: "local" });
-          return null;
+        try {
+          const { error } = await supabase.auth.signOut();
+          if (!error) {
+            setSession(null);
+            return null;
+          }
+        } catch {
+          // A device can still log out locally when the Auth server is unreachable.
         }
-        return error?.message ?? null;
+
+        try {
+          await clearLocalAuthSession();
+        } catch {
+          return "Unable to clear the saved login from this device";
+        }
+
+        setSession(null);
+        return null;
       },
     }),
     [initialized, session]

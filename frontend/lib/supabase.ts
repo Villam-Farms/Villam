@@ -46,12 +46,22 @@ const webStorage = {
 };
 
 const storage = Platform.OS === "web" ? webStorage : AsyncStorage;
+const authStorageKey = "villam-auth";
+
+export async function clearLocalAuthSession() {
+  await Promise.all([
+    storage.removeItem(authStorageKey),
+    storage.removeItem(`${authStorageKey}-code-verifier`),
+  ]);
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     storage,
+    storageKey: authStorageKey,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: Platform.OS === "web",
+    flowType: "pkce",
   },
 });
