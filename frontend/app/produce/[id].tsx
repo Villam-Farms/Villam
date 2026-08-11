@@ -1,19 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Image } from 'expo-image';
-
-import { supabase } from '@/lib/supabase'; // adjust if needed
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { theme } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
-
-import { openDirections } from '@/lib/directions';
 import { formatAddress } from '@/lib/address';
+import { openDirections } from '@/lib/directions';
+import { getListingVisuals } from '@/lib/listing-visuals';
+import { supabase } from '@/lib/supabase';
 
 type ProduceItem = {
   id: string;
@@ -26,7 +24,6 @@ type ProduceItem = {
 type Farm = {
   id: string;
   name: string;
-  products: string | null;
   rating: number | null;
   reviews: number | null;
   latitude: number;
@@ -36,8 +33,6 @@ type Farm = {
   state: string | null;
   postal_code: string | null;
   country: string | null;
-  website?: string | null;
-  description?: string | null;
 };
 
 type ListingRow = {
@@ -45,347 +40,364 @@ type ListingRow = {
   price: number;
   currency: string;
   sold_by: string;
-  available: boolean;
   image_url: string | null;
-  start_date: string | null;
-  end_date: string | null;
   farms: Farm;
   produce_varieties: { id: string; name: string } | null;
 };
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatPrice(price: number, currency: string) {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: currency || 'USD',
+      minimumFractionDigits: 2,
+    }).format(Number(price));
+  } catch {
+    return `${currency || '$'} ${Number(price).toFixed(2)}`;
+  }
+}
+
 export default function ProduceDetailScreen() {
   const { colors } = useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
-
+  const insets = useSafeAreaInsets();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const produceId = typeof id === 'string' ? id : '';
   const [item, setItem] = useState<ProduceItem | null>(null);
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [seasonMonths, setSeasonMonths] = useState<number[]>([]);
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const monthNames = useMemo(
-    () => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-    []
-  );
 
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
-      if (!id) return;
+    async function load() {
+      if (!produceId) {
+        setError('This produce item is missing a valid id.');
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setError(null);
 
-      // 1) Produce item
-      const { data: itemData, error: itemErr } = await supabase
+      const { data: itemData, error: itemError } = await supabase
         .from('produce_items')
         .select('id,name,category,description,default_sold_by')
-        .eq('id', id)
+        .eq('id', produceId)
         .single();
 
       if (cancelled) return;
-
-      if (itemErr || !itemData) {
-        console.log('Item load error:', itemErr);
-        setError('Could not load produce item.');
+      if (itemError || !itemData) {
+        console.log('Item load error:', itemError);
+        setError('We could not load this produce item.');
         setLoading(false);
         return;
       }
 
       setItem(itemData as ProduceItem);
 
-      // 2) Season months (optional)
-      const { data: smData, error: smErr } = await supabase
-        .from('produce_item_season_months')
-        .select('month')
-        .eq('produce_item_id', id);
-
-      if (!cancelled) {
-        if (smErr) console.log('Season months error:', smErr);
-        setSeasonMonths((smData ?? []).map((r: any) => r.month).sort((a: number, b: number) => a - b));
-      }
-
-      // 3) Listings for ANY variety belonging to this produce item
-      // Uses explicit relationship names + inner join on produce_varieties
-      const { data: listingData, error: listingErr } = await supabase
-        .from('farm_listings')
-        .select(
-          `
-          id,
-          price,
-          currency,
-          sold_by,
-          available,
-          image_url,
-          start_date,
-          end_date,
-          farms:farms!farm_listings_farm_id_fkey (
-            id,
-            name,
-            products,
-            rating,
-            reviews,
-            latitude,
-            longitude,
-            street,
-            city,
-            state,
-            postal_code,
-            country,
-            website,
-            description
-          ),
-          produce_varieties:produce_varieties!inner (
-            id,
-            name,
-            produce_item_id
-          )
-        `
-        )
-        .eq('available', true)
-        .eq('produce_varieties.produce_item_id', id)
-        .order('price', { ascending: true });
+      const [{ data: monthData, error: monthError }, { data: listingData, error: listingError }] =
+        await Promise.all([
+          supabase.from('produce_item_season_months').select('month').eq('produce_item_id', produceId),
+          supabase
+            .from('farm_listings')
+            .select(`
+              id, price, currency, sold_by, image_url,
+              farms:farms!farm_listings_farm_id_fkey (
+                id, name, rating, reviews, latitude, longitude,
+                street, city, state, postal_code, country
+              ),
+              produce_varieties:produce_varieties!inner (id, name, produce_item_id)
+            `)
+            .eq('available', true)
+            .eq('produce_varieties.produce_item_id', produceId)
+            .order('price', { ascending: true }),
+        ]);
 
       if (cancelled) return;
+      if (monthError) console.log('Season months error:', monthError);
+      setSeasonMonths(
+        (monthData ?? []).map((row: { month: number }) => row.month).sort((a, b) => a - b)
+      );
 
-      if (listingErr) {
-        console.log('Listing error:', listingErr);
-        setError('Could not load farms for this produce.');
+      if (listingError) {
+        console.log('Listing error:', listingError);
+        setError('We could not load nearby farm listings.');
         setListings([]);
         setLoading(false);
         return;
       }
 
-      // Normalize embedded objects (sometimes they come back as object|array|null)
-      const cleaned: ListingRow[] = (listingData ?? [])
-        .map((r: any) => {
-          const farm = Array.isArray(r.farms) ? r.farms[0] : r.farms;
-          const variety = Array.isArray(r.produce_varieties) ? r.produce_varieties[0] : r.produce_varieties;
-
-          if (!farm || !variety) return null;
-
-          return {
-            id: r.id,
-            price: r.price,
-            currency: r.currency,
-            sold_by: r.sold_by,
-            available: r.available,
-            image_url: r.image_url ?? null,
-            start_date: r.start_date ?? null,
-            end_date: r.end_date ?? null,
-            farms: farm,
-            produce_varieties: { id: variety.id, name: variety.name },
-          } as ListingRow;
-        })
-        .filter((x): x is ListingRow => x !== null);
+      const cleaned = (listingData ?? []).flatMap((row: any): ListingRow[] => {
+        const farm = Array.isArray(row.farms) ? row.farms[0] : row.farms;
+        const variety = Array.isArray(row.produce_varieties)
+          ? row.produce_varieties[0]
+          : row.produce_varieties;
+        if (!farm || !variety) return [];
+        return [{
+          id: row.id,
+          price: row.price,
+          currency: row.currency,
+          sold_by: row.sold_by,
+          image_url: row.image_url ?? null,
+          farms: farm,
+          produce_varieties: { id: variety.id, name: variety.name },
+        }];
+      });
 
       setListings(cleaned);
       setLoading(false);
-    };
+    }
 
     load();
+    return () => { cancelled = true; };
+  }, [produceId]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  const seasonText = useMemo(
+    () => seasonMonths.length ? seasonMonths.map((month) => MONTH_NAMES[month - 1]).join(' · ') : 'Season varies',
+    [seasonMonths]
+  );
+  const visuals = getListingVisuals(item?.category);
 
-  const handleDirections = async (farm: Farm) => {
-    const destination = formatAddress(farm);
-    const finalDest =
-      destination.trim().length > 0 ? destination : `${farm.latitude},${farm.longitude}`;
-
+  async function handleDirections(farm: Farm) {
+    const address = formatAddress(farm).trim();
     try {
-      await openDirections(finalDest);
-    } catch (e) {
-      console.log('Could not open directions', e);
+      await openDirections(address || `${farm.latitude},${farm.longitude}`);
+    } catch (directionError) {
+      console.log('Could not open directions', directionError);
     }
-  };
-
-  const renderSeasonText = () => {
-    if (!seasonMonths.length) return 'Seasonality not set';
-    return seasonMonths.map((m) => monthNames[m - 1]).join(' • ');
-  };
+  }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      <ScrollView style={styles.container}>
-        {/* Top bar */}
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={[styles.backBtn, { borderColor: colors.border.light }]}
-          >
-            <Ionicons name="chevron-back" size={22} color={colors.text.primary} />
-            <ThemedText style={{ color: colors.text.primary }}>Back</ThemedText>
+    <SafeAreaView style={[styles.screen, { backgroundColor: colors.background }]} edges={['bottom']}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        <View style={[styles.hero, { paddingTop: insets.top + theme.spacing.sm }]}>
+          <View style={styles.blobLarge} />
+          <View style={styles.blobSmall} />
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.85}>
+            <Ionicons name="arrow-back" size={20} color="#2E2A1F" />
           </TouchableOpacity>
+
+          {loading ? (
+            <View style={styles.heroLoading}>
+              <ActivityIndicator color={theme.brand.tertiary} />
+              <ThemedText style={styles.loadingText}>Gathering produce details…</ThemedText>
+            </View>
+          ) : item ? (
+            <View style={styles.heroBody}>
+              <View style={[styles.produceIcon, { backgroundColor: visuals.badgeColor }]}>
+                <Ionicons name={visuals.icon} size={30} color={visuals.badgeTextColor} />
+              </View>
+              <ThemedText style={styles.eyebrow}>{item.category}</ThemedText>
+              <ThemedText style={styles.heroTitle}>{item.name}</ThemedText>
+              <ThemedText style={styles.heroSubtitle}>
+                {item.description?.trim() || 'Fresh, locally listed produce from farms near you.'}
+              </ThemedText>
+              <View style={styles.pillRow}>
+                <View style={styles.infoPill}>
+                  <Ionicons name="calendar-outline" size={14} color="#6E7B37" />
+                  <ThemedText style={styles.infoPillText}>{seasonText}</ThemedText>
+                </View>
+                <View style={styles.infoPill}>
+                  <Ionicons name="basket-outline" size={14} color="#6E7B37" />
+                  <ThemedText style={styles.infoPillText}>Sold by {item.default_sold_by}</ThemedText>
+                </View>
+              </View>
+            </View>
+          ) : null}
         </View>
 
-        {loading ? (
-          <ThemedText style={{ color: colors.text.tertiary }}>Loading…</ThemedText>
-        ) : error ? (
-          <ThemedText style={{ color: colors.text.tertiary }}>{error}</ThemedText>
-        ) : !item ? (
-          <ThemedText style={{ color: colors.text.tertiary }}>Not found.</ThemedText>
-        ) : (
-          <>
-            {/* Produce header */}
-            <ThemedView style={styles.headerCard}>
-              <ThemedText style={[styles.title, { color: colors.text.primary }]}>{item.name}</ThemedText>
-              <ThemedText style={{ color: colors.text.tertiary, marginTop: 2 }}>
-                {item.category} • Sold by {item.default_sold_by}
-              </ThemedText>
-
-              <ThemedText style={{ color: colors.text.tertiary, marginTop: 10 }}>
-                {item.description?.trim() ? item.description : 'No description yet.'}
-              </ThemedText>
-
-              <ThemedText style={{ color: colors.text.tertiary, marginTop: 10 }}>
-                In season: {renderSeasonText()}
-              </ThemedText>
-            </ThemedView>
-
-            {/* Farms */}
-            <ThemedView style={styles.section}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-                Farms that have this
-              </ThemedText>
-
-              {listings.length === 0 ? (
-                <ThemedText style={{ color: colors.text.tertiary }}>
-                  No farms have this listed right now.
+        {loading ? null : error ? (
+          <View style={[styles.stateCard, { borderColor: colors.border.light, backgroundColor: colors.surface }]}>
+            <View style={[styles.stateIcon, { backgroundColor: colors.card }]}>
+              <Ionicons name="cloud-offline-outline" size={25} color={colors.text.secondary} />
+            </View>
+            <ThemedText style={[styles.stateTitle, { color: colors.text.primary }]}>Something went wrong</ThemedText>
+            <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>{error}</ThemedText>
+          </View>
+        ) : item ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Available nearby</ThemedText>
+                <ThemedText style={[styles.sectionCaption, { color: colors.text.secondary }]}>
+                  {listings.length} {listings.length === 1 ? 'farm listing' : 'farm listings'} · lowest price first
                 </ThemedText>
-              ) : (
-                listings.map((l) => (
-                  <ThemedView
-                    key={l.id}
-                    style={[
-                      styles.listingCard,
-                      { borderColor: colors.border.light, backgroundColor: colors.input.background },
-                    ]}
-                  >
-                    {l.image_url ? (
-                      <Image source={{ uri: l.image_url }} style={styles.listingImage} contentFit="cover" />
-                    ) : null}
-                    <View style={{ flex: 1 }}>
-                      <ThemedText style={[styles.farmName, { color: colors.text.primary }]}>
-                        {l.farms.name}
-                      </ThemedText>
+              </View>
+              <View style={[styles.countBadge, { backgroundColor: colors.card }]}>
+                <ThemedText style={[styles.countText, { color: colors.text.primary }]}>{listings.length}</ThemedText>
+              </View>
+            </View>
 
-                      <ThemedText style={{ color: colors.text.tertiary, marginTop: 2 }}>
-                        {l.produce_varieties?.name ? `Variety: ${l.produce_varieties.name} • ` : ''}
-                        {l.currency} {Number(l.price).toFixed(2)} / {l.sold_by}
-                      </ThemedText>
+            {listings.length === 0 ? (
+              <View style={[styles.stateCard, { borderColor: colors.border.light, backgroundColor: colors.surface }]}>
+                <View style={[styles.stateIcon, { backgroundColor: visuals.color }]}>
+                  <Ionicons name={visuals.icon} size={25} color={visuals.badgeTextColor} />
+                </View>
+                <ThemedText style={[styles.stateTitle, { color: colors.text.primary }]}>Nothing listed today</ThemedText>
+                <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>
+                  Check back soon as local farms update their availability.
+                </ThemedText>
+              </View>
+            ) : (
+              <View style={styles.listingStack}>
+                {listings.map((listing) => {
+                  const address = formatAddress(listing.farms).trim();
+                  return (
+                    <TouchableOpacity
+                      key={listing.id}
+                      style={[styles.card, { borderColor: colors.border.light, backgroundColor: colors.surface }]}
+                      onPress={() => router.push(`/farm/${listing.farms.id}`)}
+                      activeOpacity={0.88}
+                    >
+                      <View style={[styles.thumbnail, { backgroundColor: visuals.color }]}>
+                        {listing.image_url ? (
+                          <Image source={{ uri: listing.image_url }} style={styles.thumbnailImage} contentFit="cover" />
+                        ) : (
+                          <Ionicons name={visuals.icon} size={32} color={visuals.badgeTextColor} />
+                        )}
+                        <View style={[styles.varietyBadge, { backgroundColor: visuals.badgeColor }]}>
+                          <ThemedText style={[styles.varietyText, { color: visuals.badgeTextColor }]} numberOfLines={1}>
+                            {listing.produce_varieties?.name || item.name}
+                          </ThemedText>
+                        </View>
+                      </View>
 
-                      {l.farms.rating != null && (
-                        <ThemedText style={{ color: colors.text.tertiary, marginTop: 2 }}>
-                          ⭐ {l.farms.rating} ({l.farms.reviews ?? 0})
-                        </ThemedText>
-                      )}
+                      <View style={styles.cardBody}>
+                        <View style={styles.cardTopRow}>
+                          <View style={styles.farmCopy}>
+                            <ThemedText style={[styles.farmName, { color: colors.text.primary }]} numberOfLines={1}>
+                              {listing.farms.name}
+                            </ThemedText>
+                            <ThemedText style={[styles.unitText, { color: colors.text.secondary }]}>
+                              per {listing.sold_by}
+                            </ThemedText>
+                          </View>
+                          <View style={[styles.pricePill, { backgroundColor: colors.card }]}>
+                            <ThemedText style={[styles.priceText, { color: colors.text.primary }]}>
+                              {formatPrice(listing.price, listing.currency)}
+                            </ThemedText>
+                          </View>
+                        </View>
 
-                      <ThemedText style={{ color: colors.text.tertiary, marginTop: 6 }}>
-                        {formatAddress(l.farms)}
-                      </ThemedText>
-                    </View>
+                        {listing.farms.rating != null ? (
+                          <View style={styles.ratingRow}>
+                            <Ionicons name="star" size={13} color={theme.brand.red} />
+                            <ThemedText style={[styles.metaText, { color: colors.text.secondary }]}>
+                              {Number(listing.farms.rating).toFixed(1)} · {listing.farms.reviews ?? 0} reviews
+                            </ThemedText>
+                          </View>
+                        ) : null}
 
-                    <View style={styles.actionColumn}>
-                      <TouchableOpacity
-                        onPress={() => router.push(`/farm/${l.farms.id}`)}
-                        style={[styles.viewFarmBtn, { borderColor: colors.border.light }]}
-                      >
-                        <Ionicons name="storefront-outline" size={18} color={colors.text.primary} />
-                        <ThemedText style={{ color: colors.text.primary, marginLeft: 6 }}>
-                          View Farm
-                        </ThemedText>
-                      </TouchableOpacity>
+                        <View style={styles.addressRow}>
+                          <Ionicons name="location-outline" size={14} color={colors.text.tertiary} />
+                          <ThemedText style={[styles.addressText, { color: colors.text.secondary }]} numberOfLines={1}>
+                            {address || 'Location available on farm page'}
+                          </ThemedText>
+                        </View>
 
-                      <TouchableOpacity
-                        onPress={() => handleDirections(l.farms)}
-                        style={[styles.dirBtn, { borderColor: colors.border.light }]}
-                      >
-                        <Ionicons name="navigate" size={18} color={colors.text.primary} />
-                        <ThemedText style={{ color: colors.text.primary, marginLeft: 6 }}>
-                          Directions
-                        </ThemedText>
-                      </TouchableOpacity>
-                    </View>
-                  </ThemedView>
-                ))
-              )}
-            </ThemedView>
-          </>
-        )}
+                        <View style={styles.cardActions}>
+                          <View style={styles.viewFarmLink}>
+                            <ThemedText style={styles.viewFarmText}>View farm</ThemedText>
+                            <Ionicons name="arrow-forward" size={14} color={theme.brand.tertiary} />
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.directionsButton, { backgroundColor: colors.card }]}
+                            onPress={(event) => {
+                              event.stopPropagation();
+                              handleDirections(listing.farms);
+                            }}
+                            activeOpacity={0.82}
+                          >
+                            <Ionicons name="navigate-outline" size={13} color={colors.text.primary} />
+                            <ThemedText style={[styles.directionsText, { color: colors.text.primary }]}>Directions</ThemedText>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingHorizontal: theme.spacing.md },
-  topBar: { paddingVertical: theme.spacing.md },
-  backBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+  screen: { flex: 1 },
+  content: { paddingBottom: theme.spacing.xl },
+  hero: {
+    minHeight: 270,
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+    backgroundColor: '#F7E5BF',
+    overflow: 'hidden',
   },
-  headerCard: {
-    marginBottom: theme.spacing.lg,
-    padding: theme.spacing.md,
-    borderRadius: theme.borderRadius.lg,
+  blobLarge: {
+    position: 'absolute', width: 220, height: 220, borderRadius: 110,
+    right: -55, top: 10, backgroundColor: '#F0C26A', opacity: 0.48,
   },
-  title: {
-    fontSize: theme.typography.fontSizes.h2,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
+  blobSmall: {
+    position: 'absolute', width: 125, height: 125, borderRadius: 63,
+    left: -30, bottom: -40, backgroundColor: '#DCC16C', opacity: 0.38,
   },
-  section: { marginBottom: theme.spacing.lg },
-  sectionTitle: {
-    fontSize: theme.typography.fontSizes.h3,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
+  backButton: {
+    width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.9)', marginBottom: theme.spacing.md,
+  },
+  heroLoading: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  loadingText: { color: '#5A564B', fontSize: 14 },
+  heroBody: { position: 'relative', alignItems: 'flex-start' },
+  produceIcon: {
+    width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
     marginBottom: theme.spacing.sm,
   },
-  listingCard: {
-    borderWidth: 1,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.md,
-    marginBottom: theme.spacing.sm,
-    flexDirection: 'row',
-    gap: theme.spacing.md,
-    alignItems: 'center',
+  eyebrow: { fontSize: 11, letterSpacing: 1.2, textTransform: 'uppercase', color: '#6E7B37', fontWeight: '700' },
+  heroTitle: { fontSize: 34, lineHeight: 40, fontWeight: '700', color: '#2E2A1F' },
+  heroSubtitle: { fontSize: 14, lineHeight: 21, color: '#5A564B', marginTop: 4, maxWidth: 540 },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: theme.spacing.md },
+  infoPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: theme.borderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.72)', paddingHorizontal: 12, paddingVertical: 7,
   },
-  listingImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-  },
-  farmName: {
-    fontSize: theme.typography.fontSizes.h4,
-    fontWeight: theme.typography.fontWeights.semibold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  actionColumn: {
-    gap: theme.spacing.sm,
-  },
-  dirBtn: {
-    borderWidth: 1,
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  viewFarmBtn: {
-    borderWidth: 1,
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
+  infoPillText: { fontSize: 12, lineHeight: 17, color: '#5A564B', fontWeight: '600' },
+  section: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.md },
+  sectionTitle: { fontSize: 21, lineHeight: 27, fontWeight: '700' },
+  sectionCaption: { fontSize: 12, lineHeight: 18, marginTop: 2 },
+  countBadge: { minWidth: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  countText: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
+  listingStack: { gap: 12 },
+  card: { flexDirection: 'row', borderWidth: 1, borderRadius: 20, overflow: 'hidden', minHeight: 176 },
+  thumbnail: { width: 108, alignItems: 'center', justifyContent: 'center', padding: 8, overflow: 'hidden' },
+  thumbnailImage: { ...StyleSheet.absoluteFillObject },
+  varietyBadge: { maxWidth: 92, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4, zIndex: 1 },
+  varietyText: { fontSize: 10, lineHeight: 14, fontWeight: '700', textAlign: 'center' },
+  cardBody: { flex: 1, padding: theme.spacing.md, gap: 7 },
+  cardTopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  farmCopy: { flex: 1 },
+  farmName: { fontSize: 16, lineHeight: 21, fontWeight: '700' },
+  unitText: { fontSize: 12, lineHeight: 17 },
+  pricePill: { borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5 },
+  priceText: { fontSize: 12, lineHeight: 16, fontWeight: '700' },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  metaText: { fontSize: 12, lineHeight: 17 },
+  addressRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  addressText: { flex: 1, fontSize: 12, lineHeight: 17 },
+  cardActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 'auto' },
+  viewFarmLink: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewFarmText: { color: theme.brand.tertiary, fontSize: 12, lineHeight: 17, fontWeight: '700' },
+  directionsButton: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: theme.borderRadius.full, paddingHorizontal: 10, paddingVertical: 7 },
+  directionsText: { fontSize: 11, lineHeight: 15, fontWeight: '700' },
+  stateCard: { margin: theme.spacing.lg, borderWidth: 1, borderRadius: 20, alignItems: 'center', padding: theme.spacing.xl },
+  stateIcon: { width: 50, height: 50, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  stateTitle: { fontSize: 17, lineHeight: 23, fontWeight: '700' },
+  stateBody: { fontSize: 13, lineHeight: 19, textAlign: 'center', marginTop: 4 },
 });
