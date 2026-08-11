@@ -88,7 +88,11 @@ export default function SettingsScreen() {
           text: 'Log Out',
           style: 'destructive',
           onPress: async () => {
-            await signOut();
+            const error = await signOut();
+            if (error) {
+              Alert.alert('Unable to log out', error);
+              return;
+            }
             router.replace('/(auth)/login');
           },
         },
