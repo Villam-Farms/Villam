@@ -24,6 +24,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useAuth } from "@/context/auth-context";
 import { createFarm, fetchOwnedFarmByUserId } from "@/lib/farms";
+import { hasGoogleMapsApiKey } from "@/lib/maps";
 import {
   createFarmListing,
   CURRENCY_OPTIONS,
@@ -462,12 +463,26 @@ export default function NewListingScreen() {
                 Tap the map to place your farm. City, state, postal code, and country fill automatically.
               </ThemedText>
 
-              <MapView style={styles.map} region={mapRegion} onPress={(event) => {
-                const coordinate = event.nativeEvent.coordinate;
-                void handleMapPress(coordinate.latitude, coordinate.longitude);
-              }}>
-                <Marker coordinate={{ latitude: pickedCoords.latitude, longitude: pickedCoords.longitude }} />
-              </MapView>
+              {hasGoogleMapsApiKey ? (
+                <MapView style={styles.map} region={mapRegion} onPress={(event) => {
+                  const coordinate = event.nativeEvent.coordinate;
+                  void handleMapPress(coordinate.latitude, coordinate.longitude);
+                }}>
+                  <Marker coordinate={{ latitude: pickedCoords.latitude, longitude: pickedCoords.longitude }} />
+                </MapView>
+              ) : (
+                <View
+                  style={[
+                    styles.map,
+                    styles.mapUnavailableCard,
+                    { backgroundColor: colors.card, borderColor: colors.border.light },
+                  ]}
+                >
+                  <ThemedText style={[styles.mapUnavailableText, { color: colors.text.secondary }]}>
+                    Add `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` to `frontend/.env` and rebuild Android to place farms on the map.
+                  </ThemedText>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.secondaryButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
@@ -908,6 +923,17 @@ const styles = StyleSheet.create({
     height: 240,
     borderRadius: 18,
     overflow: "hidden",
+  },
+  mapUnavailableCard: {
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  mapUnavailableText: {
+    textAlign: "center",
+    lineHeight: 22,
+    fontSize: 14,
   },
   secondaryButton: {
     alignSelf: "flex-start",

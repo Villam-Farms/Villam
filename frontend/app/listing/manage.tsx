@@ -24,6 +24,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/auth-context";
 import { fetchOwnedFarmByUserId, updateFarm } from "@/lib/farms";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
+import { hasGoogleMapsApiKey } from "@/lib/maps";
 import {
   CURRENCY_OPTIONS,
   clearFarmListingImage,
@@ -744,21 +745,35 @@ export default function ManageListingsScreen() {
                 <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>
                   Tap the map to move your farm. City, state, postal code, and country update automatically.
                 </ThemedText>
-                <MapView
-                  style={styles.map}
-                  region={{
-                    latitude: pickedCoords.latitude,
-                    longitude: pickedCoords.longitude,
-                    latitudeDelta: pickedCoords.latitudeDelta,
-                    longitudeDelta: pickedCoords.longitudeDelta,
-                  }}
-                  onPress={(event) => {
-                    const coordinate = event.nativeEvent.coordinate;
-                    void handleMapPress(coordinate.latitude, coordinate.longitude);
-                  }}
-                >
-                  <Marker coordinate={{ latitude: pickedCoords.latitude, longitude: pickedCoords.longitude }} />
-                </MapView>
+                {hasGoogleMapsApiKey ? (
+                  <MapView
+                    style={styles.map}
+                    region={{
+                      latitude: pickedCoords.latitude,
+                      longitude: pickedCoords.longitude,
+                      latitudeDelta: pickedCoords.latitudeDelta,
+                      longitudeDelta: pickedCoords.longitudeDelta,
+                    }}
+                    onPress={(event) => {
+                      const coordinate = event.nativeEvent.coordinate;
+                      void handleMapPress(coordinate.latitude, coordinate.longitude);
+                    }}
+                  >
+                    <Marker coordinate={{ latitude: pickedCoords.latitude, longitude: pickedCoords.longitude }} />
+                  </MapView>
+                ) : (
+                  <View
+                    style={[
+                      styles.map,
+                      styles.mapUnavailableCard,
+                      { backgroundColor: colors.card, borderColor: colors.border.light },
+                    ]}
+                  >
+                    <ThemedText style={[styles.mapUnavailableText, { color: colors.text.secondary }]}>
+                      Add `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` to `frontend/.env` and rebuild Android to edit farm locations on the map.
+                    </ThemedText>
+                  </View>
+                )}
 
                 <TouchableOpacity
                   style={[styles.utilityButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
@@ -1137,6 +1152,17 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     marginBottom: theme.spacing.sm,
+  },
+  mapUnavailableCard: {
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  mapUnavailableText: {
+    textAlign: "center",
+    lineHeight: 22,
+    fontSize: 14,
   },
   utilityButton: {
     alignSelf: "flex-start",
