@@ -71,7 +71,7 @@ export default function SettingsScreen() {
 
   const handleEditProfile = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/(tabs)/profile');
+    router.push('/edit-profile' as never);
   };
 
   const handleLogout = () => {
@@ -158,7 +158,7 @@ export default function SettingsScreen() {
             </ThemedText>
           )}
           <ThemedText style={{ paddingTop: 7, color: '#0088FF'}}>
-            Open profile
+            Edit profile
           </ThemedText>
         </TouchableOpacity>
 
