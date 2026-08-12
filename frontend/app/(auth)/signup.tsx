@@ -51,13 +51,17 @@ export default function SignUp() {
     }
 
     alert("Check your email to confirm your account.");
+    router.replace("/(auth)/login");
   };
 
   const handleGoogleSignIn = async () => {
     const error = await signInWithGoogle();
     if (error) {
       alert(error);
+      return;
     }
+
+    router.replace("/(onboarding)/profile");
   };
 
   return (
