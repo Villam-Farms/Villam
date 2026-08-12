@@ -74,6 +74,20 @@ export async function updateMyDescription(
   });
 }
 
+export async function updateMyProfile(
+  accessToken: string,
+  update: Pick<
+    ProfileUpdateOptions,
+    "full_name" | "username" | "location_city" | "location_region"
+  >,
+): Promise<MeResponse> {
+  return apiRequest<MeResponse>("/me", {
+    method: "PATCH",
+    accessToken,
+    body: update,
+  });
+}
+
 export async function updateMyAvatarUrl(
   accessToken: string,
   avatarUrl: string | null,

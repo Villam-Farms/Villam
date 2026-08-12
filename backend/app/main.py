@@ -131,6 +131,12 @@ class FarmRatingOut(BaseModel):
 class UpdateMeIn(BaseModel):
     description: str | None = Field(default=None, max_length=280)
     avatar_url: str | None = Field(default=None, max_length=2048)
+    full_name: str | None = Field(default=None, min_length=1, max_length=100)
+    username: str | None = Field(
+        default=None, min_length=3, max_length=30, pattern=r"^[a-z0-9_]+$"
+    )
+    location_city: str | None = Field(default=None, min_length=1, max_length=100)
+    location_region: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 APP_GOALS = {
@@ -399,8 +405,47 @@ def get_user_profile(
 @app.patch("/me", response_model=MeOut)
 def update_me(body: UpdateMeIn, user_id: str = Depends(get_current_user_id)) -> MeOut:
     payload = body.model_dump(exclude_unset=True)
+    for key in ("full_name", "username", "location_city", "location_region"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            payload[key] = value.strip()
+            if not payload[key]:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"{key.replace('_', ' ').title()} is required",
+                )
+
+    username = payload.get("username")
+    if isinstance(username, str):
+        username = username.lower()
+        payload["username"] = username
+        existing = (
+            supabase.table("profiles")
+            .select("id")
+            .ilike("username", username)
+            .neq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if getattr(existing, "data", None):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username is already taken",
+            )
+
     payload["id"] = user_id
-    supabase.table("profiles").upsert(payload, on_conflict="id").execute()
+    try:
+        supabase.table("profiles").upsert(payload, on_conflict="id").execute()
+    except Exception as error:
+        message = _format_supabase_error(error)
+        if "username" in message.lower() and (
+            "unique" in message.lower() or "duplicate" in message.lower()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username is already taken",
+            )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=message)
     return get_me(user_id)
 
 
