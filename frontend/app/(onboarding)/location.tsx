@@ -12,8 +12,14 @@ export default function LocationStep() {
   const { draft, update } = useOnboarding(); const [error, setError] = useState("");
 
   const locate = async () => { const permission = await Location.requestForegroundPermissionsAsync(); if (permission.status !== "granted") return Alert.alert("Location permission needed", "Allow location access while using the app to auto-fill your city and region."); try { const pos = await Location.getCurrentPositionAsync({}); const place = (await Location.reverseGeocodeAsync(pos.coords))[0]; if (!place?.city || !place.region) throw new Error(); update({ city: place.city, region: place.region }); } catch { Alert.alert("Location unavailable", "Add your city and region manually."); } };
-  const next = () => { if (!draft.city.trim() || !draft.region.trim()) return setError("Enter both your city and region."); setError(""); router.replace("/(onboarding)/goals" as never); };
-  return <OnboardingScreen step={2} title="What’s local to you?" subtitle="We save only your city and region—not precise coordinates." back="/(onboarding)/profile" next={next} nextHref={draft.city.trim() && draft.region.trim() ? "/(onboarding)/goals" : undefined} error={error}>
+  const next = () => {
+    // eslint-disable-next-line no-console
+    console.log("onboarding: location.next invoked", { step: 2, city: draft.city, region: draft.region });
+    if (!draft.city.trim() || !draft.region.trim()) return setError("Enter both your city and region.");
+    setError("");
+    router.replace("/(onboarding)/goals" as never);
+  };
+  return <OnboardingScreen step={2} title="What’s local to you?" subtitle="We save only your city and region—not precise coordinates." back={() => router.replace("/(onboarding)/profile" as never)} next={next} error={error}>
     <View style={{ marginBottom: 18 }}>
       <Text style={{ color: "#6B7280", fontSize: 14, lineHeight: 20 }}>
         {Platform.OS === "ios" || Platform.OS === "android"

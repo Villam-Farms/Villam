@@ -10,6 +10,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { debugLog } from '@/lib/debug-log';
 
 const queryClient = new QueryClient();
 
@@ -43,20 +44,24 @@ function AuthGate() {
     const inOnboardingGroup = segments[0] === '(onboarding)';
 
     if (!session && !inAuthGroup) {
+      debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect to login', data: { segments: [...segments] } });
       router.replace('/(auth)/login');
       return;
     }
 
     if (session && inAuthGroup) {
       if (isProfileComplete) {
+        debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect auth->tabs', data: { segments: [...segments], isProfileComplete } });
         router.replace('/(tabs)');
       } else {
+        debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect auth->onboarding profile', data: { segments: [...segments], isProfileComplete } });
         router.replace('/(onboarding)/profile');
       }
       return;
     }
 
     if (session && !inAuthGroup && !inOnboardingGroup && !isProfileComplete) {
+      debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect outside onboarding->profile', data: { segments: [...segments], isProfileComplete } });
       router.replace('/(onboarding)/profile');
       return;
     }
