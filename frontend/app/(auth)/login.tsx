@@ -45,14 +45,20 @@ export default function Login() {
     const error = await signInWithPassword(email, password);
     if (error) {
       alert(error);
+      return;
     }
+
+    router.replace("/");
   };
 
   const handleGoogleSignIn = async () => {
     const error = await signInWithGoogle();
     if (error) {
       alert(error);
+      return;
     }
+
+    router.replace("/(onboarding)/profile");
   };
 
   return (
