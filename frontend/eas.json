@@ -13,12 +13,18 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://villam-backend.onrender.com"
+      },
       "ios": {
         "image": "latest"
       }
     },
     "production": {
       "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://villam-backend.onrender.com"
+      },
       "ios": {
         "image": "latest"
       }
