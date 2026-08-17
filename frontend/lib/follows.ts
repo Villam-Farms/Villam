@@ -11,11 +11,26 @@ export type ProfileRow = {
   full_name: string | null;
   avatar_url: string | null;
   description?: string | null;
+  location_city: string | null;
+  location_region: string | null;
+  app_goals: string[] | null;
+  produce_interests: string[] | null;
+  onboarding_completed_at: string | null;
 };
 
 export type MeResponse = {
   profile: ProfileRow | null;
   counts: FollowCounts;
+};
+
+export type ProfileUpdateOptions = {
+  full_name?: string | null;
+  username?: string | null;
+  avatar_url?: string | null;
+  location_city?: string | null;
+  location_region?: string | null;
+  app_goals?: string[] | null;
+  produce_interests?: string[] | null;
 };
 
 export type UserProfileResponse = MeResponse & {
@@ -26,6 +41,17 @@ export type SearchUser = ProfileRow & { is_following: boolean };
 
 export async function getMe(accessToken: string): Promise<MeResponse> {
   return apiRequest<MeResponse>("/me", { accessToken });
+}
+
+export async function completeOnboarding(
+  accessToken: string,
+  update: ProfileUpdateOptions,
+): Promise<MeResponse> {
+  return apiRequest<MeResponse>("/me/onboarding", {
+    method: "PUT",
+    accessToken,
+    body: update,
+  });
 }
 
 export async function getUserProfile(
@@ -45,6 +71,20 @@ export async function updateMyDescription(
     method: "PATCH",
     accessToken,
     body: { description },
+  });
+}
+
+export async function updateMyProfile(
+  accessToken: string,
+  update: Pick<
+    ProfileUpdateOptions,
+    "full_name" | "username" | "location_city" | "location_region"
+  >,
+): Promise<MeResponse> {
+  return apiRequest<MeResponse>("/me", {
+    method: "PATCH",
+    accessToken,
+    body: update,
   });
 }
 

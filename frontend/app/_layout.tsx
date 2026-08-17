@@ -5,13 +5,13 @@ import 'react-native-reanimated';
 import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import { AuthProvider, useAuth } from '@/context/auth-context';
+import { useMyProfile } from '@/hooks/useMyProfile';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-// ✅ add these imports
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { debugLog } from '@/lib/debug-log';
 
-// ✅ create a single QueryClient instance
 const queryClient = new QueryClient();
 
 export const unstable_settings = {
@@ -23,22 +23,49 @@ SplashScreen.preventAutoHideAsync();
 
 function AuthGate() {
   const { session, initialized } = useAuth();
+  const { data: profile, isFetching } = useMyProfile();
   const segments = useSegments();
   const router = useRouter();
 
+  const isProfileComplete = Boolean(
+    profile?.onboarding_completed_at &&
+    profile?.username &&
+    profile?.full_name &&
+    profile?.avatar_url &&
+    profile?.location_city &&
+    profile?.location_region &&
+    profile?.app_goals?.length &&
+    profile?.produce_interests?.length
+  );
+
   useEffect(() => {
-    if (!initialized) return;
+    if (!initialized || isFetching) return;
     const inAuthGroup = segments[0] === '(auth)';
+    const inOnboardingGroup = segments[0] === '(onboarding)';
 
     if (!session && !inAuthGroup) {
+      debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect to login', data: { segments: [...segments] } });
       router.replace('/(auth)/login');
       return;
     }
 
     if (session && inAuthGroup) {
-      router.replace('/(tabs)');
+      if (isProfileComplete) {
+        debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect auth->tabs', data: { segments: [...segments], isProfileComplete } });
+        router.replace('/(tabs)');
+      } else {
+        debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect auth->onboarding profile', data: { segments: [...segments], isProfileComplete } });
+        router.replace('/(onboarding)/profile');
+      }
+      return;
     }
-  }, [initialized, router, segments, session]);
+
+    if (session && !inAuthGroup && !inOnboardingGroup && !isProfileComplete) {
+      debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect outside onboarding->profile', data: { segments: [...segments], isProfileComplete } });
+      router.replace('/(onboarding)/profile');
+      return;
+    }
+  }, [initialized, isFetching, isProfileComplete, router, segments, session]);
 
   return null;
 }
@@ -80,9 +107,11 @@ export default function RootLayout() {
             <Stack>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              <Stack.Screen name="(onboarding)" options={{ headerShown: false }} />
               <Stack.Screen name="(profile)" options={{ headerShown: false }} />
               <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="settings" options={{ headerShown: false }} />
+              <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
             </Stack>
             <StatusBar style="auto" />
           </ThemeProvider>

@@ -1,6 +1,7 @@
 from io import BytesIO
 import os
 from urllib.parse import unquote, urlparse
+from datetime import datetime, timezone
 
 import jwt
 from dotenv import load_dotenv
@@ -83,6 +84,11 @@ class ProfileOut(BaseModel):
     full_name: str | None = None
     avatar_url: str | None = None
     description: str | None = None
+    location_city: str | None = None
+    location_region: str | None = None
+    app_goals: list[str] = Field(default_factory=list)
+    produce_interests: list[str] = Field(default_factory=list)
+    onboarding_completed_at: str | None = None
 
 
 class SearchUserOut(ProfileOut):
@@ -131,6 +137,57 @@ class FarmRatingOut(BaseModel):
 class UpdateMeIn(BaseModel):
     description: str | None = Field(default=None, max_length=280)
     avatar_url: str | None = Field(default=None, max_length=2048)
+    full_name: str | None = Field(default=None, min_length=1, max_length=100)
+    username: str | None = Field(
+        default=None, min_length=3, max_length=30, pattern=r"^[a-z0-9_]+$"
+    )
+    location_city: str | None = Field(default=None, min_length=1, max_length=100)
+    location_region: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+APP_GOALS = {
+    "discover_farms",
+    "shop_seasonal",
+    "plan_grocery_lists",
+    "find_recipes",
+    "support_local",
+}
+
+PRODUCE_INTERESTS = {
+    "vegetables",
+    "fruits",
+    "herbs",
+    "flowers",
+    "eggs_dairy",
+    "pantry_goods",
+}
+
+
+class CompleteOnboardingIn(BaseModel):
+    full_name: str = Field(..., min_length=1, max_length=100)
+    username: str = Field(..., min_length=3, max_length=30, pattern=r"^[a-z0-9_]+$")
+    avatar_url: str = Field(..., min_length=1, max_length=2048)
+    location_city: str = Field(..., min_length=1, max_length=100)
+    location_region: str = Field(..., min_length=1, max_length=100)
+    app_goals: list[str] = Field(..., min_length=1)
+    produce_interests: list[str] = Field(..., min_length=1)
+
+    def validated_payload(self) -> dict:
+        goals = list(dict.fromkeys(self.app_goals))
+        interests = list(dict.fromkeys(self.produce_interests))
+        if not set(goals).issubset(APP_GOALS):
+            raise HTTPException(status_code=400, detail="Invalid app goal")
+        if not set(interests).issubset(PRODUCE_INTERESTS):
+            raise HTTPException(status_code=400, detail="Invalid produce interest")
+        return {
+            "full_name": self.full_name.strip(),
+            "username": self.username.strip().lower(),
+            "avatar_url": self.avatar_url.strip(),
+            "location_city": self.location_city.strip(),
+            "location_region": self.location_region.strip(),
+            "app_goals": goals,
+            "produce_interests": interests,
+        }
 
 
 class GroceryListItemIn(BaseModel):
@@ -287,7 +344,7 @@ def save_farm_rating(
 def get_me(user_id: str = Depends(get_current_user_id)) -> MeOut:
     profile_resp = (
         supabase.table("profiles")
-        .select("id,username,full_name,avatar_url,description")
+        .select("id,username,full_name,avatar_url,description,location_city,location_region,app_goals,produce_interests,onboarding_completed_at")
         .eq("id", user_id)
         .maybe_single()
         .execute()
@@ -354,8 +411,77 @@ def get_user_profile(
 @app.patch("/me", response_model=MeOut)
 def update_me(body: UpdateMeIn, user_id: str = Depends(get_current_user_id)) -> MeOut:
     payload = body.model_dump(exclude_unset=True)
+    for key in ("full_name", "username", "location_city", "location_region"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            payload[key] = value.strip()
+            if not payload[key]:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"{key.replace('_', ' ').title()} is required",
+                )
+
+    username = payload.get("username")
+    if isinstance(username, str):
+        username = username.lower()
+        payload["username"] = username
+        existing = (
+            supabase.table("profiles")
+            .select("id")
+            .ilike("username", username)
+            .neq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if getattr(existing, "data", None):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username is already taken",
+            )
+
     payload["id"] = user_id
-    supabase.table("profiles").upsert(payload, on_conflict="id").execute()
+    try:
+        supabase.table("profiles").upsert(payload, on_conflict="id").execute()
+    except Exception as error:
+        message = _format_supabase_error(error)
+        if "username" in message.lower() and (
+            "unique" in message.lower() or "duplicate" in message.lower()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username is already taken",
+            )
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=message)
+    return get_me(user_id)
+
+
+@app.put("/me/onboarding", response_model=MeOut)
+def complete_onboarding(
+    body: CompleteOnboardingIn, user_id: str = Depends(get_current_user_id)
+) -> MeOut:
+    payload = body.validated_payload()
+
+    existing = (
+        supabase.table("profiles")
+        .select("id")
+        .ilike("username", payload["username"])
+        .neq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if getattr(existing, "data", None):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already taken")
+
+    payload["id"] = user_id
+    payload["onboarding_completed_at"] = datetime.now(timezone.utc).isoformat()
+    try:
+        supabase.table("profiles").upsert(payload, on_conflict="id").execute()
+    except Exception as error:
+        message = _format_supabase_error(error)
+        if "username" in message.lower() and ("unique" in message.lower() or "duplicate" in message.lower()):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username is already taken")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=message)
+
     return get_me(user_id)
 
 

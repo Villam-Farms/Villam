@@ -1,6 +1,7 @@
 {
   "name": "villam",
   "private": true,
+  "version": "1.0.0",
   "scripts": {
     "dev": "./start.sh",
     "dev:ios": "EXPO_PUBLIC_API_URL=http://127.0.0.1:8001 ./start.sh",
@@ -14,5 +15,8 @@
     "react": "19.2.0",
     "react-native": "0.83.6"
   },
-  "version": "1.0.0"
+  "devDependencies": {
+    "@types/react": "~19.2.10",
+    "typescript": "~5.9.2"
+  }
 }
