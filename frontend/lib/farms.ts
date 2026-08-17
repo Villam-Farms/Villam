@@ -2,7 +2,8 @@ import { supabase } from "@/lib/supabase";
 import type { FarmWithCoords } from "@/lib/location";
 
 const FARM_SELECT_COLUMNS =
-  "id,name,latitude,longitude,city,state,postal_code,country,website,description";
+  "id,name,latitude,longitude,city,state,postal_code,country,website,description,image_url,image_path";
+const FARM_IMAGE_BUCKET = "farm-images";
 
 type FarmRatingAggregate = {
   average: number;
@@ -61,11 +62,26 @@ function normalizeFarmRecord(
 
   return {
     ...data,
+    imageUrl: typeof data.image_url === "string" ? data.image_url : null,
+    imagePath: typeof data.image_path === "string" ? data.image_path : null,
     rating: ratingSummary?.average ?? 0,
     reviews: ratingSummary?.count ?? 0,
     products: "",
     street: null,
   } as FarmWithCoords;
+}
+
+async function hydrateFarmImage(record: Record<string, unknown>) {
+  const imagePath = typeof record.image_path === "string" ? record.image_path : null;
+  const fallbackUrl = typeof record.image_url === "string" ? record.image_url : null;
+  if (!imagePath) return record;
+
+  const { data, error } = await supabase.storage
+    .from(FARM_IMAGE_BUCKET)
+    .createSignedUrl(imagePath, 60 * 60);
+
+  if (error || !data?.signedUrl) return record;
+  return { ...record, image_url: data.signedUrl };
 }
 
 export async function fetchFarms(): Promise<FarmWithCoords[]> {
@@ -83,7 +99,9 @@ export async function fetchFarms(): Promise<FarmWithCoords[]> {
       .filter((id): id is string => typeof id === "string")
   );
 
-  return farms.map((farm) => normalizeFarmRecord(farm, ratingAggregates));
+  return Promise.all(
+    farms.map(async (farm) => normalizeFarmRecord(await hydrateFarmImage(farm), ratingAggregates))
+  );
 }
 
 export type CreateFarmInput = {
@@ -144,7 +162,7 @@ export async function fetchFarmById(farmId: string): Promise<FarmWithCoords | nu
   if (error) throw error;
   if (!data) return null;
 
-  return normalizeFarmRecord(data);
+  return normalizeFarmRecord(await hydrateFarmImage(data));
 }
 
 export async function fetchOwnedFarmByUserId(userId: string): Promise<FarmWithCoords | null> {
@@ -158,7 +176,7 @@ export async function fetchOwnedFarmByUserId(userId: string): Promise<FarmWithCo
   if (error) throw error;
 
   const farm = data?.[0];
-  return farm ? normalizeFarmRecord(farm) : null;
+  return farm ? normalizeFarmRecord(await hydrateFarmImage(farm)) : null;
 }
 
 export async function createFarm(input: CreateFarmInput): Promise<FarmWithCoords> {
@@ -213,4 +231,67 @@ export async function updateFarm(input: UpdateFarmInput): Promise<FarmWithCoords
   }
 
   return normalizeFarmRecord(data);
+}
+
+function getImageExtension(uri: string) {
+  const extension = uri.split("?")[0].split(".").pop()?.toLowerCase();
+  return extension && /^[a-z0-9]+$/.test(extension) ? extension : "jpg";
+}
+
+function getImageMimeType(extension: string) {
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  return "image/jpeg";
+}
+
+export async function uploadFarmImage(
+  userId: string,
+  farmId: string,
+  uri: string
+) {
+  const { data: currentFarm, error: currentFarmError } = await supabase
+    .from("farms")
+    .select("image_path")
+    .eq("id", farmId)
+    .maybeSingle();
+  if (currentFarmError) throw currentFarmError;
+
+  const extension = getImageExtension(uri);
+  const path = `${userId}/${farmId}/${Date.now()}.${extension}`;
+  const response = await fetch(uri);
+  const arrayBuffer = await response.arrayBuffer();
+  const { data: uploaded, error: uploadError } = await supabase.storage
+    .from(FARM_IMAGE_BUCKET)
+    .upload(path, arrayBuffer, { contentType: getImageMimeType(extension), upsert: false });
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabase.storage.from(FARM_IMAGE_BUCKET).getPublicUrl(uploaded.path);
+  const { error: updateError } = await supabase
+    .from("farms")
+    .update({ image_path: uploaded.path, image_url: urlData.publicUrl })
+    .eq("id", farmId);
+  if (updateError) {
+    await supabase.storage.from(FARM_IMAGE_BUCKET).remove([uploaded.path]);
+    throw updateError;
+  }
+  const previousPath =
+    currentFarm && typeof currentFarm.image_path === "string" ? currentFarm.image_path : null;
+  if (previousPath && previousPath !== uploaded.path) {
+    const { error: removeError } = await supabase.storage.from(FARM_IMAGE_BUCKET).remove([previousPath]);
+    if (removeError) console.warn("Could not remove previous farm image", removeError.message);
+  }
+
+  return { path: uploaded.path, url: urlData.publicUrl };
+}
+
+export async function clearFarmImage(farmId: string, imagePath?: string | null) {
+  if (imagePath) {
+    const { error } = await supabase.storage.from(FARM_IMAGE_BUCKET).remove([imagePath]);
+    if (error) throw error;
+  }
+  const { error } = await supabase
+    .from("farms")
+    .update({ image_path: null, image_url: null })
+    .eq("id", farmId);
+  if (error) throw error;
 }

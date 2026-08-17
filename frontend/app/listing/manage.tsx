@@ -22,7 +22,7 @@ import { ThemedText } from "@/components/themed-text";
 import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/auth-context";
-import { fetchOwnedFarmByUserId, updateFarm } from "@/lib/farms";
+import { clearFarmImage, fetchOwnedFarmByUserId, updateFarm, uploadFarmImage } from "@/lib/farms";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import {
   CURRENCY_OPTIONS,
@@ -103,6 +103,9 @@ export default function ManageListingsScreen() {
   const [listingImagePreviewUri, setListingImagePreviewUri] = useState<string | null>(null);
   const [listingImageAction, setListingImageAction] = useState<"keep" | "replace" | "remove">("keep");
   const [pendingListingImage, setPendingListingImage] = useState<PickedListingImage | null>(null);
+  const [farmImagePreviewUri, setFarmImagePreviewUri] = useState<string | null>(null);
+  const [farmImageAction, setFarmImageAction] = useState<"keep" | "replace" | "remove">("keep");
+  const [pendingFarmImage, setPendingFarmImage] = useState<PickedListingImage | null>(null);
 
   const { data: ownedFarm, isLoading: farmLoading } = useQuery({
     queryKey: ["owned-farm", session?.user.id],
@@ -274,6 +277,11 @@ export default function ManageListingsScreen() {
         website: farmWebsite,
         description: farmDescription,
       });
+      if (session?.user.id && farmImageAction === "replace" && pendingFarmImage) {
+        await uploadFarmImage(session.user.id, ownedFarm.id, pendingFarmImage.uri);
+      } else if (farmImageAction === "remove" && ownedFarm.imagePath) {
+        await clearFarmImage(ownedFarm.id, ownedFarm.imagePath);
+      }
 
       await queryClient.invalidateQueries({ queryKey: ["owned-farm", session?.user.id] });
       await queryClient.invalidateQueries({ queryKey: ["farms"] });
@@ -291,6 +299,13 @@ export default function ManageListingsScreen() {
     } finally {
       setFarmSaving(false);
     }
+  };
+
+  const openFarmModal = () => {
+    setFarmImagePreviewUri(ownedFarm?.imageUrl ?? null);
+    setFarmImageAction("keep");
+    setPendingFarmImage(null);
+    setIsFarmModalVisible(true);
   };
 
   const handleSave = async () => {
@@ -376,6 +391,36 @@ export default function ManageListingsScreen() {
     setPendingListingImage(null);
     setListingImagePreviewUri(null);
     setListingImageAction("remove");
+  };
+
+  const handlePickFarmImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Please allow photo library access to upload a farm photo.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.85,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const asset = result.assets[0];
+    if (asset.fileSize != null && asset.fileSize > 10 * 1024 * 1024) {
+      Alert.alert("Too large", "Please choose an image under 10MB.");
+      return;
+    }
+    setPendingFarmImage({ uri: asset.uri, name: "farm.jpg", type: asset.mimeType ?? "image/jpeg" });
+    setFarmImagePreviewUri(asset.uri);
+    setFarmImageAction("replace");
+  };
+
+  const handleRemoveFarmImage = () => {
+    setPendingFarmImage(null);
+    setFarmImagePreviewUri(null);
+    setFarmImageAction("remove");
   };
 
   const pickerOptions = useMemo(() => {
@@ -497,7 +542,7 @@ export default function ManageListingsScreen() {
                   {ownedFarm.name}
                 </ThemedText>
                 <View style={styles.headerActions}>
-                  <TouchableOpacity onPress={() => setIsFarmModalVisible(true)} activeOpacity={0.85}>
+                  <TouchableOpacity onPress={openFarmModal} activeOpacity={0.85}>
                     <ThemedText style={[styles.linkText, { color: theme.brand.primary }]}>
                       Edit farm
                     </ThemedText>
@@ -737,6 +782,45 @@ export default function ManageListingsScreen() {
                     { backgroundColor: colors.input.background, borderColor: colors.border.light, color: colors.input.text },
                   ]}
                 />
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <FieldLabel label="Farm photo" colors={colors} />
+                <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>
+                  Add a photo so shoppers can recognize your farm.
+                </ThemedText>
+                {farmImagePreviewUri ? (
+                  <View style={[styles.imagePreviewCard, { borderColor: colors.border.light }]}>
+                    <Image source={{ uri: farmImagePreviewUri }} style={styles.imagePreview} contentFit="cover" />
+                  </View>
+                ) : (
+                  <View style={[styles.imagePlaceholderCard, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}>
+                    <Ionicons name="image-outline" size={24} color={colors.text.tertiary} />
+                    <ThemedText style={{ color: colors.text.secondary }}>No farm photo selected</ThemedText>
+                  </View>
+                )}
+                <View style={styles.imageActionsRow}>
+                  <TouchableOpacity
+                    style={[styles.utilityButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
+                    onPress={handlePickFarmImage}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="images-outline" size={16} color={colors.text.primary} />
+                    <ThemedText style={[styles.utilityButtonText, { color: colors.text.primary }]}>
+                      {farmImagePreviewUri ? "Change photo" : "Add photo"}
+                    </ThemedText>
+                  </TouchableOpacity>
+                  {farmImagePreviewUri ? (
+                    <TouchableOpacity
+                      style={[styles.utilityButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
+                      onPress={handleRemoveFarmImage}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={colors.text.primary} />
+                      <ThemedText style={[styles.utilityButtonText, { color: colors.text.primary }]}>Remove</ThemedText>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </View>
 
               <View style={styles.fieldGroup}>
