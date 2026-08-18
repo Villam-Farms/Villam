@@ -76,6 +76,7 @@ export async function createThread(
   return apiRequest<ConversationThread>("/threads", {
     method: "POST",
     accessToken,
+    timeoutMs: 15000,
     body: {
       farm_id: farmId,
       message: message?.trim() || null,
@@ -98,6 +99,7 @@ export async function sendThreadMessage(
   return apiRequest<ConversationMessage>(`/threads/${encodeURIComponent(threadId)}/messages`, {
     method: "POST",
     accessToken,
+    timeoutMs: 15000,
     body: { body },
   });
 }
