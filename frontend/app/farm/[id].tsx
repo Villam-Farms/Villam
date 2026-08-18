@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
@@ -15,6 +15,7 @@ import { formatAddress } from '@/lib/address';
 import { openDirections } from '@/lib/directions';
 import { shareFarmLink } from '@/lib/share-farm';
 import { fetchFarmRatings, saveFarmRating, summarizeFarmRatings, type FarmRating } from '@/lib/farm-ratings';
+import { createThread } from '@/lib/social';
 import { useAuth } from '@/context/auth-context';
 import { SaveButton } from '@/components/save-button';
 import { fetchFarmById } from '@/lib/farms';
@@ -57,6 +58,9 @@ export default function FarmDetailScreen() {
   const [draftRating, setDraftRating] = useState(5);
   const [draftReview, setDraftReview] = useState('');
   const [savingReview, setSavingReview] = useState(false);
+  const [messageModalOpen, setMessageModalOpen] = useState(false);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
   const tabTranslateX = useRef(new Animated.Value(0)).current;
   const previousTab = useRef<'overview' | 'reviews'>('overview');
 
@@ -239,6 +243,35 @@ export default function FarmDetailScreen() {
     }
   };
 
+  const handleOpenMessageModal = () => {
+    if (!session?.access_token) {
+      Alert.alert('Sign in required', 'Sign in before messaging a farmer.');
+      return;
+    }
+    setMessageModalOpen(true);
+  };
+
+  const handleSendMessage = async () => {
+    const accessToken = session?.access_token;
+    if (!farmId || !accessToken) return;
+    if (!messageDraft.trim()) {
+      Alert.alert('Add a message', 'Write a short message before sending.');
+      return;
+    }
+
+    setSendingMessage(true);
+    try {
+      const thread = await createThread(accessToken, farmId, messageDraft.trim());
+      setMessageModalOpen(false);
+      setMessageDraft('');
+      router.push(`/(profile)/messages/${thread.id}`);
+    } catch (e) {
+      Alert.alert('Message not sent', e instanceof Error ? e.message : 'Please try again.');
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
   useEffect(() => {
     const fromValue =
       activeTab === previousTab.current
@@ -302,8 +335,14 @@ export default function FarmDetailScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Get directions"
+                style={[styles.iconButton, { backgroundColor: 'rgba(255,255,255,0.92)' }]}
+                onPress={handleOpenMessageModal}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.text.primary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.iconButton, { backgroundColor: theme.brand.primary }]}
                 onPress={handleDirections}
                 activeOpacity={0.88}
@@ -749,6 +788,52 @@ export default function FarmDetailScreen() {
           </View>
         ) : null}
       </ScrollView>
+      <Modal visible={messageModalOpen} transparent animationType="slide" onRequestClose={() => setMessageModalOpen(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <Pressable style={styles.modalDismissArea} onPress={() => setMessageModalOpen(false)} />
+          <View style={[styles.modalSheet, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+            <View style={styles.modalHeader}>
+              <ThemedText style={[styles.modalTitle, { color: colors.text.primary }]}>
+                Message farmer
+              </ThemedText>
+              <TouchableOpacity onPress={() => setMessageModalOpen(false)} hitSlop={8}>
+                <Ionicons name="close" size={22} color={colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              value={messageDraft}
+              onChangeText={setMessageDraft}
+              placeholder="Hey, I’m planning to stop by around 4pm..."
+              placeholderTextColor={colors.input.placeholder}
+              multiline
+              style={[
+                styles.modalInput,
+                {
+                  color: colors.input.text,
+                  backgroundColor: colors.input.background,
+                  borderColor: colors.border.light,
+                },
+              ]}
+            />
+            <TouchableOpacity
+              style={[
+                styles.modalSendButton,
+                { backgroundColor: sendingMessage || !messageDraft.trim() ? theme.neutral[300] : theme.brand.primary },
+              ]}
+              onPress={handleSendMessage}
+              activeOpacity={0.88}
+              disabled={sendingMessage || !messageDraft.trim()}
+            >
+              <ThemedText style={styles.modalSendButtonText}>
+                {sendingMessage ? 'Sending...' : 'Send message'}
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1198,6 +1283,54 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.sm,
     fontSize: 14,
     lineHeight: 21,
+    fontFamily: theme.typography.fontFamily,
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(24, 20, 14, 0.28)',
+  },
+  modalDismissArea: {
+    flex: 1,
+  },
+  modalSheet: {
+    borderTopLeftRadius: theme.borderRadius.xl,
+    borderTopRightRadius: theme.borderRadius.xl,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    padding: theme.spacing.lg,
+    gap: theme.spacing.md,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitle: {
+    fontSize: theme.typography.fontSizes.h3,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  modalInput: {
+    minHeight: 120,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    fontSize: 15,
+    lineHeight: 21,
+    fontFamily: theme.typography.fontFamily,
+    textAlignVertical: 'top',
+  },
+  modalSendButton: {
+    alignSelf: 'flex-end',
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+  },
+  modalSendButtonText: {
+    color: theme.neutral.white,
+    fontWeight: theme.typography.fontWeights.bold,
     fontFamily: theme.typography.fontFamily,
   },
 });

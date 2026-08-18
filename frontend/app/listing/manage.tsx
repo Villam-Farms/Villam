@@ -906,6 +906,17 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginBottom: theme.spacing.sm,
   },
+  mapUnavailableCard: {
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  mapUnavailableText: {
+    textAlign: "center",
+    lineHeight: 22,
+    fontSize: 14,
+  },
   utilityButton: {
     alignSelf: "flex-start",
     borderRadius: theme.borderRadius.full,

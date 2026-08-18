@@ -18,6 +18,7 @@ import { useFarms } from "@/hooks/useFarms";
 
 import { openDirections } from "@/lib/directions";
 import { formatAddress } from "@/lib/address";
+import { hasGoogleMapsApiKey } from "@/lib/maps";
 import { shareFarm } from "@/lib/share-farm";
 
 type Region = {
@@ -210,6 +211,19 @@ export default function MapTab() {
 
   if (!region) return <Text>Loading map…</Text>;
 
+  if (!hasGoogleMapsApiKey) {
+    return (
+      <View style={[styles.mapUnavailable, { backgroundColor: colors.background }]}>
+        <Text style={[styles.mapUnavailableTitle, { color: colors.text.primary }]}>
+          Map unavailable
+        </Text>
+        <Text style={[styles.mapUnavailableBody, { color: colors.text.secondary }]}>
+          Add `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` to `frontend/.env`, then rebuild the Android app.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1 }}>
       {/* MAP */}
@@ -331,7 +345,7 @@ export default function MapTab() {
             </Text>
             <Button
               variant="primary"
-              onPress={() => console.log("See All")}
+              onPress={() => router.push("/farm")}
               style={styles.seeAllButton}
             >
               See All
@@ -500,5 +514,24 @@ const styles = StyleSheet.create({
   seeAllButton: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.xs,
+  },
+  mapUnavailable: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.lg,
+  },
+  mapUnavailableTitle: {
+    fontSize: theme.typography.fontSizes.h2,
+    fontWeight: theme.typography.fontWeights.semibold,
+    fontFamily: theme.typography.fontFamily,
+    textAlign: "center",
+    marginBottom: theme.spacing.sm,
+  },
+  mapUnavailableBody: {
+    fontSize: theme.typography.fontSizes.h5,
+    fontFamily: theme.typography.fontFamily,
+    textAlign: "center",
+    lineHeight: 22,
   },
 });
