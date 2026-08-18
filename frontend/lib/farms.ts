@@ -1,9 +1,13 @@
 import { supabase } from "@/lib/supabase";
+import {
+  FARM_IMAGE_BUCKET,
+  farmImagePathFromUrl,
+  resolveFarmImageUrl,
+} from "@/lib/farm-image-storage";
 import type { FarmWithCoords } from "@/lib/location";
 
 const FARM_SELECT_COLUMNS =
   "id,name,latitude,longitude,city,state,postal_code,country,website,description,image_url,image_path";
-const FARM_IMAGE_BUCKET = "farm-images";
 
 type FarmRatingAggregate = {
   average: number;
@@ -72,16 +76,13 @@ function normalizeFarmRecord(
 }
 
 async function hydrateFarmImage(record: Record<string, unknown>) {
-  const imagePath = typeof record.image_path === "string" ? record.image_path : null;
+  const storedImagePath = typeof record.image_path === "string" ? record.image_path : null;
   const fallbackUrl = typeof record.image_url === "string" ? record.image_url : null;
+  const imagePath = storedImagePath || farmImagePathFromUrl(fallbackUrl);
   if (!imagePath) return record;
 
-  const { data, error } = await supabase.storage
-    .from(FARM_IMAGE_BUCKET)
-    .createSignedUrl(imagePath, 60 * 60);
-
-  if (error || !data?.signedUrl) return record;
-  return { ...record, image_url: data.signedUrl };
+  const imageUrl = await resolveFarmImageUrl(imagePath, fallbackUrl);
+  return { ...record, image_path: imagePath, image_url: imageUrl };
 }
 
 export async function fetchFarms(): Promise<FarmWithCoords[]> {
