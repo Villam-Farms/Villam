@@ -356,7 +356,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.9)', marginBottom: theme.spacing.md,
   },
   heroSave: { position: 'absolute', right: theme.spacing.lg },
-  listingSave: { position: 'absolute', left: 60, top: 10, zIndex: 2 },
+  listingSave: { position: 'absolute', left: 8, top: 8, zIndex: 2 },
   heroLoading: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 10 },
   loadingText: { color: '#5A564B', fontSize: 14 },
   heroBody: { position: 'relative', alignItems: 'flex-start' },
