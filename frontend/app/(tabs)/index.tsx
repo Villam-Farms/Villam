@@ -909,9 +909,14 @@ export default function HomeScreen() {
         </View>
 
         <ThemedView style={styles.section}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-            Close Farms Near You
-          </ThemedText>
+          <View style={styles.sectionHeaderRow}>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}> 
+              Close Farms Near You
+            </ThemedText>
+            <TouchableOpacity onPress={() => router.push('/farm')} activeOpacity={0.7}>
+              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>View all</ThemedText>
+            </TouchableOpacity>
+          </View>
 
           <ThemedText style={{ color: colors.text.tertiary, marginTop: 2, marginBottom: 2 }}>
             📍 {locationText}

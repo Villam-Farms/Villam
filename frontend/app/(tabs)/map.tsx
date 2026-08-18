@@ -329,7 +329,7 @@ export default function MapTab() {
             </Text>
             <Button
               variant="primary"
-              onPress={() => console.log("See All")}
+              onPress={() => router.push("/farm")}
               style={styles.seeAllButton}
             >
               See All
