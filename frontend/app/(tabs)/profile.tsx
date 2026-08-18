@@ -21,6 +21,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useRouter } from "expo-router";
 import { useAuth } from "@/context/auth-context";
 import { getMe, uploadMyAvatar, updateMyDescription, type ProfileRow } from "@/lib/follows";
+import { listNotifications, listThreads } from "@/lib/social";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "@/lib/supabase";
 import { RecipeCard } from "@/components/ui/recipes/recipecard";
@@ -109,6 +110,8 @@ export default function ProfileScreen() {
   const [descDraft, setDescDraft] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [unreadAlertsCount, setUnreadAlertsCount] = useState(0);
+  const [unreadInboxCount, setUnreadInboxCount] = useState(0);
 
   const currentDescription = useMemo(() => profile?.description ?? "", [profile?.description]);
 
@@ -187,7 +190,7 @@ export default function ProfileScreen() {
 
       (async () => {
         try {
-          const [meResult, recipesResult] = await Promise.all([
+          const [meResult, recipesResult, notificationsResult, threadsResult] = await Promise.all([
             getMe(accessToken),
             supabase
               .from("recipes")
@@ -197,12 +200,18 @@ export default function ProfileScreen() {
               .eq("user_id", userId)
               .order("created_at", { ascending: false })
               .limit(12),
+            listNotifications(accessToken),
+            listThreads(accessToken),
           ]);
 
           if (!isActive) return;
 
           setProfile(meResult.profile);
           setCounts(meResult.counts);
+          setUnreadAlertsCount(notificationsResult.filter((item) => !item.is_read).length);
+          setUnreadInboxCount(
+            threadsResult.reduce((total, thread) => total + (thread.unread_count || 0), 0),
+          );
 
           if (recipesResult.error) {
             throw recipesResult.error;
@@ -380,6 +389,22 @@ export default function ProfileScreen() {
               >
                 {loading ? "Loading..." : "Find People"}
               </Button>
+              <View style={styles.secondaryActionsRow}>
+                <Button
+                  variant="outline"
+                  onPress={() => router.navigate("/(profile)/alerts")}
+                  style={styles.secondaryActionButton}
+                >
+                  {unreadAlertsCount > 0 ? `Alerts (${unreadAlertsCount})` : "Alerts"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onPress={() => router.navigate("/(profile)/inbox")}
+                  style={styles.secondaryActionButton}
+                >
+                  {unreadInboxCount > 0 ? `Inbox (${unreadInboxCount})` : "Inbox"}
+                </Button>
+              </View>
             </View>
           </View>
         </View>
@@ -612,6 +637,16 @@ const styles = StyleSheet.create({
   addFriendsButton: {
     marginTop: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.xs,
+  },
+  secondaryActionsRow: {
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
+  secondaryActionButton: {
+    minWidth: 110,
+    paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.xs,
   },
   userInfo: {
