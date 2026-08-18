@@ -329,7 +329,7 @@ export default function NewListingScreen() {
       Alert.alert("Listing created", "Your produce listing is now live.", [
         {
           text: "Done",
-          onPress: () => router.back(),
+          onPress: () => router.replace("/(tabs)/listings"),
         },
       ]);
     } catch (error) {
@@ -448,7 +448,7 @@ export default function NewListingScreen() {
         >
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: "rgba(255,255,255,0.92)" }]}
-            onPress={() => router.back()}
+            onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)")}
             activeOpacity={0.85}
           >
             <Ionicons name="arrow-back" size={20} color={colors.text.primary} />

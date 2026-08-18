@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View, TouchableOpacity } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -65,6 +65,15 @@ export default function ListingsScreen() {
     [listings, activeFilter]
   );
 
+  const shouldOpenFarmSetup =
+    !!session?.user.id && !farmLoading && !farmError && !ownedFarm;
+
+  useEffect(() => {
+    if (shouldOpenFarmSetup) {
+      router.replace("/listing/new");
+    }
+  }, [shouldOpenFarmSetup]);
+
   const getFilterColors = (filter: ListingCategory) => {
     if (filter === "All") {
       return {
@@ -81,6 +90,14 @@ export default function ListingsScreen() {
       textColor: visuals.badgeTextColor,
     };
   };
+
+  if (shouldOpenFarmSetup) {
+    return (
+      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ThemedText style={{ color: colors.text.secondary }}>Opening farm setup…</ThemedText>
+      </SafeAreaView>
+    );
+  }
 
   const refreshListings = async () => {
     setRefreshing(true);
@@ -319,6 +336,12 @@ export default function ListingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: theme.spacing.lg,
   },
   content: {
     paddingBottom: theme.spacing.sm,

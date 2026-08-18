@@ -73,6 +73,12 @@ export default function ManageFarmScreen() {
   });
 
   useEffect(() => {
+    if (!isLoading && !error && !farm) {
+      router.replace("/listing/new");
+    }
+  }, [error, farm, isLoading]);
+
+  useEffect(() => {
     if (!farm) return;
     setName(farm.name);
     setWebsite(farm.website ?? "");
@@ -161,7 +167,12 @@ export default function ManageFarmScreen() {
         queryClient.invalidateQueries({ queryKey: ["farms"] }),
         queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] }),
       ]);
-      Alert.alert("Farm updated", "Your farm details have been saved.", [{ text: "Done", onPress: () => router.back() }]);
+      Alert.alert("Farm updated", "Your farm details have been saved.", [
+        {
+          text: "Done",
+          onPress: () => router.canGoBack() ? router.back() : router.replace("/(tabs)/listings"),
+        },
+      ]);
     } catch (saveError) {
       Alert.alert("Update failed", saveError instanceof Error ? saveError.message : "Could not update your farm.");
     } finally {
@@ -211,7 +222,7 @@ export default function ManageFarmScreen() {
   }
 
   if (error || !farm) {
-    return <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}><ThemedText>No farm found. Create a listing first.</ThemedText></SafeAreaView>;
+    return <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}><ThemedText>Opening farm setup…</ThemedText></SafeAreaView>;
   }
 
   return (
@@ -219,7 +230,12 @@ export default function ManageFarmScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.hero, { backgroundColor: "#F7E5BF" }]}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><Ionicons name="arrow-back" size={20} color="#2E2A1F" /></TouchableOpacity>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/listings")}
+          >
+            <Ionicons name="arrow-back" size={20} color="#2E2A1F" />
+          </TouchableOpacity>
           <ThemedText style={styles.eyebrow}>Farm settings</ThemedText>
           <ThemedText style={styles.title}>Manage your farm</ThemedText>
           <ThemedText style={styles.subtitle}>Update the details shoppers see about your farm.</ThemedText>

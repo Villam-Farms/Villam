@@ -335,7 +335,7 @@ export default function ManageListingsScreen() {
         <View style={styles.hero}>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border.light }]}
-            onPress={() => router.back()}
+            onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/listings")}
             activeOpacity={0.85}
           >
             <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
