@@ -214,6 +214,53 @@ class GroceryListCreateOut(BaseModel):
     id: str
 
 
+class NotificationOut(BaseModel):
+    id: str
+    type: str
+    title: str
+    body: str
+    actor: ProfileOut | None = None
+    entity_type: str | None = None
+    entity_id: str | None = None
+    is_read: bool = False
+    created_at: str | None = None
+
+
+class CreateThreadIn(BaseModel):
+    farm_id: str = Field(..., min_length=1)
+    message: str | None = Field(default=None, max_length=1000)
+
+
+class SendMessageIn(BaseModel):
+    body: str = Field(..., min_length=1, max_length=1000)
+
+
+class ConversationMessageOut(BaseModel):
+    id: str
+    thread_id: str
+    sender_id: str
+    recipient_id: str
+    body: str
+    created_at: str | None = None
+    read_at: str | None = None
+    sender: ProfileOut | None = None
+
+
+class ConversationThreadOut(BaseModel):
+    id: str
+    farm_id: str
+    farm_name: str | None = None
+    other_user: ProfileOut | None = None
+    last_message_preview: str | None = None
+    last_message_at: str | None = None
+    unread_count: int = 0
+
+
+class ConversationThreadDetailOut(BaseModel):
+    thread: ConversationThreadOut
+    messages: list[ConversationMessageOut]
+
+
 def _get_following_ids(user_id: str) -> set[str]:
     resp = (
         supabase.table("follows")
@@ -260,6 +307,176 @@ def _farm_rating_out(row: dict) -> FarmRatingOut:
         review=row.get("review") or "",
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at"),
+    )
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _get_profile_map(ids: list[str]) -> dict[str, ProfileOut]:
+    if not ids:
+        return {}
+
+    unique_ids = list(dict.fromkeys(id_ for id_ in ids if id_))
+    if not unique_ids:
+        return {}
+
+    resp = (
+        supabase.table("profiles")
+        .select("id,username,full_name,avatar_url,description")
+        .in_("id", unique_ids)
+        .execute()
+    )
+    rows = getattr(resp, "data", []) or []
+    return {
+        str(row["id"]): ProfileOut(**row)
+        for row in rows
+        if row.get("id")
+    }
+
+
+def _create_notification(
+    *,
+    user_id: str,
+    actor_id: str | None,
+    type_: str,
+    title: str,
+    body: str,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+) -> None:
+    supabase.table("notifications").insert(
+        {
+            "user_id": user_id,
+            "actor_id": actor_id,
+            "type": type_,
+            "title": title,
+            "body": body,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+        }
+    ).execute()
+
+
+def _get_farm_row(farm_id: str) -> dict:
+    resp = (
+        supabase.table("farms")
+        .select("id,name,user_id")
+        .eq("id", farm_id)
+        .maybe_single()
+        .execute()
+    )
+    row = getattr(resp, "data", None)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Farm not found")
+    return row
+
+
+def _get_thread_row(thread_id: str) -> dict:
+    resp = (
+        supabase.table("conversation_threads")
+        .select("id,farm_id,buyer_user_id,farmer_user_id,last_message_at,created_at")
+        .eq("id", thread_id)
+        .maybe_single()
+        .execute()
+    )
+    row = getattr(resp, "data", None)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    return row
+
+
+def _ensure_thread_participant(thread_id: str, user_id: str) -> dict:
+    row = _get_thread_row(thread_id)
+    if user_id not in {row.get("buyer_user_id"), row.get("farmer_user_id")}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not a participant in this conversation")
+    return row
+
+
+def _get_or_create_thread(farm_id: str, buyer_user_id: str) -> dict:
+    farm = _get_farm_row(farm_id)
+    farmer_user_id = str(farm.get("user_id") or "")
+    if not farmer_user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Farm owner not found")
+    if farmer_user_id == buyer_user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot message your own farm")
+
+    existing_resp = (
+        supabase.table("conversation_threads")
+        .select("id,farm_id,buyer_user_id,farmer_user_id,last_message_at,created_at")
+        .eq("farm_id", farm_id)
+        .eq("buyer_user_id", buyer_user_id)
+        .eq("farmer_user_id", farmer_user_id)
+        .limit(1)
+        .execute()
+    )
+    existing_rows = getattr(existing_resp, "data", []) or []
+    if existing_rows:
+        return existing_rows[0]
+
+    create_resp = (
+        supabase.table("conversation_threads")
+        .insert(
+            {
+                "farm_id": farm_id,
+                "buyer_user_id": buyer_user_id,
+                "farmer_user_id": farmer_user_id,
+            }
+        )
+        .select("id,farm_id,buyer_user_id,farmer_user_id,last_message_at,created_at")
+        .single()
+        .execute()
+    )
+    row = getattr(create_resp, "data", None)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to create conversation")
+    return row
+
+
+def _build_thread_summary(thread_row: dict, viewer_user_id: str) -> ConversationThreadOut:
+    farm_id = str(thread_row.get("farm_id") or "")
+    buyer_user_id = str(thread_row.get("buyer_user_id") or "")
+    farmer_user_id = str(thread_row.get("farmer_user_id") or "")
+    other_user_id = farmer_user_id if viewer_user_id == buyer_user_id else buyer_user_id
+
+    profile_map = _get_profile_map([other_user_id])
+    farm_resp = (
+        supabase.table("farms")
+        .select("id,name")
+        .eq("id", farm_id)
+        .maybe_single()
+        .execute()
+    )
+    farm_row = getattr(farm_resp, "data", None) or {}
+
+    last_message_resp = (
+        supabase.table("conversation_messages")
+        .select("body,created_at")
+        .eq("thread_id", thread_row["id"])
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    last_message = ((getattr(last_message_resp, "data", []) or [None])[0]) or {}
+
+    unread_resp = (
+        supabase.table("conversation_messages")
+        .select("id", count="exact")
+        .eq("thread_id", thread_row["id"])
+        .eq("recipient_user_id", viewer_user_id)
+        .is_("read_at", "null")
+        .execute()
+    )
+
+    return ConversationThreadOut(
+        id=str(thread_row["id"]),
+        farm_id=farm_id,
+        farm_name=farm_row.get("name"),
+        other_user=profile_map.get(other_user_id),
+        last_message_preview=last_message.get("body"),
+        last_message_at=thread_row.get("last_message_at") or last_message.get("created_at") or thread_row.get("created_at"),
+        unread_count=_safe_count(unread_resp),
     )
 
 
@@ -894,12 +1111,212 @@ def follow(body: FollowRequest, user_id: str = Depends(get_current_user_id)) -> 
     if body.following_id == user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot follow yourself")
 
+    existing_resp = (
+        supabase.table("follows")
+        .select("follower_id")
+        .eq("follower_id", user_id)
+        .eq("following_id", body.following_id)
+        .limit(1)
+        .execute()
+    )
+    existed = bool(getattr(existing_resp, "data", None))
+
     supabase.table("follows").upsert(
         {"follower_id": user_id, "following_id": body.following_id},
         on_conflict="follower_id,following_id",
     ).execute()
 
+    if not existed:
+        actor_profile = _get_profile_map([user_id]).get(user_id)
+        actor_name = (
+            actor_profile.full_name
+            if actor_profile and actor_profile.full_name
+            else f"@{actor_profile.username}" if actor_profile and actor_profile.username
+            else "Someone"
+        )
+        _create_notification(
+            user_id=body.following_id,
+            actor_id=user_id,
+            type_="follow",
+            title="New follower",
+            body=f"{actor_name} started following you.",
+            entity_type="profile",
+            entity_id=user_id,
+        )
+
 
 @app.delete("/follow/{following_id}", status_code=204)
 def unfollow(following_id: str, user_id: str = Depends(get_current_user_id)) -> None:
     supabase.table("follows").delete().match({"follower_id": user_id, "following_id": following_id}).execute()
+
+
+@app.get("/notifications", response_model=list[NotificationOut])
+def list_notifications(user_id: str = Depends(get_current_user_id)) -> list[NotificationOut]:
+    resp = (
+        supabase.table("notifications")
+        .select("id,type,title,body,actor_id,entity_type,entity_id,is_read,created_at")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .limit(100)
+        .execute()
+    )
+    rows = getattr(resp, "data", []) or []
+    actor_ids = [str(row.get("actor_id")) for row in rows if row.get("actor_id")]
+    profile_map = _get_profile_map(actor_ids)
+
+    return [
+        NotificationOut(
+            id=str(row["id"]),
+            type=str(row.get("type") or ""),
+            title=str(row.get("title") or ""),
+            body=str(row.get("body") or ""),
+            actor=profile_map.get(str(row.get("actor_id"))),
+            entity_type=row.get("entity_type"),
+            entity_id=str(row["entity_id"]) if row.get("entity_id") else None,
+            is_read=bool(row.get("is_read")),
+            created_at=row.get("created_at"),
+        )
+        for row in rows
+        if row.get("id")
+    ]
+
+
+@app.post("/notifications/read-all", status_code=204)
+def read_all_notifications(user_id: str = Depends(get_current_user_id)) -> None:
+    supabase.table("notifications").update({"is_read": True}).eq("user_id", user_id).eq("is_read", False).execute()
+
+
+@app.post("/notifications/{notification_id}/read", status_code=204)
+def read_notification(notification_id: str, user_id: str = Depends(get_current_user_id)) -> None:
+    supabase.table("notifications").update({"is_read": True}).eq("id", notification_id).eq("user_id", user_id).execute()
+
+
+@app.get("/threads", response_model=list[ConversationThreadOut])
+def list_threads(user_id: str = Depends(get_current_user_id)) -> list[ConversationThreadOut]:
+    resp = (
+        supabase.table("conversation_threads")
+        .select("id,farm_id,buyer_user_id,farmer_user_id,last_message_at,created_at")
+        .or_(f"buyer_user_id.eq.{user_id},farmer_user_id.eq.{user_id}")
+        .order("last_message_at", desc=True)
+        .order("created_at", desc=True)
+        .limit(100)
+        .execute()
+    )
+    rows = getattr(resp, "data", []) or []
+    return [_build_thread_summary(row, user_id) for row in rows if row.get("id")]
+
+
+@app.post("/threads", response_model=ConversationThreadOut)
+def create_thread(body: CreateThreadIn, user_id: str = Depends(get_current_user_id)) -> ConversationThreadOut:
+    thread = _get_or_create_thread(body.farm_id, user_id)
+
+    message = (body.message or "").strip()
+    if message:
+        send_thread_message(str(thread["id"]), SendMessageIn(body=message), user_id)
+        thread = _get_thread_row(str(thread["id"]))
+
+    return _build_thread_summary(thread, user_id)
+
+
+@app.get("/threads/{thread_id}", response_model=ConversationThreadDetailOut)
+def get_thread(thread_id: str, user_id: str = Depends(get_current_user_id)) -> ConversationThreadDetailOut:
+    thread = _ensure_thread_participant(thread_id, user_id)
+
+    supabase.table("conversation_messages").update({"read_at": _utc_now_iso()}).eq("thread_id", thread_id).eq("recipient_user_id", user_id).is_("read_at", "null").execute()
+    supabase.table("notifications").update({"is_read": True}).eq("user_id", user_id).eq("type", "message").eq("entity_type", "thread").eq("entity_id", thread_id).eq("is_read", False).execute()
+
+    messages_resp = (
+        supabase.table("conversation_messages")
+        .select("id,thread_id,sender_user_id,recipient_user_id,body,created_at,read_at")
+        .eq("thread_id", thread_id)
+        .order("created_at", desc=False)
+        .limit(500)
+        .execute()
+    )
+    rows = getattr(messages_resp, "data", []) or []
+    sender_ids = [str(row.get("sender_user_id")) for row in rows if row.get("sender_user_id")]
+    profile_map = _get_profile_map(sender_ids)
+
+    return ConversationThreadDetailOut(
+        thread=_build_thread_summary(thread, user_id),
+        messages=[
+            ConversationMessageOut(
+                id=str(row["id"]),
+                thread_id=str(row["thread_id"]),
+                sender_id=str(row["sender_user_id"]),
+                recipient_id=str(row["recipient_user_id"]),
+                body=str(row.get("body") or ""),
+                created_at=row.get("created_at"),
+                read_at=row.get("read_at"),
+                sender=profile_map.get(str(row.get("sender_user_id"))),
+            )
+            for row in rows
+            if row.get("id")
+        ],
+    )
+
+
+@app.post("/threads/{thread_id}/messages", response_model=ConversationMessageOut)
+def send_thread_message(
+    thread_id: str,
+    body: SendMessageIn,
+    user_id: str = Depends(get_current_user_id),
+) -> ConversationMessageOut:
+    thread = _ensure_thread_participant(thread_id, user_id)
+    buyer_user_id = str(thread.get("buyer_user_id") or "")
+    farmer_user_id = str(thread.get("farmer_user_id") or "")
+    recipient_user_id = farmer_user_id if user_id == buyer_user_id else buyer_user_id
+    if not recipient_user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Conversation recipient missing")
+
+    clean_body = body.body.strip()
+    if not clean_body:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message cannot be empty")
+
+    create_resp = (
+        supabase.table("conversation_messages")
+        .insert(
+            {
+                "thread_id": thread_id,
+                "sender_user_id": user_id,
+                "recipient_user_id": recipient_user_id,
+                "body": clean_body,
+            }
+        )
+        .select("id,thread_id,sender_user_id,recipient_user_id,body,created_at,read_at")
+        .single()
+        .execute()
+    )
+    row = getattr(create_resp, "data", None)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to send message")
+
+    supabase.table("conversation_threads").update({"last_message_at": row.get("created_at") or _utc_now_iso()}).eq("id", thread_id).execute()
+
+    sender_profile = _get_profile_map([user_id]).get(user_id)
+    sender_name = (
+        sender_profile.full_name
+        if sender_profile and sender_profile.full_name
+        else f"@{sender_profile.username}" if sender_profile and sender_profile.username
+        else "Someone"
+    )
+    _create_notification(
+        user_id=recipient_user_id,
+        actor_id=user_id,
+        type_="message",
+        title="New message",
+        body=f"{sender_name}: {clean_body[:120]}",
+        entity_type="thread",
+        entity_id=thread_id,
+    )
+
+    return ConversationMessageOut(
+        id=str(row["id"]),
+        thread_id=str(row["thread_id"]),
+        sender_id=str(row["sender_user_id"]),
+        recipient_id=str(row["recipient_user_id"]),
+        body=str(row.get("body") or ""),
+        created_at=row.get("created_at"),
+        read_at=row.get("read_at"),
+        sender=sender_profile,
+    )
