@@ -15,6 +15,7 @@ import { Stack, router, useLocalSearchParams } from "expo-router";
 
 import { ThemedText } from "@/components/themed-text";
 import { theme } from "@/constants/theme";
+import { SaveButton } from "@/components/save-button";
 import { useTheme } from "@/hooks/useTheme";
 import { recipes as localRecipes } from "@/lib/recipes";
 import { supabase } from "@/lib/supabase";
@@ -47,6 +48,10 @@ type DBRecipe = {
   id: string;
   title: string;
   description: string | null;
+  cover_image_url: string | null;
+  cover_image_path: string | null;
+  cover_media: { path?: string; url?: string; position?: number }[] | null;
+  resolved_image_url?: string | null;
   prep_time_minutes: number;
   cook_time_minutes: number;
   additional_time_minutes: number;
@@ -55,6 +60,20 @@ type DBRecipe = {
   ingredients: DBIngredient[] | null;
   steps: DBStep[] | null;
 };
+
+const RECIPE_BUCKET = "recipes";
+
+async function resolveRecipeCover(recipe: DBRecipe) {
+  const media = Array.isArray(recipe.cover_media)
+    ? [...recipe.cover_media].sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    : [];
+  const path = recipe.cover_image_path || media.find((item) => item.path)?.path;
+  if (path) {
+    const { data, error } = await supabase.storage.from(RECIPE_BUCKET).createSignedUrl(path, 60 * 60);
+    if (!error && data?.signedUrl) return data.signedUrl;
+  }
+  return recipe.cover_image_url || media.find((item) => item.url)?.url || null;
+}
 
 type DBGroceryList = {
   id: string;
@@ -156,6 +175,9 @@ export default function RecipeDetailScreen() {
           id,
           title,
           description,
+          cover_image_url,
+          cover_image_path,
+          cover_media,
           prep_time_minutes,
           cook_time_minutes,
           additional_time_minutes,
@@ -176,7 +198,10 @@ export default function RecipeDetailScreen() {
         return;
       }
 
-      setDbRecipe(data as DBRecipe);
+      const loadedRecipe = data as DBRecipe;
+      const resolvedImageUrl = await resolveRecipeCover(loadedRecipe);
+      if (cancelled) return;
+      setDbRecipe({ ...loadedRecipe, resolved_image_url: resolvedImageUrl });
       setLoading(false);
     };
 
@@ -216,6 +241,7 @@ export default function RecipeDetailScreen() {
         source: "db",
         title: dbRecipe.title,
         description: dbRecipe.description ?? "",
+        imageUrl: dbRecipe.resolved_image_url ?? dbRecipe.cover_image_url ?? undefined,
         duration: dbRecipe.total_time_minutes > 0 ? `${dbRecipe.total_time_minutes} min` : "—",
         servings: dbRecipe.servings ? String(dbRecipe.servings) : undefined,
         ingredients,
@@ -645,6 +671,7 @@ export default function RecipeDetailScreen() {
                   color={recipe.imageUrl ? theme.neutral.white : colors.text.primary}
                 />
               </TouchableOpacity>
+              <SaveButton type="recipe" itemId={recipe.id} light={Boolean(recipe.imageUrl)} />
             </View>
 
             <View style={[styles.heroContent, { paddingTop: insets.top + 72 }]}>

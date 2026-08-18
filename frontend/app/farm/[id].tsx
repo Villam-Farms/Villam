@@ -17,6 +17,7 @@ import { getMockFarmProfile } from '@/lib/mock-farms';
 import { shareFarmLink } from '@/lib/share-farm';
 import { fetchFarmRatings, saveFarmRating, summarizeFarmRatings, type FarmRating } from '@/lib/farm-ratings';
 import { useAuth } from '@/context/auth-context';
+import { SaveButton } from '@/components/save-button';
 
 const STAR_VALUES = [1, 2, 3, 4, 5];
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -264,6 +265,7 @@ export default function FarmDetailScreen() {
             </TouchableOpacity>
 
             <View style={styles.heroActionRow}>
+              {farmId ? <SaveButton type="farm" itemId={farmId} /> : null}
               <TouchableOpacity
                 style={[styles.iconButton, { backgroundColor: 'rgba(255,255,255,0.92)' }]}
                 onPress={handleShareFarm}

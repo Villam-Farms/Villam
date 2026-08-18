@@ -24,6 +24,7 @@ import { getMe, uploadMyAvatar, updateMyDescription, type ProfileRow } from "@/l
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "@/lib/supabase";
 import { RecipeCard } from "@/components/ui/recipes/recipecard";
+import { useSavedItems, useSavedSearches } from "@/hooks/useSaved";
 
 const RECIPE_BUCKET = "recipes";
 const FALLBACK_RECIPE_IMAGE = "https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=1200&auto=format&fit=crop";
@@ -109,6 +110,8 @@ export default function ProfileScreen() {
   const [descDraft, setDescDraft] = useState("");
   const [savingDesc, setSavingDesc] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const savedItems = useSavedItems();
+  const savedSearches = useSavedSearches();
 
   const currentDescription = useMemo(() => profile?.description ?? "", [profile?.description]);
 
@@ -384,6 +387,12 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <Pressable onPress={() => router.push('/saved')} style={[styles.savedShortcut, { backgroundColor: colors.surface, borderColor: colors.border.light }]} accessibilityRole="button" accessibilityLabel="Open saved items and searches">
+          <View style={styles.savedShortcutIcon}><Ionicons name="bookmark" size={21} color={theme.brand.primary} /></View>
+          <View style={{ flex: 1 }}><ThemedText style={styles.savedShortcutTitle}>Saved</ThemedText><ThemedText style={{ color: colors.text.secondary }}>{(savedItems.data?.length ?? 0)} favorites · {(savedSearches.data?.length ?? 0)} searches</ThemedText></View>
+          <Ionicons name="chevron-forward" size={20} color={colors.text.secondary} />
+        </Pressable>
+
         <View style={styles.recipesHeader}>
           <ThemedText type="title" style={styles.recipesTitle}>
             My Recipes
@@ -428,7 +437,7 @@ export default function ProfileScreen() {
                 onPress={() => {
                   router.push(`/recipe/${recipe.id}`);
                 }}
-                onEditPress={() => {
+                onEdit={() => {
                   console.log("Edit recipe:", recipe.id);
                 }}
               />
@@ -537,6 +546,9 @@ export default function ProfileScreen() {
 }
 
 const styles = StyleSheet.create({
+  savedShortcut: { marginHorizontal: theme.spacing.lg, marginTop: theme.spacing.lg, padding: theme.spacing.md, borderWidth: 1, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  savedShortcutIcon: { width: 42, height: 42, borderRadius: 21, backgroundColor: theme.brand.light, alignItems: 'center', justifyContent: 'center' },
+  savedShortcutTitle: { fontSize: 17, fontWeight: '700' },
   userFollowSection: {
     flexDirection: "row",
     justifyContent: "space-between",

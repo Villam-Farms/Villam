@@ -5,8 +5,10 @@ import { ThemedView } from "@/components/themed-view";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, Spacing, theme } from "@/constants/theme";
+import { SaveButton } from "@/components/save-button";
 
 interface FarmCardProps {
+  id?: string;
   name: string;
   rating: number;
   reviews: number;
@@ -24,6 +26,7 @@ const PRODUCTS_LINES = 2;
 const PRODUCTS_LINE_HEIGHT = 14; // tweak if you want tighter/looser
 
 export default function FarmCard({
+  id,
   name,
   rating,
   reviews,
@@ -74,13 +77,13 @@ export default function FarmCard({
               {name}
             </ThemedText>
 
-            <TouchableOpacity onPress={onFavoritePress} hitSlop={8}>
+            {id ? <SaveButton type="farm" itemId={id} size={18} /> : <TouchableOpacity onPress={onFavoritePress} hitSlop={8}>
               <IconSymbol
                 name={isFavorite ? "heart.fill" : "heart"}
                 size={18}
                 color={isFavorite ? colors.text.primary : colors.icon.default}
               />
-            </TouchableOpacity>
+            </TouchableOpacity>}
           </ThemedView>
 
           {/* Rating row (distance clamped too) */}

@@ -21,6 +21,7 @@ import {
   type ListingCategory,
   type ListingRow,
 } from "@/lib/listing-browser";
+import { SaveButton } from "@/components/save-button";
 
 export default function ListingsScreen() {
   const { colors } = useTheme();
@@ -231,6 +232,7 @@ export default function ListingsScreen() {
                 activeOpacity={0.88}
                 onPress={() => handleFarmPress(item.farmId)}
               >
+                <View style={styles.cardSave}><SaveButton type="listing" itemId={item.id} size={18} /></View>
                 {/* Thumb */}
                 <View style={[styles.cardThumb, { backgroundColor: item.color }]}>
                   {item.imageUrl ? (
@@ -323,6 +325,7 @@ export default function ListingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  cardSave: { position: "absolute", left: 62, top: 8, zIndex: 3 },
   container: {
     flex: 1,
   },
