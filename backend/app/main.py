@@ -731,6 +731,20 @@ def delete_listing_image(
     return _set_listing_image_url(listing_id, None)
 
 
+@app.delete("/listings/{listing_id}", response_model=ListingImageOut)
+def delete_listing(
+    listing_id: str, user_id: str = Depends(get_current_user_id)
+) -> ListingImageOut:
+    image_url = _ensure_listing_owner(listing_id, user_id)
+    supabase.table("farm_listings").delete().eq("id", listing_id).execute()
+    try:
+        _delete_listing_image_from_storage(image_url)
+    except Exception as error:
+        # The listing is already deleted; do not make the client retry and receive a 404.
+        print("Could not remove deleted listing image", error)
+    return ListingImageOut(id=listing_id, image_url=None)
+
+
 @app.get("/followers", response_model=list[SearchUserOut])
 def list_followers(
     q: str | None = None, limit: int = 100, user_id: str = Depends(get_current_user_id)

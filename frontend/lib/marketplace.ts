@@ -332,3 +332,14 @@ export async function clearFarmListingImage(accessToken: string, listingId: stri
 
   return (await res.json()) as { id: string; image_url: string | null };
 }
+
+export async function deleteFarmListing(accessToken: string, listingId: string) {
+  const res = await fetch(`${apiBaseUrl}/listings/${encodeURIComponent(listingId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(data?.detail || `Request failed (${res.status})`);
+  }
+}

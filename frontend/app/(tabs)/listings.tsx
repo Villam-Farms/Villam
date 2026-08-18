@@ -104,7 +104,7 @@ export default function ListingsScreen() {
             <ThemedText style={styles.heroEyebrow}>Your farm</ThemedText>
             <ThemedText style={styles.heroTitle}>{ownedFarm?.name ?? "My listings"}</ThemedText>
             <ThemedText style={styles.heroSubtitle}>
-              Manage the produce you offer through your farm.
+              Add produce and keep your availability up to date.
             </ThemedText>
 
             <View style={styles.actionButtonsRow}>
@@ -120,55 +120,75 @@ export default function ListingsScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.manageListingButton}
-                onPress={() => router.push("/listing/manage")}
+                style={styles.manageFarmButton}
+                onPress={() => router.push("/farm/manage")}
                 activeOpacity={0.88}
               >
-                <Ionicons name="settings-outline" size={18} color="#2E2A1F" />
-                <ThemedText style={styles.manageListingButtonText}>
-                  Manage listings
-                </ThemedText>
+                <Ionicons name="leaf-outline" size={18} color="#2E2A1F" />
+                <ThemedText style={styles.manageFarmButtonText}>Manage farm</ThemedText>
               </TouchableOpacity>
             </View>
 
           </View>
         </View>
 
-        {/* ── Filter Pills ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-          style={styles.filterScroll}
-        >
-          {filters.map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              style={[
-                styles.filterPill,
-                activeFilter === filter
-                  ? getFilterColors(filter)
-                  : { borderColor: colors.border.light, backgroundColor: colors.background },
-              ]}
-              onPress={() => setActiveFilter(filter)}
-              activeOpacity={0.8}
-            >
-              <ThemedText
+        <View style={styles.listHeader}>
+          <View>
+            <ThemedText style={[styles.listTitle, { color: colors.text.primary }]}>
+              Your listings
+            </ThemedText>
+            <ThemedText style={[styles.listCount, { color: colors.text.secondary }]}>
+              {listings.length} {listings.length === 1 ? "item" : "items"} listed
+            </ThemedText>
+          </View>
+          <TouchableOpacity
+            style={[styles.manageTextButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
+            onPress={() => router.push("/listing/manage")}
+            activeOpacity={0.85}
+          >
+            <ThemedText style={[styles.manageTextButtonText, { color: colors.text.primary }]}>
+              Manage
+            </ThemedText>
+            <Ionicons name="chevron-forward" size={15} color={colors.text.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {filters.length > 1 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+            style={styles.filterScroll}
+          >
+            {filters.map((filter) => (
+              <TouchableOpacity
+                key={filter}
                 style={[
-                  styles.filterPillText,
-                  {
-                    color:
-                      activeFilter === filter
-                        ? getFilterColors(filter).textColor
-                        : colors.text.secondary,
-                  },
+                  styles.filterPill,
+                  activeFilter === filter
+                    ? getFilterColors(filter)
+                    : { borderColor: colors.border.light, backgroundColor: colors.background },
                 ]}
+                onPress={() => setActiveFilter(filter)}
+                activeOpacity={0.8}
               >
-                {filter}
-              </ThemedText>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+                <ThemedText
+                  style={[
+                    styles.filterPillText,
+                    {
+                      color:
+                        activeFilter === filter
+                          ? getFilterColors(filter).textColor
+                          : colors.text.secondary,
+                    },
+                  ]}
+                >
+                  {filter}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : null}
 
         {/* ── Listings ── */}
         {!session?.user.id ? (
@@ -258,35 +278,11 @@ export default function ListingsScreen() {
                     {item.note}
                   </ThemedText>
 
-                  {/* Footer: farm + manage */}
                   <View style={styles.cardFooter}>
-                    <View style={styles.farmTag}>
-                      <View
-                        style={[styles.farmDot, { backgroundColor: item.farmDotColor }]}
-                      />
-                      <ThemedText
-                        style={[styles.farmName, { color: colors.text.secondary }]}
-                        numberOfLines={1}
-                      >
-                        Your farm
-                      </ThemedText>
-                    </View>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.dirButton,
-                        { borderColor: colors.border.light, backgroundColor: colors.card },
-                      ]}
-                      onPress={() => router.push("/listing/manage")}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="create-outline" size={12} color={colors.text.primary} />
-                      <ThemedText
-                        style={[styles.dirButtonText, { color: colors.text.primary }]}
-                      >
-                        Manage
-                      </ThemedText>
-                    </TouchableOpacity>
+                    <ThemedText style={[styles.editHint, { color: colors.text.tertiary }]}>
+                      Tap to edit
+                    </ThemedText>
+                    <Ionicons name="chevron-forward" size={16} color={colors.text.tertiary} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -365,17 +361,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     maxWidth: "85%",
   },
-  locationPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.72)",
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginTop: theme.spacing.sm,
-  },
   createListingButton: {
     borderRadius: theme.borderRadius.full,
     backgroundColor: "#3D6B2F",
@@ -396,7 +381,7 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: theme.spacing.md,
   },
-  manageListingButton: {
+  manageFarmButton: {
     borderRadius: theme.borderRadius.full,
     backgroundColor: "rgba(255,255,255,0.72)",
     paddingHorizontal: 14,
@@ -407,41 +392,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(46,42,31,0.08)",
   },
-  manageListingButtonText: {
+  manageFarmButtonText: {
     color: "#2E2A1F",
     fontSize: 13,
     fontWeight: "700",
   },
-  locationDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "#6E7B37",
-  },
-  locationText: {
-    fontSize: 12,
-    color: "#5A564B",
-    fontWeight: "500",
-  },
-  searchBar: {
-    marginTop: theme.spacing.md,
-    borderRadius: theme.borderRadius.full,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#2E2A1F",
-  },
 
   // ── Filters ──
   filterScroll: {
-    marginTop: theme.spacing.md,
+    marginTop: theme.spacing.sm,
   },
   filterRow: {
     paddingHorizontal: theme.spacing.lg,
@@ -457,12 +416,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
   },
+  listHeader: {
+    paddingHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+  },
+  listTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  listCount: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  manageTextButton: {
+    borderWidth: 1,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  manageTextButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
 
   // ── Listings ──
   listingsStack: {
     gap: 12,
     paddingHorizontal: theme.spacing.lg,
-    marginTop: theme.spacing.md,
+    marginTop: theme.spacing.sm,
   },
   statusText: {
     fontSize: 14,
@@ -540,32 +528,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 6,
   },
-  farmTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    flex: 1,
-  },
-  farmDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    flexShrink: 0,
-  },
-  farmName: {
-    fontSize: 11,
-    flex: 1,
-  },
-  dirButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  dirButtonText: {
+  editHint: {
     fontSize: 11,
     fontWeight: "600",
   },
