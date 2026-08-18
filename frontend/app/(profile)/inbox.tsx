@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -40,6 +41,10 @@ export default function InboxScreen() {
       listThreads(accessToken)
         .then((data) => {
           if (active) setThreads(data);
+        })
+        .catch((error) => {
+          if (!active) return;
+          Alert.alert("Unable to load inbox", error instanceof Error ? error.message : "Please try again.");
         })
         .finally(() => {
           if (active) setLoading(false);

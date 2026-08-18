@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -36,6 +37,8 @@ export default function AlertsScreen() {
   const accessToken = session?.access_token ?? null;
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const alertItems = items.filter((item) => item.type !== "message");
+  const unreadCount = alertItems.filter((item) => !item.is_read).length;
 
   useFocusEffect(
     useCallback(() => {
@@ -45,6 +48,10 @@ export default function AlertsScreen() {
       listNotifications(accessToken)
         .then((data) => {
           if (active) setItems(data);
+        })
+        .catch((error) => {
+          if (!active) return;
+          Alert.alert("Unable to load alerts", error instanceof Error ? error.message : "Please try again.");
         })
         .finally(() => {
           if (active) setLoading(false);
@@ -63,11 +70,6 @@ export default function AlertsScreen() {
       setItems((prev) => prev.map((entry) => (entry.id === item.id ? { ...entry, is_read: true } : entry)));
     }
 
-    if (item.type === "message" && item.entity_type === "thread" && item.entity_id) {
-      router.push(`/(profile)/messages/${item.entity_id}`);
-      return;
-    }
-
     if (item.type === "follow" && item.entity_type === "profile" && item.entity_id) {
       router.push({ pathname: "/user/[id]", params: { id: item.entity_id } });
     }
@@ -75,8 +77,12 @@ export default function AlertsScreen() {
 
   const markAllRead = async () => {
     if (!accessToken) return;
-    await readAllNotifications(accessToken);
-    setItems((prev) => prev.map((item) => ({ ...item, is_read: true })));
+    try {
+      await readAllNotifications(accessToken);
+      setItems((prev) => prev.map((item) => ({ ...item, is_read: true })));
+    } catch (error) {
+      Alert.alert("Unable to update alerts", error instanceof Error ? error.message : "Please try again.");
+    }
   };
 
   return (
@@ -87,8 +93,15 @@ export default function AlertsScreen() {
             <Ionicons name="arrow-back" size={26} color={colors.text.primary} />
           </Pressable>
           <ThemedText style={[styles.title, { color: colors.text.primary }]}>Alerts</ThemedText>
-          <Pressable onPress={markAllRead} hitSlop={8}>
-            <ThemedText style={[styles.actionText, { color: theme.brand.primary }]}>Read all</ThemedText>
+          <Pressable onPress={markAllRead} hitSlop={8} disabled={unreadCount === 0}>
+            <ThemedText
+              style={[
+                styles.actionText,
+                { color: unreadCount === 0 ? colors.text.tertiary : theme.brand.primary },
+              ]}
+            >
+              Read all
+            </ThemedText>
           </Pressable>
         </View>
 
@@ -98,7 +111,7 @@ export default function AlertsScreen() {
           </View>
         ) : (
           <FlatList
-            data={items}
+            data={alertItems}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
             renderItem={({ item }) => (
@@ -113,7 +126,10 @@ export default function AlertsScreen() {
                 ]}
               >
                 <View style={styles.cardHeader}>
-                  <ThemedText style={[styles.cardTitle, { color: colors.text.primary }]}>{item.title}</ThemedText>
+                  <View style={styles.cardTitleRow}>
+                    {!item.is_read ? <View style={styles.unreadDot} /> : null}
+                    <ThemedText style={[styles.cardTitle, { color: colors.text.primary }]}>{item.title}</ThemedText>
+                  </View>
                   <ThemedText style={[styles.cardTime, { color: colors.text.tertiary }]}>
                     {formatTimestamp(item.created_at)}
                   </ThemedText>
@@ -124,7 +140,7 @@ export default function AlertsScreen() {
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Ionicons name="notifications-outline" size={28} color={colors.text.tertiary} />
-                <ThemedText style={{ color: colors.text.secondary }}>No alerts yet.</ThemedText>
+                <ThemedText style={{ color: colors.text.secondary }}>No follow alerts yet.</ThemedText>
               </View>
             }
           />
@@ -157,6 +173,18 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
+  },
+  cardTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.brand.primary,
   },
   cardTitle: { flex: 1, fontSize: theme.typography.fontSizes.h4, fontWeight: theme.typography.fontWeights.semibold },
   cardTime: { fontSize: theme.typography.fontSizes.body },

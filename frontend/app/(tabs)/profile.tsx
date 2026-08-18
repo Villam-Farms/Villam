@@ -193,7 +193,7 @@ export default function ProfileScreen() {
 
       (async () => {
         try {
-          const [meResult, recipesResult, notificationsResult, threadsResult] = await Promise.all([
+          const [meResult, recipesResult, notificationsResult, threadsResult] = await Promise.allSettled([
             getMe(accessToken),
             supabase
               .from("recipes")
@@ -209,18 +209,32 @@ export default function ProfileScreen() {
 
           if (!isActive) return;
 
-          setProfile(meResult.profile);
-          setCounts(meResult.counts);
-          setUnreadAlertsCount(notificationsResult.filter((item) => !item.is_read).length);
-          setUnreadInboxCount(
-            threadsResult.reduce((total, thread) => total + (thread.unread_count || 0), 0),
-          );
-
-          if (recipesResult.error) {
-            throw recipesResult.error;
+          if (meResult.status !== "fulfilled") {
+            throw meResult.reason;
           }
 
-          const rows = (recipesResult.data ?? []) as RecipeRow[];
+          setProfile(meResult.value.profile);
+          setCounts(meResult.value.counts);
+          setUnreadAlertsCount(
+            notificationsResult.status === "fulfilled"
+              ? notificationsResult.value.filter((item) => item.type !== "message" && !item.is_read).length
+              : 0,
+          );
+          setUnreadInboxCount(
+            threadsResult.status === "fulfilled"
+              ? threadsResult.value.reduce((total, thread) => total + (thread.unread_count || 0), 0)
+              : 0,
+          );
+
+          if (recipesResult.status !== "fulfilled") {
+            throw recipesResult.reason;
+          }
+
+          if (recipesResult.value.error) {
+            throw recipesResult.value.error;
+          }
+
+          const rows = (recipesResult.value.data ?? []) as RecipeRow[];
           const hydratedRecipes = await Promise.all(
             rows.map(async (recipe) => ({
               id: recipe.id,

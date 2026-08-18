@@ -40,7 +40,10 @@ export type ConversationThreadDetail = {
 };
 
 export async function listNotifications(accessToken: string) {
-  return apiRequest<NotificationItem[]>("/notifications", { accessToken });
+  return apiRequest<NotificationItem[]>("/notifications", {
+    accessToken,
+    timeoutMs: 15000,
+  });
 }
 
 export async function readNotification(accessToken: string, notificationId: string) {
@@ -54,11 +57,15 @@ export async function readAllNotifications(accessToken: string) {
   await apiRequest<void>("/notifications/read-all", {
     method: "POST",
     accessToken,
+    timeoutMs: 15000,
   });
 }
 
 export async function listThreads(accessToken: string) {
-  return apiRequest<ConversationThread[]>("/threads", { accessToken });
+  return apiRequest<ConversationThread[]>("/threads", {
+    accessToken,
+    timeoutMs: 15000,
+  });
 }
 
 export async function createThread(
@@ -79,6 +86,7 @@ export async function createThread(
 export async function getThread(accessToken: string, threadId: string) {
   return apiRequest<ConversationThreadDetail>(`/threads/${encodeURIComponent(threadId)}`, {
     accessToken,
+    timeoutMs: 15000,
   });
 }
 

@@ -346,17 +346,20 @@ def _create_notification(
     entity_type: str | None = None,
     entity_id: str | None = None,
 ) -> None:
-    supabase.table("notifications").insert(
-        {
-            "user_id": user_id,
-            "actor_id": actor_id,
-            "type": type_,
-            "title": title,
-            "body": body,
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-        }
-    ).execute()
+    try:
+        supabase.table("notifications").insert(
+            {
+                "user_id": user_id,
+                "actor_id": actor_id,
+                "type": type_,
+                "title": title,
+                "body": body,
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+            }
+        ).execute()
+    except Exception as error:
+        print("Could not create notification:", _format_supabase_error(error))
 
 
 def _get_farm_row(farm_id: str) -> dict:
@@ -415,7 +418,7 @@ def _get_or_create_thread(farm_id: str, buyer_user_id: str) -> dict:
     if existing_rows:
         return existing_rows[0]
 
-    create_resp = (
+    (
         supabase.table("conversation_threads")
         .insert(
             {
@@ -424,14 +427,23 @@ def _get_or_create_thread(farm_id: str, buyer_user_id: str) -> dict:
                 "farmer_user_id": farmer_user_id,
             }
         )
-        .select("id,farm_id,buyer_user_id,farmer_user_id,last_message_at,created_at")
-        .single()
         .execute()
     )
-    row = getattr(create_resp, "data", None)
-    if not row:
+
+    created_resp = (
+        supabase.table("conversation_threads")
+        .select("id,farm_id,buyer_user_id,farmer_user_id,last_message_at,created_at")
+        .eq("farm_id", farm_id)
+        .eq("buyer_user_id", buyer_user_id)
+        .eq("farmer_user_id", farmer_user_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    created_rows = getattr(created_resp, "data", []) or []
+    if not created_rows:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to create conversation")
-    return row
+    return created_rows[0]
 
 
 def _build_thread_summary(thread_row: dict, viewer_user_id: str) -> ConversationThreadOut:
@@ -1208,14 +1220,22 @@ def list_threads(user_id: str = Depends(get_current_user_id)) -> list[Conversati
 
 @app.post("/threads", response_model=ConversationThreadOut)
 def create_thread(body: CreateThreadIn, user_id: str = Depends(get_current_user_id)) -> ConversationThreadOut:
-    thread = _get_or_create_thread(body.farm_id, user_id)
+    try:
+        thread = _get_or_create_thread(body.farm_id, user_id)
 
-    message = (body.message or "").strip()
-    if message:
-        send_thread_message(str(thread["id"]), SendMessageIn(body=message), user_id)
-        thread = _get_thread_row(str(thread["id"]))
+        message = (body.message or "").strip()
+        if message:
+            send_thread_message(str(thread["id"]), SendMessageIn(body=message), user_id)
+            thread = _get_thread_row(str(thread["id"]))
 
-    return _build_thread_summary(thread, user_id)
+        return _build_thread_summary(thread, user_id)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unable to create conversation: {_format_supabase_error(error)}",
+        )
 
 
 @app.get("/threads/{thread_id}", response_model=ConversationThreadDetailOut)
@@ -1262,61 +1282,80 @@ def send_thread_message(
     body: SendMessageIn,
     user_id: str = Depends(get_current_user_id),
 ) -> ConversationMessageOut:
-    thread = _ensure_thread_participant(thread_id, user_id)
-    buyer_user_id = str(thread.get("buyer_user_id") or "")
-    farmer_user_id = str(thread.get("farmer_user_id") or "")
-    recipient_user_id = farmer_user_id if user_id == buyer_user_id else buyer_user_id
-    if not recipient_user_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Conversation recipient missing")
+    try:
+        thread = _ensure_thread_participant(thread_id, user_id)
+        buyer_user_id = str(thread.get("buyer_user_id") or "")
+        farmer_user_id = str(thread.get("farmer_user_id") or "")
+        recipient_user_id = farmer_user_id if user_id == buyer_user_id else buyer_user_id
+        if not recipient_user_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Conversation recipient missing")
 
-    clean_body = body.body.strip()
-    if not clean_body:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message cannot be empty")
+        clean_body = body.body.strip()
+        if not clean_body:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Message cannot be empty")
 
-    create_resp = (
-        supabase.table("conversation_messages")
-        .insert(
-            {
-                "thread_id": thread_id,
-                "sender_user_id": user_id,
-                "recipient_user_id": recipient_user_id,
-                "body": clean_body,
-            }
+        (
+            supabase.table("conversation_messages")
+            .insert(
+                {
+                    "thread_id": thread_id,
+                    "sender_user_id": user_id,
+                    "recipient_user_id": recipient_user_id,
+                    "body": clean_body,
+                }
+            )
+            .execute()
         )
-        .select("id,thread_id,sender_user_id,recipient_user_id,body,created_at,read_at")
-        .single()
-        .execute()
-    )
-    row = getattr(create_resp, "data", None)
-    if not row:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to send message")
 
-    supabase.table("conversation_threads").update({"last_message_at": row.get("created_at") or _utc_now_iso()}).eq("id", thread_id).execute()
+        created_resp = (
+            supabase.table("conversation_messages")
+            .select("id,thread_id,sender_user_id,recipient_user_id,body,created_at,read_at")
+            .eq("thread_id", thread_id)
+            .eq("sender_user_id", user_id)
+            .eq("recipient_user_id", recipient_user_id)
+            .eq("body", clean_body)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        created_rows = getattr(created_resp, "data", []) or []
+        if not created_rows:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to send message")
+        row = created_rows[0]
 
-    sender_profile = _get_profile_map([user_id]).get(user_id)
-    sender_name = (
-        sender_profile.full_name
-        if sender_profile and sender_profile.full_name
-        else f"@{sender_profile.username}" if sender_profile and sender_profile.username
-        else "Someone"
-    )
-    _create_notification(
-        user_id=recipient_user_id,
-        actor_id=user_id,
-        type_="message",
-        title="New message",
-        body=f"{sender_name}: {clean_body[:120]}",
-        entity_type="thread",
-        entity_id=thread_id,
-    )
+        supabase.table("conversation_threads").update({"last_message_at": row.get("created_at") or _utc_now_iso()}).eq("id", thread_id).execute()
 
-    return ConversationMessageOut(
-        id=str(row["id"]),
-        thread_id=str(row["thread_id"]),
-        sender_id=str(row["sender_user_id"]),
-        recipient_id=str(row["recipient_user_id"]),
-        body=str(row.get("body") or ""),
-        created_at=row.get("created_at"),
-        read_at=row.get("read_at"),
-        sender=sender_profile,
-    )
+        sender_profile = _get_profile_map([user_id]).get(user_id)
+        sender_name = (
+            sender_profile.full_name
+            if sender_profile and sender_profile.full_name
+            else f"@{sender_profile.username}" if sender_profile and sender_profile.username
+            else "Someone"
+        )
+        _create_notification(
+            user_id=recipient_user_id,
+            actor_id=user_id,
+            type_="message",
+            title="New message",
+            body=f"{sender_name}: {clean_body[:120]}",
+            entity_type="thread",
+            entity_id=thread_id,
+        )
+
+        return ConversationMessageOut(
+            id=str(row["id"]),
+            thread_id=str(row["thread_id"]),
+            sender_id=str(row["sender_user_id"]),
+            recipient_id=str(row["recipient_user_id"]),
+            body=str(row.get("body") or ""),
+            created_at=row.get("created_at"),
+            read_at=row.get("read_at"),
+            sender=sender_profile,
+        )
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unable to send message: {_format_supabase_error(error)}",
+        )
