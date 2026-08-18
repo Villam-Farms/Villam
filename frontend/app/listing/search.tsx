@@ -296,7 +296,7 @@ export default function ListingSearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  cardSave: { position: "absolute", left: 62, top: 8, zIndex: 3 },
+  cardSave: { position: "absolute", left: 8, top: 8, zIndex: 3 },
   saveSearch: { alignItems: "flex-end", paddingHorizontal: theme.spacing.lg, paddingTop: 6 },
   container: {
     flex: 1,

@@ -336,7 +336,7 @@ export default function ListingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  cardSave: { position: "absolute", left: 62, top: 8, zIndex: 3 },
+  cardSave: { position: "absolute", left: 8, top: 8, zIndex: 3 },
   container: {
     flex: 1,
   },
