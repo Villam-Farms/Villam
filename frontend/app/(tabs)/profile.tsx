@@ -275,6 +275,8 @@ export default function ProfileScreen() {
 
         <View style={styles.profileSection}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Change profile picture"
             style={[
               styles.profileImageContainer,
               { backgroundColor: colors.background },

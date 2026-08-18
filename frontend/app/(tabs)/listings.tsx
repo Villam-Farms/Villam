@@ -122,6 +122,8 @@ export default function ListingsScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
+            testID="listings-refresh-control"
+            accessibilityLabel="Refresh listings"
             refreshing={refreshing}
             onRefresh={() => void refreshListings()}
             tintColor={theme.brand.primary}
@@ -149,6 +151,8 @@ export default function ListingsScreen() {
 
             <View style={styles.actionButtonsRow}>
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Create listing"
                 style={styles.createListingButton}
                 onPress={() => router.push("/listing/new")}
                 activeOpacity={0.88}
@@ -160,6 +164,8 @@ export default function ListingsScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Manage farm"
                 style={styles.manageFarmButton}
                 onPress={() => router.push("/farm/manage")}
                 activeOpacity={0.88}
@@ -182,6 +188,8 @@ export default function ListingsScreen() {
             </ThemedText>
           </View>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Manage listings"
             style={[styles.manageTextButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
             onPress={() => router.push("/listing/manage")}
             activeOpacity={0.85}

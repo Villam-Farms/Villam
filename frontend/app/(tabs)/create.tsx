@@ -32,7 +32,7 @@ export default function CreateScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top', 'bottom']}>
       <ThemedView style={styles.container}>
         <View style={[styles.header, { borderBottomColor: colors.border.light }]}>
-          <TouchableOpacity onPress={() => router.back()}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={28} color={colors.text.primary} />
           </TouchableOpacity>
         </View>
@@ -47,6 +47,7 @@ export default function CreateScreen() {
 
         <View style={styles.actions}>
           <TouchableOpacity
+            accessibilityRole="button"
             style={[
               styles.createCard,
               {
@@ -74,6 +75,7 @@ export default function CreateScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
+            accessibilityRole="button"
             style={[
               styles.createCard,
               {

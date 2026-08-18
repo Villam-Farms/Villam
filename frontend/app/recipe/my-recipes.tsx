@@ -447,6 +447,8 @@ export default function MyRecipesScreen() {
       >
         <View style={styles.header}>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
             style={[styles.iconButton, { borderColor: colors.border.light, backgroundColor: colors.background }]}
             onPress={() => router.back()}
             activeOpacity={0.8}
@@ -514,7 +516,7 @@ export default function MyRecipesScreen() {
           />
 
           {searchQuery.trim().length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearchQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={18} color={colors.text.secondary} />
             </TouchableOpacity>
           )}

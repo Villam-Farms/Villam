@@ -47,6 +47,9 @@ export default function FarmCard({
   return (
     <View style={styles.shadowWrapper}>
       <TouchableOpacity
+        testID={id ? `farm-card-${id}` : undefined}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${name}`}
         style={[styles.farmCard, { backgroundColor: colors.surface }]}
         onPress={onPress}
         activeOpacity={0.85}
@@ -77,7 +80,7 @@ export default function FarmCard({
               {name}
             </ThemedText>
 
-            {id ? <SaveButton type="farm" itemId={id} size={18} /> : <TouchableOpacity onPress={onFavoritePress} hitSlop={8}>
+            {id ? <SaveButton type="farm" itemId={id} size={18} /> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={isFavorite ? "Remove favorite farm" : "Favorite farm"} onPress={onFavoritePress} hitSlop={8}>
               <IconSymbol
                 name={isFavorite ? "heart.fill" : "heart"}
                 size={18}
@@ -121,6 +124,8 @@ export default function FarmCard({
                 { borderColor: colors.border.default, backgroundColor: colors.background },
               ]}
               onPress={onDirectionPress}
+              accessibilityRole="button"
+              accessibilityLabel={`Directions to ${name}`}
             >
               <IconSymbol name="location.fill" size={14} color={colors.icon.default} />
               <ThemedText style={[styles.actionText, { color: colors.text.secondary }]}>
@@ -134,6 +139,8 @@ export default function FarmCard({
                 { borderColor: colors.border.default, backgroundColor: colors.background },
               ]}
               onPress={onSharePress}
+              accessibilityRole="button"
+              accessibilityLabel={`Share ${name}`}
             >
               <IconSymbol name="square.and.arrow.up" size={14} color={colors.icon.default} />
               <ThemedText style={[styles.actionText, { color: colors.text.secondary }]}>

@@ -267,7 +267,7 @@ export default function FarmDetailScreen() {
         <View style={[styles.hero, !hasFarmImage && { backgroundColor: '#F7E5BF' }]}> 
           {hasFarmImage ? (
             <>
-              <Image source={{ uri: farm.imageUrl }} style={styles.heroImage} contentFit="cover" />
+              <Image source={{ uri: farm.imageUrl! }} style={styles.heroImage} contentFit="cover" />
               <View style={styles.heroImageOverlay} />
             </>
           ) : null}
@@ -280,6 +280,8 @@ export default function FarmDetailScreen() {
 
           <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}>
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
               style={[styles.iconButton, { backgroundColor: 'rgba(255,255,255,0.92)' }]}
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
               activeOpacity={0.85}
@@ -290,6 +292,8 @@ export default function FarmDetailScreen() {
             <View style={styles.heroActionRow}>
               {farmId ? <SaveButton type="farm" itemId={farmId} /> : null}
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Share farm"
                 style={[styles.iconButton, { backgroundColor: 'rgba(255,255,255,0.92)' }]}
                 onPress={handleShareFarm}
                 activeOpacity={0.88}
@@ -298,6 +302,8 @@ export default function FarmDetailScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Get directions"
                 style={[styles.iconButton, { backgroundColor: theme.brand.primary }]}
                 onPress={handleDirections}
                 activeOpacity={0.88}
@@ -625,11 +631,13 @@ export default function FarmDetailScreen() {
                                 style={[styles.starTapZone, styles.starTapZoneLeft]}
                                 onPress={() => setDraftRating(value - 0.5)}
                                 activeOpacity={0.9}
+                                accessibilityLabel={`Rate ${value - 0.5} stars`}
                               />
                               <TouchableOpacity
                                 style={[styles.starTapZone, styles.starTapZoneRight]}
                                 onPress={() => setDraftRating(value)}
                                 activeOpacity={0.9}
+                                accessibilityLabel={`Rate ${value} stars`}
                               />
                             </View>
                           ))}

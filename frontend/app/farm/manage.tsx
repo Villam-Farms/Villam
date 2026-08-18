@@ -233,6 +233,7 @@ export default function ManageFarmScreen() {
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/listings")}
+            accessibilityLabel="Go back"
           >
             <Ionicons name="arrow-back" size={20} color="#2E2A1F" />
           </TouchableOpacity>

@@ -179,7 +179,7 @@ export default function ProduceDetailScreen() {
         <View style={[styles.hero, { paddingTop: insets.top + theme.spacing.sm }]}>
           <View style={styles.blobLarge} />
           <View style={styles.blobSmall} />
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.85}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" style={styles.backButton} onPress={() => router.back()} activeOpacity={0.85}>
             <Ionicons name="arrow-back" size={20} color="#2E2A1F" />
           </TouchableOpacity>
           {item ? <View style={[styles.heroSave, { top: insets.top + theme.spacing.sm }]}><SaveButton type="produce" itemId={item.id} /></View> : null}
@@ -251,6 +251,8 @@ export default function ProduceDetailScreen() {
                   const address = formatAddress(listing.farms).trim();
                   return (
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`View ${listing.farms.name}`}
                       key={listing.id}
                       style={[styles.card, { borderColor: colors.border.light, backgroundColor: colors.surface }]}
                       onPress={() => router.push(`/farm/${listing.farms.id}`)}
@@ -309,6 +311,8 @@ export default function ProduceDetailScreen() {
                             <Ionicons name="arrow-forward" size={14} color={theme.brand.tertiary} />
                           </View>
                           <TouchableOpacity
+                            accessibilityRole="button"
+                            accessibilityLabel={`Directions to ${listing.farms.name}`}
                             style={[styles.directionsButton, { backgroundColor: colors.card }]}
                             onPress={(event) => {
                               event.stopPropagation();

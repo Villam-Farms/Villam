@@ -85,7 +85,7 @@ export default function AddFriends() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Back Button */}
-        <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={handleBack} style={styles.backButton}>
           <Ionicons name="arrow-back" size={28} color={colors.text.primary} />
         </TouchableOpacity>
 
@@ -118,7 +118,7 @@ export default function AddFriends() {
           renderItem={({ item }) => (
             <View style={styles.userItem}>
               {/* Profile Picture */}
-              <TouchableOpacity style={styles.profileLink} onPress={() => openProfile(item.id)} activeOpacity={0.7}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`Open ${item.full_name ?? item.username ?? "Unknown user"}`} style={styles.profileLink} onPress={() => openProfile(item.id)} activeOpacity={0.7}>
                 {item.avatar_url ? (
                   <Image source={{ uri: item.avatar_url }} style={styles.profilePic} contentFit="cover" />
                 ) : (
@@ -136,6 +136,8 @@ export default function AddFriends() {
 
               {/* Follow Button */}
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={`${item.is_following ? "Unfollow" : "Follow"} ${item.full_name ?? item.username ?? "user"}`}
                 onPress={() => toggleFollow(item.id)}
                 style={[
                   styles.addButton,

@@ -127,7 +127,7 @@ export default function SettingsScreen() {
       <ThemedView style={[styles.container, { backgroundColor: colors.background }]}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.backButton}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={handleBack} style={styles.backButton}>
             <Ionicons name="arrow-back" size={28} color={colors.text.primary} />
           </TouchableOpacity>
 
@@ -139,6 +139,8 @@ export default function SettingsScreen() {
 
         {/* Profile Section */}
         <TouchableOpacity 
+          accessibilityRole="button"
+          accessibilityLabel="Edit profile"
           style={styles.profileSection}
           onPress={handleEditProfile}
         >
@@ -173,6 +175,7 @@ export default function SettingsScreen() {
               <ThemedText style={[styles.optionDescription, { color: colors.text.secondary }]}>Display item amounts such as 1, 2, or 12.</ThemedText>
             </View>
             <Switch
+              accessibilityLabel="Show quantities"
               value={showGroceryListQuantities}
               onValueChange={handleShowQuantitiesChange}
               trackColor={{ false: colors.border.strong, true: theme.brand.light }}
@@ -185,6 +188,7 @@ export default function SettingsScreen() {
               <ThemedText style={[styles.optionDescription, { color: colors.text.secondary }]}>Display units such as cups, pounds, and gallons.</ThemedText>
             </View>
             <Switch
+              accessibilityLabel="Show units"
               value={showGroceryListUnits}
               onValueChange={handleShowUnitsChange}
               trackColor={{ false: colors.border.strong, true: theme.brand.light }}
@@ -201,6 +205,8 @@ export default function SettingsScreen() {
         }]}>
           {/* Delete Account */}
           <TouchableOpacity 
+            accessibilityRole="button"
+            accessibilityLabel="Delete Account"
             style={[styles.option, { borderBottomColor: colors.border.default }]}
             onPress={handleDeleteAccount}
           >
@@ -212,6 +218,8 @@ export default function SettingsScreen() {
 
           {/* Log Out */}
           <TouchableOpacity 
+            accessibilityRole="button"
+            accessibilityLabel="Log out"
             style={[styles.option, { borderBottomWidth: 0 }]}
             onPress={handleLogout}
           >

@@ -76,6 +76,7 @@ export function OnboardingScreen({ step, title, subtitle, children, next, back, 
     >
       <View style={styles.header}><Text style={styles.brand}>villam</Text><Text style={styles.step}>Step {step} of 5</Text><View style={styles.track}><View style={[styles.fill, { width: `${step * 20}%` }]} /></View></View>
       <ScrollView
+        testID="onboarding-scroll"
         style={styles.flex}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -90,6 +91,7 @@ export function OnboardingScreen({ step, title, subtitle, children, next, back, 
         <View style={styles.actionSpacer} />
       </ScrollView>
       <View
+        testID="onboarding-footer"
         pointerEvents="box-none"
         style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 8) }]}
         onLayout={(e) => {

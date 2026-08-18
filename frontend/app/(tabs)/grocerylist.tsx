@@ -293,6 +293,8 @@ export default function GroceryListScreen() {
           </View>
 
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${item.title}`}
             style={[
               styles.deleteButton,
               {
@@ -398,6 +400,8 @@ export default function GroceryListScreen() {
           </View>
 
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Create grocery list"
             style={styles.createButton}
             onPress={() => router.push('/grocery-list/new')}
             activeOpacity={0.86}

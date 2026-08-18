@@ -145,8 +145,8 @@ export default function ManageListingsScreen() {
     setPendingListingImage(null);
   };
 
-  const closeEditModal = () => {
-    if (saving) return;
+  const closeEditModal = (force = false) => {
+    if (saving && !force) return;
     setSelectedListing(null);
     setActivePicker(null);
     setListingImagePreviewUri(null);
@@ -188,7 +188,7 @@ export default function ManageListingsScreen() {
       await queryClient.invalidateQueries({ queryKey: ["owned-marketplace-listings", ownedFarm?.id] });
       await queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] });
 
-      closeEditModal();
+      closeEditModal(true);
       Alert.alert("Listing updated", "Your changes have been saved.");
     } catch (error) {
       console.log("Could not update listing", error);
@@ -229,7 +229,7 @@ export default function ManageListingsScreen() {
       await deleteFarmListing(accessToken, selectedListing.id);
       await queryClient.invalidateQueries({ queryKey: ["owned-marketplace-listings", ownedFarm?.id] });
       await queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] });
-      closeEditModal();
+      closeEditModal(true);
       Alert.alert("Listing deleted", "The listing has been removed.");
     } catch (error) {
       Alert.alert("Delete failed", error instanceof Error ? error.message : "Could not delete this listing.");
@@ -336,6 +336,7 @@ export default function ManageListingsScreen() {
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border.light }]}
             onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/listings")}
+            accessibilityLabel="Go back"
             activeOpacity={0.85}
           >
             <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
@@ -446,14 +447,14 @@ export default function ManageListingsScreen() {
         </View>
       </ScrollView>
 
-      <Modal transparent animationType="slide" visible={!!selectedListing} onRequestClose={closeEditModal}>
+      <Modal transparent animationType="slide" visible={!!selectedListing} onRequestClose={() => closeEditModal()}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
             <View style={styles.modalHeader}>
               <ThemedText style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Edit listing
               </ThemedText>
-              <TouchableOpacity onPress={closeEditModal} hitSlop={8}>
+              <TouchableOpacity onPress={() => closeEditModal()} hitSlop={8} accessibilityLabel="Close listing editor">
                 <Ionicons name="close" size={22} color={colors.text.primary} />
               </TouchableOpacity>
             </View>
@@ -603,7 +604,7 @@ export default function ManageListingsScreen() {
               <ThemedText style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Choose an option
               </ThemedText>
-              <TouchableOpacity onPress={() => setActivePicker(null)} hitSlop={8}>
+              <TouchableOpacity onPress={() => setActivePicker(null)} hitSlop={8} accessibilityLabel="Close option picker">
                 <Ionicons name="close" size={22} color={colors.text.primary} />
               </TouchableOpacity>
             </View>

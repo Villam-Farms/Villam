@@ -235,6 +235,7 @@ export default function MapTab() {
           { backgroundColor: colors.card, borderColor: colors.border.light },
         ]}
         onPress={recenterOnUser}
+        accessibilityLabel="Recenter map"
       >
         <Ionicons name="locate" size={22} color={colors.text.primary} />
       </Pressable>
@@ -268,6 +269,7 @@ export default function MapTab() {
         {searchQuery.trim().length > 0 && (
           <Pressable
             onPress={() => setSearchQuery("")}
+            accessibilityLabel="Clear map search"
             hitSlop={8}
             style={styles.clearSearchButton}
           >
