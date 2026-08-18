@@ -9,11 +9,9 @@ import { Image } from "expo-image";
 import { useTheme } from "@/hooks/useTheme";
 import { theme } from "@/constants/theme";
 import { ThemedText } from "@/components/themed-text";
-import { useCurrentLocation } from "@/hooks/useCurrentLocation";
-import { useFarms } from "@/hooks/useFarms";
-import { openDirections } from "@/lib/directions";
-import { formatAddress } from "@/lib/address";
-import { fetchMarketplaceListings } from "@/lib/marketplace";
+import { useAuth } from "@/context/auth-context";
+import { fetchOwnedFarmByUserId } from "@/lib/farms";
+import { fetchFarmListingsByFarmId } from "@/lib/marketplace";
 import { getListingVisuals } from "@/lib/listing-visuals";
 import {
   buildListingRows,
@@ -25,21 +23,33 @@ import {
 export default function ListingsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { coords: userCoords, locationText } = useCurrentLocation();
-  const { data: farms = [], isLoading, error } = useFarms();
+  const { session } = useAuth();
   const [activeFilter, setActiveFilter] = useState<ListingCategory>("All");
   const {
-    data: marketplaceListings = [],
+    data: ownedFarm,
+    isLoading: farmLoading,
+    error: farmError,
+  } = useQuery({
+    queryKey: ["owned-farm", session?.user.id],
+    enabled: !!session?.user.id,
+    queryFn: async () => {
+      if (!session?.user.id) return null;
+      return fetchOwnedFarmByUserId(session.user.id);
+    },
+  });
+  const {
+    data: ownedListings = [],
     isLoading: listingsLoading,
     error: listingsError,
   } = useQuery({
-    queryKey: ["marketplace-listings"],
-    queryFn: fetchMarketplaceListings,
+    queryKey: ["owned-marketplace-listings", ownedFarm?.id],
+    enabled: !!ownedFarm?.id,
+    queryFn: async () => fetchFarmListingsByFarmId(ownedFarm!.id),
   });
 
   const listings = useMemo<ListingRow[]>(
-    () => buildListingRows(marketplaceListings, userCoords),
-    [marketplaceListings, userCoords]
+    () => buildListingRows(ownedListings, null),
+    [ownedListings]
   );
 
   const filters = useMemo<ListingCategory[]>(
@@ -69,37 +79,6 @@ export default function ListingsScreen() {
     };
   };
 
-  const handleFarmPress = (farmId: string) => {
-    router.push(`/farm/${farmId}`);
-  };
-
-  const handleDirectionPress = async (farmId: string) => {
-    const farm = farms.find((f) => f.id === farmId);
-    const listing = listings.find((item) => item.farmId === farmId);
-    const fallbackAddress = listing
-      ? formatAddress({
-          city: listing.city,
-          state: listing.state,
-          postal_code: listing.postal_code,
-          country: listing.country,
-        })
-      : "";
-
-    if (!farm) return;
-
-    const formattedFarmAddress = formatAddress(farm);
-    const finalDest =
-      formattedFarmAddress.trim() || fallbackAddress.trim()
-        ? formattedFarmAddress.trim() || fallbackAddress.trim()
-        : `${farm.latitude},${farm.longitude}`;
-
-    try {
-      await openDirections(finalDest);
-    } catch (e) {
-      console.log("Could not open directions", e);
-    }
-  };
-
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -111,15 +90,21 @@ export default function ListingsScreen() {
       >
         {/* ── Hero Header ── */}
         <View style={[styles.hero, { paddingTop: theme.spacing.lg + insets.top }]}>
+          {ownedFarm?.imageUrl ? (
+            <>
+              <Image source={{ uri: ownedFarm.imageUrl }} style={styles.heroImage} contentFit="cover" />
+              <View style={styles.heroImageOverlay} />
+            </>
+          ) : null}
           {/* Decorative blobs */}
           <View style={styles.blobLarge} />
           <View style={styles.blobSmall} />
 
           <View style={styles.heroInner}>
-            <ThemedText style={styles.heroEyebrow}>Nearby produce</ThemedText>
-            <ThemedText style={styles.heroTitle}>Listings</ThemedText>
+            <ThemedText style={styles.heroEyebrow}>Your farm</ThemedText>
+            <ThemedText style={styles.heroTitle}>{ownedFarm?.name ?? "My listings"}</ThemedText>
             <ThemedText style={styles.heroSubtitle}>
-              Browse farm produce by item, price, and source.
+              Manage the produce you offer through your farm.
             </ThemedText>
 
             <View style={styles.actionButtonsRow}>
@@ -146,27 +131,6 @@ export default function ListingsScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.locationPill}>
-              <View style={styles.locationDot} />
-              <ThemedText style={styles.locationText}>{locationText}</ThemedText>
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.searchBar,
-                {
-                  backgroundColor: "rgba(255,255,255,0.78)",
-                  borderColor: "rgba(46,42,31,0.08)",
-                },
-              ]}
-              onPress={() => router.push("/listing/search")}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="search" size={18} color={colors.text.tertiary} />
-              <ThemedText style={[styles.searchInput, { color: colors.input.placeholder }]}>
-                Search produce, farm, or category
-              </ThemedText>
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -207,17 +171,25 @@ export default function ListingsScreen() {
         </ScrollView>
 
         {/* ── Listings ── */}
-        {isLoading || listingsLoading ? (
+        {!session?.user.id ? (
+          <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
+            Sign in to view and manage your farm listings.
+          </ThemedText>
+        ) : farmLoading || listingsLoading ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
             Loading listings…
           </ThemedText>
-        ) : error || listingsError ? (
+        ) : farmError || listingsError ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
             Could not load listings.
           </ThemedText>
+        ) : !ownedFarm ? (
+          <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
+            Create your farm to start adding produce.
+          </ThemedText>
         ) : filteredListings.length === 0 ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
-            No listings in this category yet.
+            You have no listings in this category yet.
           </ThemedText>
         ) : (
           <View style={styles.listingsStack}>
@@ -229,12 +201,16 @@ export default function ListingsScreen() {
                   { backgroundColor: colors.surface, borderColor: colors.border.light },
                 ]}
                 activeOpacity={0.88}
-                onPress={() => handleFarmPress(item.farmId)}
+                onPress={() => router.push("/listing/manage")}
               >
                 {/* Thumb */}
                 <View style={[styles.cardThumb, { backgroundColor: item.color }]}>
-                  {item.imageUrl ? (
-                    <Image source={{ uri: item.imageUrl }} style={styles.cardThumbImage} contentFit="cover" />
+                  {item.imageUrl || item.farmImageUrl ? (
+                    <Image
+                      source={{ uri: item.imageUrl ?? item.farmImageUrl! }}
+                      style={styles.cardThumbImage}
+                      contentFit="cover"
+                    />
                   ) : (
                     <Ionicons name={item.icon} size={30} color={theme.brand.primary} />
                   )}
@@ -282,7 +258,7 @@ export default function ListingsScreen() {
                     {item.note}
                   </ThemedText>
 
-                  {/* Footer: farm + directions */}
+                  {/* Footer: farm + manage */}
                   <View style={styles.cardFooter}>
                     <View style={styles.farmTag}>
                       <View
@@ -292,7 +268,7 @@ export default function ListingsScreen() {
                         style={[styles.farmName, { color: colors.text.secondary }]}
                         numberOfLines={1}
                       >
-                        {item.farmName}
+                        Your farm
                       </ThemedText>
                     </View>
 
@@ -301,14 +277,14 @@ export default function ListingsScreen() {
                         styles.dirButton,
                         { borderColor: colors.border.light, backgroundColor: colors.card },
                       ]}
-                      onPress={() => handleDirectionPress(item.farmId)}
+                      onPress={() => router.push("/listing/manage")}
                       hitSlop={8}
                     >
-                      <Ionicons name="navigate-outline" size={12} color={colors.text.primary} />
+                      <Ionicons name="create-outline" size={12} color={colors.text.primary} />
                       <ThemedText
                         style={[styles.dirButtonText, { color: colors.text.primary }]}
                       >
-                        Directions
+                        Manage
                       </ThemedText>
                     </TouchableOpacity>
                   </View>
@@ -338,6 +314,13 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.xl,
     overflow: "hidden",
     position: "relative",
+  },
+  heroImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(247, 229, 191, 0.38)",
   },
   blobLarge: {
     position: "absolute",
