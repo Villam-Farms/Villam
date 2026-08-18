@@ -16,6 +16,7 @@ import { openDirections } from '@/lib/directions';
 import { shareFarmLink } from '@/lib/share-farm';
 import { fetchFarmRatings, saveFarmRating, summarizeFarmRatings, type FarmRating } from '@/lib/farm-ratings';
 import { useAuth } from '@/context/auth-context';
+import { SaveButton } from '@/components/save-button';
 import { fetchFarmById } from '@/lib/farms';
 import { fetchFarmListingsByFarmId } from '@/lib/marketplace';
 import { getListingVisuals } from '@/lib/listing-visuals';
@@ -287,6 +288,7 @@ export default function FarmDetailScreen() {
             </TouchableOpacity>
 
             <View style={styles.heroActionRow}>
+              {farmId ? <SaveButton type="farm" itemId={farmId} /> : null}
               <TouchableOpacity
                 style={[styles.iconButton, { backgroundColor: 'rgba(255,255,255,0.92)' }]}
                 onPress={handleShareFarm}

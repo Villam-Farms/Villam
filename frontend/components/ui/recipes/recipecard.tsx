@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ThemedText } from "@/components/themed-text";
 import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
+import { SaveButton } from "@/components/save-button";
 
 interface RecipeCardProps {
   id: string;
@@ -97,6 +98,9 @@ export function RecipeCard({
               </ThemedText>
             </View>
           )}
+          <View style={styles.saveButton}>
+            <SaveButton type="recipe" itemId={id} light={hasImage} />
+          </View>
         </View>
 
         <View style={styles.infoContainer}>
@@ -181,6 +185,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 6,
   },
+  saveButton: { position: "absolute", right: 8, top: 8 },
   ratingBadgeText: {
     color: theme.neutral.white,
     fontSize: 12,

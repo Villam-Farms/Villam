@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -9,6 +9,8 @@ import { theme } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import { getListingVisuals } from '@/lib/listing-visuals';
 import { supabase } from '@/lib/supabase';
+import { SaveButton } from '@/components/save-button';
+import { SaveSearchButton } from '@/components/save-search-button';
 
 type ProduceItem = {
   id: string;
@@ -20,12 +22,18 @@ type ProduceItem = {
 export default function SeasonalProduceScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ query?: string; category?: string }>();
   const [items, setItems] = useState<ProduceItem[]>([]);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const monthName = new Intl.DateTimeFormat(undefined, { month: 'long' }).format(new Date());
+
+  useEffect(() => {
+    if (typeof params.query === 'string') setQuery(params.query);
+    if (typeof params.category === 'string') setCategory(params.category);
+  }, [params.category, params.query]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,6 +128,7 @@ export default function SeasonalProduceScreen() {
               </TouchableOpacity>
             ) : null}
           </View>
+          <View style={styles.saveSearchRow}><SaveSearchButton context="produce" query={query} filters={{ category }} visible={Boolean(query.trim()) || category !== 'All'} /></View>
         </View>
 
         {!loading && !error && categories.length > 1 ? (
@@ -189,6 +198,7 @@ export default function SeasonalProduceScreen() {
                       accessibilityRole="button"
                       accessibilityLabel={`View ${item.name}`}
                     >
+                      <View style={styles.cardSave}><SaveButton type="produce" itemId={item.id} size={18} /></View>
                       <View style={[styles.cardIcon, { backgroundColor: visuals.badgeColor }]}> 
                         <Ionicons name={visuals.icon} size={28} color={visuals.badgeTextColor} />
                       </View>
@@ -224,6 +234,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, lineHeight: 21, marginTop: 5, maxWidth: 560 },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: theme.borderRadius.full, paddingHorizontal: 14, marginTop: theme.spacing.lg },
   searchInput: { flex: 1, minHeight: 46, fontSize: 14 },
+  saveSearchRow: { alignItems: 'flex-end', marginTop: 8 },
   filters: { gap: 8, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
   filter: { borderWidth: 1, borderRadius: theme.borderRadius.full, paddingHorizontal: 14, paddingVertical: 7 },
   filterText: { fontSize: 12, lineHeight: 17, fontWeight: '600' },
@@ -233,6 +244,7 @@ const styles = StyleSheet.create({
   resultCount: { fontSize: 12, lineHeight: 17 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: { width: '48%', flexGrow: 1, minWidth: 145, maxWidth: 280, minHeight: 190, borderRadius: 20, padding: theme.spacing.md },
+  cardSave: { position: 'absolute', right: 8, top: 8, zIndex: 2 },
   cardIcon: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { color: '#2E2A1F', fontSize: 17, lineHeight: 22, fontWeight: '700', marginTop: theme.spacing.md },
   cardCategory: { fontSize: 11, lineHeight: 16, fontWeight: '600', marginTop: 2 },

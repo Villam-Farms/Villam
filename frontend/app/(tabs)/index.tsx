@@ -1,6 +1,6 @@
 import { ScrollView, StyleSheet, TouchableOpacity, TextInput, View } from 'react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,8 @@ import { theme } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
 import FarmCard from '@/components/ui/farmcard';
 import { RecipeCard } from '@/components/ui/recipes/recipecard';
+import { SaveSearchButton } from '@/components/save-search-button';
+import { SaveButton } from '@/components/save-button';
 
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { addDistanceAndSort } from '@/lib/location';
@@ -341,9 +343,14 @@ async function loadHomeGroceryLists(userId: string | null): Promise<HomeGroceryL
 
 export default function HomeScreen() {
   const { colors } = useTheme();
+  const params = useLocalSearchParams<{ query?: string }>();
   const { session } = useAuth();
   const { data: profile } = useMyProfile();
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (typeof params.query === 'string') setSearchQuery(params.query);
+  }, [params.query]);
 
   const { coords: userCoords, locationText } = useCurrentLocation();
   const { data: farms = [], isLoading: farmsLoading, error: farmsError } = useFarms();
@@ -677,6 +684,7 @@ export default function HomeScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          <SaveSearchButton context="home" query={searchQuery} visible={Boolean(searchQuery.trim())} />
         </View>
 
         <ThemedView style={styles.section}>
@@ -873,6 +881,7 @@ export default function HomeScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`View ${item.name}`}
                   >
+                    <View style={styles.produceSave}><SaveButton type="produce" itemId={item.id} size={17} /></View>
                     <View style={[styles.produceIconWrap, { backgroundColor: visuals.badgeColor }]}>
                       <Ionicons name={visuals.icon} size={27} color={visuals.badgeTextColor} />
                     </View>
@@ -924,6 +933,7 @@ export default function HomeScreen() {
               {farmsWithDistance.map((farm) => (
                 <View key={farm.id} style={{ width: 300 }}>
                   <FarmCard
+                    id={farm.id}
                     name={farm.name}
                     rating={farm.rating}
                     reviews={farm.reviews}
@@ -989,6 +999,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
+  produceSave: { position: 'absolute', right: 7, top: 7, zIndex: 2 },
   container: {
     flex: 1,
     paddingHorizontal: theme.spacing.md,

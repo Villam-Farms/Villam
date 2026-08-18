@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { router, Stack } from "expo-router";
+import { router, Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
@@ -27,14 +27,22 @@ import {
   type ListingCategory,
   type ListingRow,
 } from "@/lib/listing-browser";
+import { SaveButton } from "@/components/save-button";
+import { SaveSearchButton } from "@/components/save-search-button";
 
 export default function ListingSearchScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ query?: string; category?: string }>();
   const { coords: userCoords } = useCurrentLocation();
   const { data: farms = [], isLoading, error } = useFarms();
   const [activeFilter, setActiveFilter] = useState<ListingCategory>("All");
   const [searchQuery, setSearchQuery] = useState("");
+
+  React.useEffect(() => {
+    if (typeof params.query === "string") setSearchQuery(params.query);
+    if (typeof params.category === "string") setActiveFilter(params.category as ListingCategory);
+  }, [params.category, params.query]);
 
   const {
     data: marketplaceListings = [],
@@ -147,6 +155,7 @@ export default function ListingSearchScreen() {
           )}
         </View>
       </View>
+      <View style={styles.saveSearch}><SaveSearchButton context="marketplace" query={searchQuery} filters={{ category: activeFilter }} visible={Boolean(searchQuery.trim()) || activeFilter !== "All"} /></View>
 
       <ScrollView
         contentContainerStyle={styles.content}
@@ -211,6 +220,7 @@ export default function ListingSearchScreen() {
                 activeOpacity={0.88}
                 onPress={() => handleFarmPress(item.farmId)}
               >
+                <View style={styles.cardSave}><SaveButton type="listing" itemId={item.id} size={18} /></View>
                 <View style={[styles.cardThumb, { backgroundColor: item.color }]}>
                   {item.imageUrl ? (
                     <Image source={{ uri: item.imageUrl }} style={styles.cardThumbImage} contentFit="cover" />
@@ -286,6 +296,8 @@ export default function ListingSearchScreen() {
 }
 
 const styles = StyleSheet.create({
+  cardSave: { position: "absolute", left: 62, top: 8, zIndex: 3 },
+  saveSearch: { alignItems: "flex-end", paddingHorizontal: theme.spacing.lg, paddingTop: 6 },
   container: {
     flex: 1,
   },

@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ThemedText } from '@/components/themed-text';
 import { theme } from '@/constants/theme';
+import { SaveButton } from '@/components/save-button';
 import { useTheme } from '@/hooks/useTheme';
 import { formatAddress } from '@/lib/address';
 import { openDirections } from '@/lib/directions';
@@ -181,6 +182,7 @@ export default function ProduceDetailScreen() {
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()} activeOpacity={0.85}>
             <Ionicons name="arrow-back" size={20} color="#2E2A1F" />
           </TouchableOpacity>
+          {item ? <View style={[styles.heroSave, { top: insets.top + theme.spacing.sm }]}><SaveButton type="produce" itemId={item.id} /></View> : null}
 
           {loading ? (
             <View style={styles.heroLoading}>
@@ -254,6 +256,7 @@ export default function ProduceDetailScreen() {
                       onPress={() => router.push(`/farm/${listing.farms.id}`)}
                       activeOpacity={0.88}
                     >
+                      <View style={styles.listingSave}><SaveButton type="listing" itemId={listing.id} size={18} /></View>
                       <View style={[styles.thumbnail, { backgroundColor: visuals.color }]}>
                         {listing.image_url ? (
                           <Image source={{ uri: listing.image_url }} style={styles.thumbnailImage} contentFit="cover" />
@@ -352,6 +355,8 @@ const styles = StyleSheet.create({
     width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.9)', marginBottom: theme.spacing.md,
   },
+  heroSave: { position: 'absolute', right: theme.spacing.lg },
+  listingSave: { position: 'absolute', left: 60, top: 10, zIndex: 2 },
   heroLoading: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: 10 },
   loadingText: { color: '#5A564B', fontSize: 14 },
   heroBody: { position: 'relative', alignItems: 'flex-start' },

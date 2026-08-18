@@ -358,6 +358,7 @@ export default function MapTab() {
               {filteredFarmsWithDistance.map((farm) => (
                 <View key={farm.id} style={styles.farmCardWrapper}>
                   <FarmCard
+                    id={farm.id}
                     name={farm.name}
                     rating={farm.rating}
                     reviews={farm.reviews}
