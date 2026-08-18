@@ -16,6 +16,7 @@ import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useTheme } from "@/hooks/useTheme";
 import {
   clearFarmImage,
+  deleteFarm,
   fetchOwnedFarmByUserId,
   updateFarm,
   uploadFarmImage,
@@ -60,6 +61,7 @@ export default function ManageFarmScreen() {
   const [pendingImageUri, setPendingImageUri] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const { data: farm, isLoading, error } = useQuery({
     queryKey: ["owned-farm", session?.user.id],
@@ -69,6 +71,12 @@ export default function ManageFarmScreen() {
       return fetchOwnedFarmByUserId(session.user.id);
     },
   });
+
+  useEffect(() => {
+    if (!isLoading && !error && !farm) {
+      router.replace("/listing/new");
+    }
+  }, [error, farm, isLoading]);
 
   useEffect(() => {
     if (!farm) return;
@@ -159,11 +167,53 @@ export default function ManageFarmScreen() {
         queryClient.invalidateQueries({ queryKey: ["farms"] }),
         queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] }),
       ]);
-      Alert.alert("Farm updated", "Your farm details have been saved.", [{ text: "Done", onPress: () => router.back() }]);
+      Alert.alert("Farm updated", "Your farm details have been saved.", [
+        {
+          text: "Done",
+          onPress: () => router.canGoBack() ? router.back() : router.replace("/(tabs)/listings"),
+        },
+      ]);
     } catch (saveError) {
       Alert.alert("Update failed", saveError instanceof Error ? saveError.message : "Could not update your farm.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      "Delete farm?",
+      "This permanently deletes your farm, all of its listings, ratings, and images. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete farm", style: "destructive", onPress: () => void removeFarm() },
+      ]
+    );
+  };
+
+  const removeFarm = async () => {
+    if (!farm || !session?.access_token) {
+      Alert.alert("Sign in required", "Please sign in again before deleting your farm.");
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteFarm(session.access_token, farm.id);
+      queryClient.setQueryData(["owned-farm", session.user.id], null);
+      queryClient.setQueryData(["owned-marketplace-listings", farm.id], []);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["owned-farm", session.user.id] }),
+        queryClient.invalidateQueries({ queryKey: ["owned-marketplace-listings", farm.id] }),
+        queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] }),
+        queryClient.invalidateQueries({ queryKey: ["farms"] }),
+      ]);
+      Alert.alert("Farm deleted", "Your farm and its listings have been removed.", [
+        { text: "Done", onPress: () => router.replace("/listing/new") },
+      ]);
+    } catch (deleteError) {
+      Alert.alert("Delete failed", deleteError instanceof Error ? deleteError.message : "Could not delete your farm.");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -172,7 +222,7 @@ export default function ManageFarmScreen() {
   }
 
   if (error || !farm) {
-    return <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}><ThemedText>No farm found. Create a listing first.</ThemedText></SafeAreaView>;
+    return <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}><ThemedText>Opening farm setup…</ThemedText></SafeAreaView>;
   }
 
   return (
@@ -180,7 +230,12 @@ export default function ManageFarmScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={[styles.hero, { backgroundColor: "#F7E5BF" }]}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}><Ionicons name="arrow-back" size={20} color="#2E2A1F" /></TouchableOpacity>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/listings")}
+          >
+            <Ionicons name="arrow-back" size={20} color="#2E2A1F" />
+          </TouchableOpacity>
           <ThemedText style={styles.eyebrow}>Farm settings</ThemedText>
           <ThemedText style={styles.title}>Manage your farm</ThemedText>
           <ThemedText style={styles.subtitle}>Update the details shoppers see about your farm.</ThemedText>
@@ -209,7 +264,11 @@ export default function ManageFarmScreen() {
           <TextInput value={website} onChangeText={setWebsite} style={[styles.input, { color: colors.input.text, backgroundColor: colors.input.background, borderColor: colors.border.light }]} placeholder="https://yourfarm.com" placeholderTextColor={colors.input.placeholder} autoCapitalize="none" keyboardType="url" />
           <FieldLabel label="Description" colors={colors} />
           <TextInput value={description} onChangeText={setDescription} style={[styles.input, styles.description, { color: colors.input.text, backgroundColor: colors.input.background, borderColor: colors.border.light }]} placeholder="Tell shoppers about your farm" placeholderTextColor={colors.input.placeholder} multiline textAlignVertical="top" />
-          <TouchableOpacity style={[styles.saveButton, saving && styles.disabled]} onPress={save} disabled={saving}><ThemedText style={styles.saveText}>{saving ? "Saving…" : "Save farm changes"}</ThemedText></TouchableOpacity>
+          <TouchableOpacity style={[styles.saveButton, (saving || deleting) && styles.disabled]} onPress={save} disabled={saving || deleting}><ThemedText style={styles.saveText}>{saving ? "Saving…" : "Save farm changes"}</ThemedText></TouchableOpacity>
+          <TouchableOpacity style={[styles.deleteButton, (saving || deleting) && styles.disabled]} onPress={confirmDelete} disabled={saving || deleting}>
+            <Ionicons name="trash-outline" size={16} color="#A32929" />
+            <ThemedText style={styles.deleteText}>{deleting ? "Deleting farm…" : "Delete farm"}</ThemedText>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -247,5 +306,7 @@ const styles = StyleSheet.create({
   location: { fontSize: 12, lineHeight: 17 },
   saveButton: { marginTop: theme.spacing.md, backgroundColor: "#3D6B2F", borderRadius: theme.borderRadius.full, alignItems: "center", paddingVertical: 14 },
   saveText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
+  deleteButton: { borderWidth: 1, borderColor: "#E8B6B6", borderRadius: theme.borderRadius.full, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, paddingVertical: 12, backgroundColor: "#FFF6F6" },
+  deleteText: { color: "#A32929", fontSize: 14, fontWeight: "700" },
   disabled: { opacity: 0.6 },
 });

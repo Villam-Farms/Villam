@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { apiBaseUrl } from "@/lib/api";
 import {
   FARM_IMAGE_BUCKET,
   farmImagePathFromUrl,
@@ -295,4 +296,59 @@ export async function clearFarmImage(farmId: string, imagePath?: string | null) 
     .update({ image_path: null, image_url: null })
     .eq("id", farmId);
   if (error) throw error;
+}
+
+export async function deleteFarm(accessToken: string, farmId: string) {
+  const res = await fetch(`${apiBaseUrl}/farms/${encodeURIComponent(farmId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.status === 404) {
+    await deleteFarmDirectly(farmId);
+    return;
+  }
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(data?.detail || `Request failed (${res.status})`);
+  }
+}
+
+async function deleteFarmDirectly(farmId: string) {
+  const { data: farm, error: farmLookupError } = await supabase
+    .from("farms")
+    .select("id,image_path")
+    .eq("id", farmId)
+    .maybeSingle();
+  if (farmLookupError) throw farmLookupError;
+  if (!farm) throw new Error("Farm not found.");
+
+  // Farm listings normally cascade when their farm is removed. Delete them explicitly
+  // first so this also works with databases that use restrictive foreign keys.
+  const { error: listingsError } = await supabase
+    .from("farm_listings")
+    .delete()
+    .eq("farm_id", farmId);
+  if (listingsError) throw listingsError;
+
+  const { error: ratingsError } = await supabase
+    .from("farm_ratings")
+    .delete()
+    .eq("farm_id", farmId);
+  if (ratingsError) throw ratingsError;
+
+  const { data: deletedFarm, error: deleteError } = await supabase
+    .from("farms")
+    .delete()
+    .eq("id", farmId)
+    .select("id")
+    .maybeSingle();
+  if (deleteError) throw deleteError;
+  if (!deletedFarm) throw new Error("You do not have permission to delete this farm.");
+
+  if (typeof farm.image_path === "string" && farm.image_path) {
+    const { error: imageError } = await supabase.storage
+      .from(FARM_IMAGE_BUCKET)
+      .remove([farm.image_path]);
+    if (imageError) console.warn("Could not remove deleted farm image", imageError.message);
+  }
 }
