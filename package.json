@@ -8,7 +8,10 @@
     "frontend:start": "npm --prefix frontend run start",
     "backend:start": "uvicorn app.main:app --reload --app-dir backend",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "test": "npm --prefix frontend test && PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -v",
+    "test:frontend": "npm --prefix frontend test",
+    "test:backend": "PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -v"
   },
   "dependencies": {
     "expo": "~55.0.25",

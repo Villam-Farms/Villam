@@ -135,7 +135,7 @@ export default function ListingSearchScreen() {
             },
           ]}
         >
-          <TouchableOpacity onPress={() => router.back()} hitSlop={8}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} hitSlop={8}>
             <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
           </TouchableOpacity>
           <Ionicons name="search" size={18} color={colors.text.tertiary} />
@@ -149,7 +149,7 @@ export default function ListingSearchScreen() {
             style={[styles.searchInput, { color: colors.text.primary }]}
           />
           {searchQuery.trim().length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={8}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearchQuery("")} hitSlop={8}>
               <Ionicons name="close-circle" size={18} color={colors.text.tertiary} />
             </TouchableOpacity>
           )}
@@ -272,6 +272,8 @@ export default function ListingSearchScreen() {
                     </View>
 
                     <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel={`Directions to ${item.farmName}`}
                       style={[
                         styles.dirButton,
                         { borderColor: colors.border.light, backgroundColor: colors.card },

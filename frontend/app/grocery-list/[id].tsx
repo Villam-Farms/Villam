@@ -416,17 +416,17 @@ export default function GroceryListDetailScreen() {
           headerShown: true,
           headerTitle: '',
           headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()}>
+            <TouchableOpacity onPress={() => router.back()} accessibilityLabel="Back">
               <Ionicons name="arrow-back" size={28} color={colors.text.primary} />
             </TouchableOpacity>
           ),
           headerRight: () => (
             <View style={styles.headerRight}>
-              <TouchableOpacity onPress={deleteList}>
+              <TouchableOpacity onPress={deleteList} accessibilityLabel="Delete grocery list">
                 <Ionicons name="trash-outline" size={24} color={colors.text.primary} />
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={handleSave} disabled={isSaving}>
+              <TouchableOpacity onPress={handleSave} disabled={isSaving} accessibilityLabel="Save grocery list">
                 <ThemedText
                   style={[
                     styles.saveButton,
@@ -496,6 +496,7 @@ export default function GroceryListDetailScreen() {
                     <View key={item.id} style={styles.itemRow}>
                       <TouchableOpacity
                         onPress={() => toggleItem(item.id)}
+                        accessibilityLabel={`${item.checked ? 'Uncheck' : 'Check'} ${item.name || 'item'}`}
                         style={[
                           styles.checkbox,
                           { borderColor: colors.border.default },
@@ -563,7 +564,11 @@ export default function GroceryListDetailScreen() {
                         blurOnSubmit={false}
                       />
 
-                      <TouchableOpacity onPress={() => removeItem(item.id)} style={styles.rowIconButton}>
+                      <TouchableOpacity
+                        onPress={() => removeItem(item.id)}
+                        style={styles.rowIconButton}
+                        accessibilityLabel={`Remove ${item.name || 'item'}`}
+                      >
                         <Ionicons name="remove-circle-outline" size={20} color={colors.text.tertiary} />
                       </TouchableOpacity>
                     </View>

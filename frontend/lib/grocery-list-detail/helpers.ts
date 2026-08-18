@@ -11,7 +11,7 @@ export const createEmptyItem = (
   id: Date.now().toString(),
   name: '',
   checked: false,
-  category,
+  category: category ?? undefined,
   isPinned: false,
   textStyle: {},
 });

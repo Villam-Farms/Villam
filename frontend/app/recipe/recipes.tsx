@@ -120,11 +120,14 @@ const formatMinutes = (minutes: number | null | undefined) => {
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "—";
 
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
   return new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
     year: "numeric",
-  }).format(new Date(value));
+  }).format(date);
 };
 
 const getStepPhotoUrls = (recipe: StoredRecipe) => {
@@ -356,6 +359,8 @@ export default function RecipesScreen() {
       >
         <View style={styles.header}>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
             style={[styles.iconButton, { borderColor: colors.border.light, backgroundColor: colors.background }]}
             onPress={() => router.back()}
             activeOpacity={0.8}
@@ -397,7 +402,7 @@ export default function RecipesScreen() {
           />
 
           {searchQuery.trim().length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearchQuery("")} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close-circle" size={18} color={colors.text.secondary} />
             </TouchableOpacity>
           )}

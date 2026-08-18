@@ -83,7 +83,7 @@ export function CreateTabButton(props: BottomTabBarButtonProps) {
     <>
       {/* Invisible overlay to dismiss menu */}
       {isMenuOpen && (
-        <Pressable style={styles.overlay} onPress={closeMenu} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Close create menu" style={styles.overlay} onPress={closeMenu} />
       )}
 
       <View style={styles.wrapper}>

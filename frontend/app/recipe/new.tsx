@@ -61,7 +61,7 @@ const MEAL_TAG_OPTIONS = ["Breakfast", "Lunch", "Dinner"];
 
 const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const onlyDigits = (value: string) => value.replace(/[^0-9]/g, "");
-const normalizeTag = (value: string) => value.trim().replace(/^#+/, "").replace(/\s+/g, " ");
+const normalizeTag = (value: string) => value.trim().replace(/^#+/, "").trim().replace(/\s+/g, " ");
 
 const getFileExtension = (uri: string) => {
   const cleanUri = uri.split("?")[0];
@@ -252,7 +252,11 @@ function IngredientRow({
           { backgroundColor: colors.input.background, borderColor: colors.border.default, color: colors.text.primary },
         ]}
       />
-      <TouchableOpacity onPress={() => onDelete(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <TouchableOpacity
+        onPress={() => onDelete(item.id)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityLabel={`Remove ingredient ${item.name || ''}`.trim()}
+      >
         <Ionicons name="close-circle" size={22} color={colors.text.tertiary} />
       </TouchableOpacity>
     </View>
@@ -336,11 +340,16 @@ function StepCard({
             delayLongPress={120}
             style={[stepStyles.dragHandleButton, { backgroundColor: colors.background, borderColor: colors.border.default }]}
             hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityLabel={`Reorder step ${index + 1}`}
           >
             <Ionicons name="reorder-three-outline" size={20} color={colors.text.secondary} />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => onDelete(step.id)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <TouchableOpacity
+            onPress={() => onDelete(step.id)}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            accessibilityLabel={`Remove step ${index + 1}`}
+          >
             <Ionicons name="trash-outline" size={18} color={colors.text.tertiary} />
           </TouchableOpacity>
         </View>
@@ -362,6 +371,7 @@ function StepCard({
               <TouchableOpacity
                 style={stepStyles.photoDeleteBtn}
                 onPress={() => onDeletePhoto(step.id, pi)}
+                accessibilityLabel={`Remove step ${index + 1} photo ${pi + 1}`}
                 hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               >
                 <Ionicons name="close" size={11} color="#fff" />
@@ -794,12 +804,14 @@ export default function NewRecipeScreen() {
           headerShown: true,
           headerTitle: "",
           headerLeft: () => (
-            <TouchableOpacity onPress={confirmLeave} disabled={isSaving}>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={confirmLeave} disabled={isSaving}>
               <Ionicons name="arrow-back" size={28} color={colors.text.primary} />
             </TouchableOpacity>
           ),
           headerRight: () => (
             <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Publish recipe"
               style={[
                 styles.publishBtn,
                 {
@@ -851,6 +863,7 @@ export default function NewRecipeScreen() {
                   <TouchableOpacity
                     style={styles.deleteBtn}
                     onPress={() => handleDeleteMedia(0)}
+                    accessibilityLabel="Remove cover photo 1"
                     hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   >
                     <Ionicons name="close" size={14} color="#fff" />
@@ -872,6 +885,7 @@ export default function NewRecipeScreen() {
                         <TouchableOpacity
                           style={styles.deleteBtn}
                           onPress={() => handleDeleteMedia(index + 1)}
+                          accessibilityLabel={`Remove cover photo ${index + 2}`}
                           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                         >
                           <Ionicons name="close" size={12} color="#fff" />

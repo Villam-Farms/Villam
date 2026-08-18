@@ -3,7 +3,7 @@ import { useTheme } from '@/hooks/useTheme';
 
 export function useThemeColor(
   props: { light?: string; dark?: string },
-  colorName: keyof ReturnType<typeof useTheme>['colors']
+  colorName: 'background'
 ) {
   const { colors, isDark } = useTheme();
   const colorFromProps = isDark ? props.dark : props.light;

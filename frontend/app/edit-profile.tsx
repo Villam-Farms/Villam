@@ -110,13 +110,13 @@ export default function EditProfileScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.back}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Go back" onPress={() => router.back()} style={styles.back}>
             <Ionicons name="arrow-back" size={28} color="#111827" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit profile</Text>
         </View>
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-          <TouchableOpacity onPress={choosePhoto} style={styles.photoButton}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Change profile photo" onPress={choosePhoto} style={styles.photoButton}>
             <View style={styles.photo}>
               {avatar ? <Image source={{ uri: avatar }} style={styles.image} /> : <Ionicons name="person" size={54} color="#9CA3AF" />}
             </View>

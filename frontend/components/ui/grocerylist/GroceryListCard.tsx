@@ -32,6 +32,8 @@ export function GroceryListCard({ list, style }: GroceryListCardProps) {
       {/* Grey touchable card with items preview */}
       <TouchableOpacity 
         onPress={handlePress}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${list.title}`}
         style={[styles.card, { backgroundColor: colors.card }]}
         activeOpacity={0.7}
       >
@@ -108,6 +110,8 @@ export function GroceryListCard({ list, style }: GroceryListCardProps) {
 
         <TouchableOpacity 
           onPress={handleOptionsPress}
+          accessibilityRole="button"
+          accessibilityLabel={`Options for ${list.title}`}
           style={styles.optionsButton}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >

@@ -79,6 +79,7 @@ export function RecipeCard({
         <View style={[styles.imageContainer, { backgroundColor: colors.input.background }]}>
           {hasImage ? (
             <Image
+              testID={`recipe-image-${id}`}
               source={{ uri: imageUrl! }}
               style={styles.image}
               resizeMode="cover"

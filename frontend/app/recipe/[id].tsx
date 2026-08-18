@@ -613,6 +613,8 @@ export default function RecipeDetailScreen() {
         <Stack.Screen options={{ headerShown: false }} />
         <View style={styles.centerState}>
           <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
             style={[
               styles.backButton,
               { borderColor: colors.border.light, backgroundColor: colors.background },
@@ -655,6 +657,8 @@ export default function RecipeDetailScreen() {
 
             <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}>
               <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
                 style={[
                   styles.backButton,
                   {
