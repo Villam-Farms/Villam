@@ -3,21 +3,23 @@ import { ActivityIndicator, Alert, Animated, ScrollView, StyleSheet, TextInput, 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Image } from 'expo-image';
 
 import { ThemedText } from '@/components/themed-text';
 import { theme } from '@/constants/theme';
 import { useTheme } from '@/hooks/useTheme';
-import { useFarms } from '@/hooks/useFarms';
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { addDistanceAndSort } from '@/lib/location';
 import { formatAddress } from '@/lib/address';
 import { openDirections } from '@/lib/directions';
-import { getMockFarmProfile } from '@/lib/mock-farms';
 import { shareFarmLink } from '@/lib/share-farm';
 import { fetchFarmRatings, saveFarmRating, summarizeFarmRatings, type FarmRating } from '@/lib/farm-ratings';
 import { useAuth } from '@/context/auth-context';
 import { SaveButton } from '@/components/save-button';
+import { fetchFarmById } from '@/lib/farms';
+import { fetchFarmListingsByFarmId } from '@/lib/marketplace';
+import { getListingVisuals } from '@/lib/listing-visuals';
 
 const STAR_VALUES = [1, 2, 3, 4, 5];
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -58,18 +60,33 @@ export default function FarmDetailScreen() {
   const tabTranslateX = useRef(new Animated.Value(0)).current;
   const previousTab = useRef<'overview' | 'reviews'>('overview');
 
-  const { data: farms = [], isLoading, error } = useFarms();
   const { coords: userCoords } = useCurrentLocation();
-
-  const farm = useMemo(() => farms.find((item) => item.id === farmId) ?? null, [farms, farmId]);
+  const { data: farm = null, isLoading, error } = useQuery({
+    queryKey: ['farm', farmId],
+    queryFn: () => fetchFarmById(farmId),
+    enabled: !!farmId,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+  const { data: farmListings = [], isLoading: listingsLoading } = useQuery({
+    queryKey: ['farm-listings', farmId],
+    queryFn: () => fetchFarmListingsByFarmId(farmId),
+    enabled: !!farmId,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
 
   const farmWithDistance = useMemo(() => {
     if (!farm) return null;
     return addDistanceAndSort([farm], userCoords)[0] ?? null;
   }, [farm, userCoords]);
 
-  const mockProfile = useMemo(() => getMockFarmProfile(farmId, farm), [farm, farmId]);
-  const address = mockProfile.addressOverride ?? (farm ? formatAddress(farm) : '');
+  const availableListings = useMemo(
+    () => farmListings.filter((listing) => listing.available),
+    [farmListings]
+  );
+  const hasFarmImage = !!farm?.imageUrl;
+  const address = farm ? formatAddress(farm) : '';
   const ratingsSummary = useMemo(() => summarizeFarmRatings(ratings), [ratings]);
   const displayRating = ratingsSummary.count > 0 ? ratingsSummary.average : 0;
   const displayReviewCount = ratingsSummary.count;
@@ -185,7 +202,7 @@ export default function FarmDetailScreen() {
   const handleShareFarm = async () => {
     if (!farmId) return;
 
-    const farmName = farm?.name ?? mockProfile.title;
+    const farmName = farm?.name ?? 'Farm';
     const farmLocation = address.trim().length
       ? address
       : farm
@@ -207,13 +224,11 @@ export default function FarmDetailScreen() {
     const hasRealAddress =
       !!farm?.street?.trim() && (!!farm.city?.trim() || !!farm.postal_code?.trim());
 
-    const finalDest = mockProfile.addressOverride
-      ? mockProfile.addressOverride
-      : farm && hasRealAddress
-        ? formatAddress(farm)
-        : farm
-          ? `${farm.latitude},${farm.longitude}`
-          : '';
+    const finalDest = farm && hasRealAddress
+      ? formatAddress(farm)
+      : farm
+        ? `${farm.latitude},${farm.longitude}`
+        : '';
 
     if (!finalDest) return;
 
@@ -249,16 +264,24 @@ export default function FarmDetailScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={[styles.hero, { backgroundColor: '#F7E5BF' }]}>
-          <View style={styles.heroShapes}>
-            <View style={[styles.shape, styles.shapeLarge, { backgroundColor: '#F0C26A' }]} />
-            <View style={[styles.shape, styles.shapeSmall, { backgroundColor: '#DCC16C' }]} />
-          </View>
+        <View style={[styles.hero, !hasFarmImage && { backgroundColor: '#F7E5BF' }]}> 
+          {hasFarmImage ? (
+            <>
+              <Image source={{ uri: farm.imageUrl }} style={styles.heroImage} contentFit="cover" />
+              <View style={styles.heroImageOverlay} />
+            </>
+          ) : null}
+          {!hasFarmImage ? (
+            <View style={styles.heroShapes}>
+              <View style={[styles.shape, styles.shapeLarge, { backgroundColor: '#F0C26A' }]} />
+              <View style={[styles.shape, styles.shapeSmall, { backgroundColor: '#DCC16C' }]} />
+            </View>
+          ) : null}
 
           <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}>
             <TouchableOpacity
               style={[styles.iconButton, { backgroundColor: 'rgba(255,255,255,0.92)' }]}
-              onPress={() => router.back()}
+              onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
               activeOpacity={0.85}
             >
               <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
@@ -292,19 +315,19 @@ export default function FarmDetailScreen() {
           ) : error && !farm ? (
             <View style={styles.heroBody}>
               <ThemedText style={[styles.eyebrow, { color: '#6E7B37' }]}>Farm profile</ThemedText>
-              <ThemedText style={[styles.heroTitle, { color: '#2E2A1F' }]}>Temporary farm profile</ThemedText>
+              <ThemedText style={[styles.heroTitle, { color: '#2E2A1F' }]}>Farm unavailable</ThemedText>
               <ThemedText style={[styles.heroSubtitle, { color: '#5A564B' }]}>
-                Showing mock content while live farm detail data is not available.
+                We could not load this farm right now. Please return to the farm list and try again.
               </ThemedText>
             </View>
           ) : (
             <View style={styles.heroBody}>
-              <ThemedText style={[styles.eyebrow, { color: '#6E7B37' }]}>{mockProfile.heroLabel}</ThemedText>
-              <ThemedText style={[styles.heroTitle, { color: '#2E2A1F' }]}>
-                {farm?.name ?? mockProfile.title}
+              <ThemedText style={[styles.eyebrow, { color: hasFarmImage ? 'rgba(255,255,255,0.82)' : '#6E7B37' }]}>Farm profile</ThemedText>
+              <ThemedText style={[styles.heroTitle, { color: hasFarmImage ? theme.neutral.white : '#2E2A1F' }]}>
+                {farm?.name ?? 'Farm not found'}
               </ThemedText>
-              <ThemedText style={[styles.heroSubtitle, { color: '#5A564B' }]}>
-                {mockProfile.tagline}
+              <ThemedText style={[styles.heroSubtitle, { color: hasFarmImage ? 'rgba(255,255,255,0.9)' : '#5A564B' }]}>
+                {farm?.description?.trim() || 'Locally grown produce and farm pickup.'}
               </ThemedText>
 
               <View style={styles.heroPills}>
@@ -331,7 +354,7 @@ export default function FarmDetailScreen() {
           )}
         </View>
 
-        {!isLoading || farm ? (
+        {farm ? (
           <View style={styles.sectionGroup}>
             <View
               style={[
@@ -385,7 +408,7 @@ export default function FarmDetailScreen() {
                   Visit the farm to buy produce
                 </ThemedText>
                 <ThemedText style={[styles.noticeBody, { color: '#7A5A18' }]}>
-                  {mockProfile.visitNote}
+                  Use directions to visit this farm and ask about today’s availability.
                 </ThemedText>
               </View>
             </View>
@@ -396,48 +419,65 @@ export default function FarmDetailScreen() {
                   What they are selling
                 </ThemedText>
                 <ThemedText style={[styles.sectionCaption, { color: colors.text.secondary }]}>
-                  Current farm listing
+                  {listingsLoading ? 'Loading listings…' : `${availableListings.length} available now`}
                 </ThemedText>
               </View>
 
-              {mockProfile.produceListings.length > 0 ? (
+              {availableListings.length > 0 ? (
                 <View style={styles.listingsColumn}>
-                  {mockProfile.produceListings.map((item) => (
-                    <View
-                      key={item.id}
-                      style={[styles.produceListingCard, { borderColor: colors.border.light }]}
-                    >
-                      <View style={[styles.produceThumb, { backgroundColor: item.color }]}>
-                        <Ionicons name={item.icon} size={28} color={theme.brand.tertiary} />
-                      </View>
+                  {availableListings.map((item) => {
+                    const visuals = getListingVisuals(item.category);
+                    const note = item.varietyDescription?.trim() || `Variety: ${item.varietyName}`;
 
-                      <View style={styles.produceListingBody}>
-                        <View style={styles.produceListingTopRow}>
-                          <View style={{ flex: 1 }}>
-                            <ThemedText style={[styles.produceListingTitle, { color: colors.text.primary }]}>
-                              {item.name}
-                            </ThemedText>
-                            <ThemedText style={[styles.produceListingMeta, { color: colors.text.secondary }]}>
-                              {item.unit}
-                            </ThemedText>
-                          </View>
-                          <View style={[styles.pricePill, { backgroundColor: colors.card }]}>
-                            <ThemedText style={[styles.pricePillText, { color: colors.text.primary }]}>
-                              {item.price}
-                            </ThemedText>
-                          </View>
+                    return (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.produceListingCard,
+                          { backgroundColor: colors.card, borderColor: colors.border.light },
+                        ]}
+                      >
+                        <View style={[styles.produceThumb, { backgroundColor: visuals.color }]}>
+                          {item.imageUrl ? (
+                            <Image source={{ uri: item.imageUrl }} style={styles.produceThumbImage} contentFit="cover" />
+                          ) : (
+                            <Ionicons name={visuals.icon} size={28} color={theme.brand.tertiary} />
+                          )}
                         </View>
 
-                        <ThemedText style={[styles.produceListingNote, { color: colors.text.secondary }]}>
-                          {item.note}
-                        </ThemedText>
+                        <View style={styles.produceListingBody}>
+                          <View style={styles.produceListingTopRow}>
+                            <View style={{ flex: 1 }}>
+                              <ThemedText style={[styles.produceListingTitle, { color: colors.text.primary }]}>
+                                {item.produceItemName}
+                              </ThemedText>
+                              <ThemedText style={[styles.produceListingMeta, { color: colors.text.secondary }]}>
+                                Sold by {item.soldBy}
+                              </ThemedText>
+                            </View>
+                            <View style={[styles.pricePill, { backgroundColor: visuals.badgeColor }]}>
+                              <ThemedText style={[styles.pricePillText, { color: visuals.badgeTextColor }]}>
+                                {item.currency} {item.price.toFixed(2)}
+                              </ThemedText>
+                            </View>
+                          </View>
+
+                          <ThemedText
+                            style={[styles.produceListingNote, { color: colors.text.secondary }]}
+                            numberOfLines={1}
+                          >
+                            {note}
+                          </ThemedText>
+                        </View>
                       </View>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               ) : (
                 <ThemedText style={[styles.emptyText, { color: colors.text.secondary }]}>
-                  This farm has not added a produce list yet.
+                  {listingsLoading
+                    ? 'Loading available produce…'
+                    : 'This farm has not added any available produce yet.'}
                 </ThemedText>
               )}
             </View>
@@ -465,7 +505,7 @@ export default function FarmDetailScreen() {
                         : 'Location shared on the farm page'}
                   </ThemedText>
                   <ThemedText style={[styles.locationBody, { color: colors.text.secondary }]}>
-                    {mockProfile.locationNote}
+                    Use directions to visit this farm in person.
                   </ThemedText>
                 </View>
               </View>
@@ -718,6 +758,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginHorizontal: -theme.spacing.lg,
   },
+  heroImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(26, 35, 20, 0.35)',
+  },
   heroShapes: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -856,7 +903,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     gap: theme.spacing.md,
-    marginTop: theme.spacing.md,
   },
   sectionTitle: {
     fontSize: theme.typography.fontSizes.h2,
@@ -869,25 +915,31 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontFamily,
   },
   listingsColumn: {
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
     marginTop: theme.spacing.md,
   },
   produceListingCard: {
     borderWidth: 1,
-    borderRadius: 22,
-    padding: theme.spacing.md,
+    borderRadius: 16,
+    padding: 10,
     flexDirection: 'row',
-    gap: theme.spacing.md,
+    gap: 12,
+    alignItems: 'center',
   },
   produceThumb: {
-    width: 84,
-    height: 84,
-    borderRadius: 20,
+    width: 72,
+    height: 72,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  produceThumbImage: {
+    ...StyleSheet.absoluteFillObject,
   },
   produceListingBody: {
     flex: 1,
+    justifyContent: 'center',
   },
   produceListingTopRow: {
     flexDirection: 'row',
@@ -895,29 +947,29 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   produceListingTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
   },
   produceListingMeta: {
-    marginTop: 2,
+    marginTop: 3,
     fontSize: 13,
     fontFamily: theme.typography.fontFamily,
   },
   pricePill: {
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
   },
   pricePillText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: theme.typography.fontWeights.bold,
     fontFamily: theme.typography.fontFamily,
   },
   produceListingNote: {
-    marginTop: theme.spacing.sm,
-    fontSize: 14,
-    lineHeight: 20,
+    marginTop: 5,
+    fontSize: 12,
+    lineHeight: 17,
     fontFamily: theme.typography.fontFamily,
   },
   emptyText: {

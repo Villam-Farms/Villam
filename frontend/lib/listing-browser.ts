@@ -11,6 +11,7 @@ export type ListingRow = {
   price: string;
   note: string;
   imageUrl: string | null;
+  farmImageUrl: string | null;
   color: string;
   badgeColor: string;
   badgeTextColor: string;
@@ -74,6 +75,7 @@ export function buildListingRows(
       unit: `Sold by ${listing.soldBy}`,
       note: listing.varietyDescription?.trim() || `Variety: ${listing.varietyName}`,
       imageUrl: listing.imageUrl,
+      farmImageUrl: listing.farmImageUrl,
       color: visuals.color,
       icon: visuals.icon,
       badgeColor: visuals.badgeColor,

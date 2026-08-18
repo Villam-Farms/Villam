@@ -9,24 +9,22 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import * as Location from "expo-location";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { router, Stack } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import MapView, { Marker } from "react-native-maps";
 import { Image } from "expo-image";
 
 import { ThemedText } from "@/components/themed-text";
 import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/auth-context";
-import { fetchOwnedFarmByUserId, updateFarm } from "@/lib/farms";
-import { useCurrentLocation } from "@/hooks/useCurrentLocation";
+import { fetchOwnedFarmByUserId } from "@/lib/farms";
 import {
   CURRENCY_OPTIONS,
   clearFarmListingImage,
+  deleteFarmListing,
   fetchFarmListingsByFarmId,
   fetchProduceCatalog,
   SOLD_BY_OPTIONS,
@@ -36,24 +34,10 @@ import {
 } from "@/lib/marketplace";
 
 type PickerField = "produceItem" | "variety" | "soldBy" | "currency" | null;
-type AddressParts = {
-  city: string | null;
-  state: string | null;
-  postal_code: string | null;
-  country: string | null;
-};
-
 type PickedListingImage = {
   uri: string;
   name: string;
   type: string;
-};
-
-const DEFAULT_REGION = {
-  latitude: 34.0522,
-  longitude: -118.2437,
-  latitudeDelta: 0.08,
-  longitudeDelta: 0.08,
 };
 
 function getStatusColor(isAvailable: boolean) {
@@ -64,21 +48,12 @@ function getStatusBackground(isAvailable: boolean) {
   return isAvailable ? "#DCEFBF" : "#F7D5D5";
 }
 
-function formatLocationSummary(address: AddressParts) {
-  return [address.city, address.state, address.postal_code, address.country]
-    .filter((value) => value?.trim())
-    .join(", ");
-}
-
 export default function ManageListingsScreen() {
   const { colors } = useTheme();
   const { session } = useAuth();
   const accessToken = session?.access_token ?? null;
   const queryClient = useQueryClient();
-  const { coords: userCoords, refresh: refreshLocation } = useCurrentLocation();
-
   const [selectedListing, setSelectedListing] = useState<MarketplaceListing | null>(null);
-  const [isFarmModalVisible, setIsFarmModalVisible] = useState(false);
   const [selectedProduceItemId, setSelectedProduceItemId] = useState<string | null>(null);
   const [selectedVarietyId, setSelectedVarietyId] = useState<string | null>(null);
   const [selectedSoldBy, setSelectedSoldBy] =
@@ -89,17 +64,6 @@ export default function ManageListingsScreen() {
   const [available, setAvailable] = useState(true);
   const [activePicker, setActivePicker] = useState<PickerField>(null);
   const [saving, setSaving] = useState(false);
-  const [farmSaving, setFarmSaving] = useState(false);
-  const [farmName, setFarmName] = useState("");
-  const [farmWebsite, setFarmWebsite] = useState("");
-  const [farmDescription, setFarmDescription] = useState("");
-  const [pickedCoords, setPickedCoords] = useState(DEFAULT_REGION);
-  const [addressParts, setAddressParts] = useState<AddressParts>({
-    city: null,
-    state: null,
-    postal_code: null,
-    country: null,
-  });
   const [listingImagePreviewUri, setListingImagePreviewUri] = useState<string | null>(null);
   const [listingImageAction, setListingImageAction] = useState<"keep" | "replace" | "remove">("keep");
   const [pendingListingImage, setPendingListingImage] = useState<PickedListingImage | null>(null);
@@ -148,26 +112,6 @@ export default function ManageListingsScreen() {
   );
 
   useEffect(() => {
-    if (!ownedFarm) return;
-
-    setFarmName(ownedFarm.name);
-    setFarmWebsite(ownedFarm.website ?? "");
-    setFarmDescription(ownedFarm.description ?? "");
-    setPickedCoords({
-      latitude: ownedFarm.latitude,
-      longitude: ownedFarm.longitude,
-      latitudeDelta: DEFAULT_REGION.latitudeDelta,
-      longitudeDelta: DEFAULT_REGION.longitudeDelta,
-    });
-    setAddressParts({
-      city: ownedFarm.city ?? null,
-      state: ownedFarm.state ?? null,
-      postal_code: ownedFarm.postal_code ?? null,
-      country: ownedFarm.country ?? null,
-    });
-  }, [ownedFarm]);
-
-  useEffect(() => {
     if (!selectedListing) return;
 
     const currentVarietyStillValid = availableVarieties.some(
@@ -208,89 +152,6 @@ export default function ManageListingsScreen() {
     setListingImagePreviewUri(null);
     setListingImageAction("keep");
     setPendingListingImage(null);
-  };
-
-  const reverseGeocodeSelection = async (latitude: number, longitude: number) => {
-    try {
-      const places = await Location.reverseGeocodeAsync({ latitude, longitude });
-      const firstPlace = places?.[0];
-
-      setAddressParts({
-        city: firstPlace?.city ?? null,
-        state: firstPlace?.region ?? null,
-        postal_code: firstPlace?.postalCode ?? null,
-        country: firstPlace?.country ?? null,
-      });
-    } catch (error) {
-      console.log("Could not reverse geocode farm location", error);
-      setAddressParts({
-        city: null,
-        state: null,
-        postal_code: null,
-        country: null,
-      });
-    }
-  };
-
-  const handleMapPress = async (latitude: number, longitude: number) => {
-    setPickedCoords({
-      latitude,
-      longitude,
-      latitudeDelta: DEFAULT_REGION.latitudeDelta,
-      longitudeDelta: DEFAULT_REGION.longitudeDelta,
-    });
-    await reverseGeocodeSelection(latitude, longitude);
-  };
-
-  const handleUseCurrentLocation = async () => {
-    await refreshLocation();
-
-    const position = userCoords
-      ? { coords: userCoords }
-      : await Location.getCurrentPositionAsync({});
-
-    await handleMapPress(position.coords.latitude, position.coords.longitude);
-  };
-
-  const handleSaveFarm = async () => {
-    if (!ownedFarm) return;
-    if (!farmName.trim()) {
-      Alert.alert("Farm name required", "Enter a farm name before saving.");
-      return;
-    }
-
-    setFarmSaving(true);
-
-    try {
-      await updateFarm({
-        id: ownedFarm.id,
-        name: farmName.trim(),
-        latitude: pickedCoords.latitude,
-        longitude: pickedCoords.longitude,
-        city: addressParts.city,
-        state: addressParts.state,
-        postal_code: addressParts.postal_code,
-        country: addressParts.country,
-        website: farmWebsite,
-        description: farmDescription,
-      });
-
-      await queryClient.invalidateQueries({ queryKey: ["owned-farm", session?.user.id] });
-      await queryClient.invalidateQueries({ queryKey: ["farms"] });
-      await queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] });
-      await queryClient.invalidateQueries({ queryKey: ["owned-marketplace-listings", ownedFarm.id] });
-      setIsFarmModalVisible(false);
-      Alert.alert("Farm updated", "Your farm details have been saved.");
-    } catch (error) {
-      console.log("Could not update farm", error);
-      const message =
-        error instanceof Error && error.message.trim()
-          ? error.message
-          : "Could not update your farm right now.";
-      Alert.alert("Update failed", message);
-    } finally {
-      setFarmSaving(false);
-    }
   };
 
   const handleSave = async () => {
@@ -336,6 +197,42 @@ export default function ManageListingsScreen() {
           ? error.message
           : "Could not update the listing right now.";
       Alert.alert("Update failed", message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!selectedListing) return;
+    Alert.alert(
+      "Delete listing?",
+      `Delete ${selectedListing.produceItemName}? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => void deleteSelectedListing(),
+        },
+      ]
+    );
+  };
+
+  const deleteSelectedListing = async () => {
+    if (!selectedListing || !accessToken) {
+      Alert.alert("Sign in required", "Please sign in again before deleting a listing.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await deleteFarmListing(accessToken, selectedListing.id);
+      await queryClient.invalidateQueries({ queryKey: ["owned-marketplace-listings", ownedFarm?.id] });
+      await queryClient.invalidateQueries({ queryKey: ["marketplace-listings"] });
+      closeEditModal();
+      Alert.alert("Listing deleted", "The listing has been removed.");
+    } catch (error) {
+      Alert.alert("Delete failed", error instanceof Error ? error.message : "Could not delete this listing.");
     } finally {
       setSaving(false);
     }
@@ -438,7 +335,7 @@ export default function ManageListingsScreen() {
         <View style={styles.hero}>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border.light }]}
-            onPress={() => router.back()}
+            onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)/listings")}
             activeOpacity={0.85}
           >
             <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
@@ -447,7 +344,7 @@ export default function ManageListingsScreen() {
           <ThemedText style={styles.heroEyebrow}>Seller tools</ThemedText>
           <ThemedText style={styles.heroTitle}>Manage your listings</ThemedText>
           <ThemedText style={styles.heroSubtitle}>
-            Review your produce, adjust pricing, change varieties, and toggle availability.
+            Review your produce, update pricing, and control availability.
           </ThemedText>
         </View>
 
@@ -462,15 +359,8 @@ export default function ManageListingsScreen() {
                 No farm yet
               </ThemedText>
               <ThemedText style={[styles.emptyBody, { color: colors.text.secondary }]}>
-                Create your farm first before you can manage produce listings.
+                Create a farm from the My Listings page before managing produce.
               </ThemedText>
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={() => router.push("/listing/new")}
-                activeOpacity={0.88}
-              >
-                <ThemedText style={styles.primaryButtonText}>Create your first listing</ThemedText>
-              </TouchableOpacity>
             </>
           ) : listingsError ? (
             <ThemedText style={{ color: colors.text.secondary }}>Could not load your listings.</ThemedText>
@@ -480,34 +370,18 @@ export default function ManageListingsScreen() {
                 No listings yet
               </ThemedText>
               <ThemedText style={[styles.emptyBody, { color: colors.text.secondary }]}>
-                Your farm is set up. Add a produce listing to start selling.
+                Add produce from the My Listings page, then return here to edit it.
               </ThemedText>
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={() => router.push("/listing/new")}
-                activeOpacity={0.88}
-              >
-                <ThemedText style={styles.primaryButtonText}>Add a listing</ThemedText>
-              </TouchableOpacity>
             </>
           ) : (
             <>
               <View style={styles.sectionHeader}>
                 <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-                  {ownedFarm.name}
+                  Your produce
                 </ThemedText>
-                <View style={styles.headerActions}>
-                  <TouchableOpacity onPress={() => setIsFarmModalVisible(true)} activeOpacity={0.85}>
-                    <ThemedText style={[styles.linkText, { color: theme.brand.primary }]}>
-                      Edit farm
-                    </ThemedText>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => router.push("/listing/new")} activeOpacity={0.85}>
-                    <ThemedText style={[styles.linkText, { color: theme.brand.primary }]}>
-                      Add another
-                    </ThemedText>
-                  </TouchableOpacity>
-                </View>
+                <ThemedText style={[styles.listingCount, { color: colors.text.secondary }]}>
+                  {ownedListings.length} {ownedListings.length === 1 ? "listing" : "listings"}
+                </ThemedText>
               </View>
 
               <View style={styles.listingStack}>
@@ -707,122 +581,15 @@ export default function ManageListingsScreen() {
                   {saving ? "Saving…" : "Save changes"}
                 </ThemedText>
               </TouchableOpacity>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal transparent animationType="slide" visible={isFarmModalVisible} onRequestClose={() => setIsFarmModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
-            <View style={styles.modalHeader}>
-              <ThemedText style={[styles.modalTitle, { color: colors.text.primary }]}>
-                Edit farm
-              </ThemedText>
-              <TouchableOpacity onPress={() => !farmSaving && setIsFarmModalVisible(false)} hitSlop={8}>
-                <Ionicons name="close" size={22} color={colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <View style={styles.fieldGroup}>
-                <FieldLabel label="Farm name" colors={colors} />
-                <TextInput
-                  value={farmName}
-                  onChangeText={setFarmName}
-                  placeholder="Farm name"
-                  placeholderTextColor={colors.input.placeholder}
-                  style={[
-                    styles.input,
-                    { backgroundColor: colors.input.background, borderColor: colors.border.light, color: colors.input.text },
-                  ]}
-                />
-              </View>
-
-              <View style={styles.fieldGroup}>
-                <FieldLabel label="Farm location" colors={colors} />
-                <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>
-                  Tap the map to move your farm. City, state, postal code, and country update automatically.
-                </ThemedText>
-                <MapView
-                  style={styles.map}
-                  region={{
-                    latitude: pickedCoords.latitude,
-                    longitude: pickedCoords.longitude,
-                    latitudeDelta: pickedCoords.latitudeDelta,
-                    longitudeDelta: pickedCoords.longitudeDelta,
-                  }}
-                  onPress={(event) => {
-                    const coordinate = event.nativeEvent.coordinate;
-                    void handleMapPress(coordinate.latitude, coordinate.longitude);
-                  }}
-                >
-                  <Marker coordinate={{ latitude: pickedCoords.latitude, longitude: pickedCoords.longitude }} />
-                </MapView>
-
-                <TouchableOpacity
-                  style={[styles.utilityButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
-                  onPress={handleUseCurrentLocation}
-                  activeOpacity={0.85}
-                >
-                  <Ionicons name="locate-outline" size={16} color={colors.text.primary} />
-                  <ThemedText style={[styles.utilityButtonText, { color: colors.text.primary }]}>
-                    Use my location
-                  </ThemedText>
-                </TouchableOpacity>
-
-                <View style={[styles.locationSummaryCard, { backgroundColor: colors.card }]}>
-                  <ThemedText style={[styles.locationSummaryText, { color: colors.text.primary }]}>
-                    {formatLocationSummary(addressParts) || "Tap the map to update your farm location."}
-                  </ThemedText>
-                  <ThemedText style={[styles.coordinateText, { color: colors.text.secondary }]}>
-                    {pickedCoords.latitude.toFixed(5)}, {pickedCoords.longitude.toFixed(5)}
-                  </ThemedText>
-                </View>
-              </View>
-
-              <View style={styles.fieldGroup}>
-                <FieldLabel label="Website" colors={colors} />
-                <TextInput
-                  value={farmWebsite}
-                  onChangeText={setFarmWebsite}
-                  placeholder="https://yourfarm.com"
-                  placeholderTextColor={colors.input.placeholder}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                  style={[
-                    styles.input,
-                    { backgroundColor: colors.input.background, borderColor: colors.border.light, color: colors.input.text },
-                  ]}
-                />
-              </View>
-
-              <View style={styles.fieldGroup}>
-                <FieldLabel label="Description" colors={colors} />
-                <TextInput
-                  value={farmDescription}
-                  onChangeText={setFarmDescription}
-                  placeholder="Describe your farm"
-                  placeholderTextColor={colors.input.placeholder}
-                  multiline
-                  textAlignVertical="top"
-                  style={[
-                    styles.input,
-                    styles.multilineInput,
-                    { backgroundColor: colors.input.background, borderColor: colors.border.light, color: colors.input.text },
-                  ]}
-                />
-              </View>
 
               <TouchableOpacity
-                style={[styles.primaryButton, farmSaving && styles.buttonDisabled]}
-                onPress={handleSaveFarm}
-                disabled={farmSaving}
+                style={[styles.deleteButton, saving && styles.buttonDisabled]}
+                onPress={handleDelete}
+                disabled={saving}
                 activeOpacity={0.88}
               >
-                <ThemedText style={styles.primaryButtonText}>
-                  {farmSaving ? "Saving…" : "Save farm changes"}
-                </ThemedText>
+                <Ionicons name="trash-outline" size={16} color="#A32929" />
+                <ThemedText style={styles.deleteButtonText}>Delete listing</ThemedText>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -972,9 +739,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
   },
-  linkText: {
-    fontSize: 14,
-    fontWeight: "700",
+  listingCount: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   emptyTitle: {
     fontSize: 18,
@@ -1186,6 +953,23 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: "#FFFFFF",
     fontSize: 15,
+    fontWeight: "700",
+  },
+  deleteButton: {
+    marginTop: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: "#E8B6B6",
+    borderRadius: theme.borderRadius.full,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+    backgroundColor: "#FFF6F6",
+  },
+  deleteButtonText: {
+    color: "#A32929",
+    fontSize: 14,
     fontWeight: "700",
   },
   buttonDisabled: {

@@ -939,6 +939,7 @@ export default function HomeScreen() {
                     reviews={farm.reviews}
                     distance={farm.distanceMi != null ? `${farm.distanceMi.toFixed(1)} mi` : '…'}
                     products={farm.products}
+                    imageUrl={farm.imageUrl ?? undefined}
                     onPress={() => handleFarmPress(farm.id)}
                     onDirectionPress={() => handleDirectionPress(farm.id)}
                     onSharePress={() => handleSharePress(farm.id)}

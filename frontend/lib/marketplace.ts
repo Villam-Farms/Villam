@@ -1,4 +1,5 @@
 import { apiBaseUrl } from "@/lib/api";
+import { resolveFarmImageUrl } from "@/lib/farm-image-storage";
 import { supabase } from "@/lib/supabase";
 
 export const SOLD_BY_OPTIONS = ["lb", "pint", "bunch", "each"] as const;
@@ -48,6 +49,7 @@ export type MarketplaceListing = {
   soldBy: string;
   available: boolean;
   imageUrl: string | null;
+  farmImageUrl: string | null;
 };
 
 type FarmRow = {
@@ -59,6 +61,8 @@ type FarmRow = {
   state: string | null;
   postal_code: string | null;
   country: string | null;
+  image_url: string | null;
+  image_path: string | null;
 };
 
 type ListingRow = {
@@ -86,7 +90,7 @@ async function hydrateMarketplaceListings(listings: ListingRow[]): Promise<Marke
     await Promise.all([
       supabase
         .from("farms")
-        .select("id,name,latitude,longitude,city,state,postal_code,country")
+        .select("id,name,latitude,longitude,city,state,postal_code,country,image_url,image_path")
         .in("id", farmIds),
       supabase
         .from("produce_varieties")
@@ -118,13 +122,15 @@ async function hydrateMarketplaceListings(listings: ListingRow[]): Promise<Marke
     ((items ?? []) as ProduceItemOption[]).map((item) => [item.id, item])
   );
 
-  return listings
-    .map((listing) => {
+  const hydratedListings = await Promise.all(
+    listings.map(async (listing) => {
       const farm = farmMap.get(listing.farm_id);
       const variety = varietyMap.get(listing.produce_variety_id);
       const produceItem = variety ? itemMap.get(variety.produce_item_id) : null;
 
       if (!farm || !variety || !produceItem) return null;
+
+      const farmImageUrl = await resolveFarmImageUrl(farm.image_path, farm.image_url);
 
       return {
         id: listing.id,
@@ -147,8 +153,12 @@ async function hydrateMarketplaceListings(listings: ListingRow[]): Promise<Marke
         soldBy: listing.sold_by,
         available: listing.available,
         imageUrl: listing.image_url ?? null,
+        farmImageUrl,
       } satisfies MarketplaceListing;
     })
+  );
+
+  return hydratedListings
     .filter((listing): listing is MarketplaceListing => listing !== null)
     .sort((left, right) => left.produceItemName.localeCompare(right.produceItemName));
 }
@@ -321,4 +331,15 @@ export async function clearFarmListingImage(accessToken: string, listingId: stri
   }
 
   return (await res.json()) as { id: string; image_url: string | null };
+}
+
+export async function deleteFarmListing(accessToken: string, listingId: string) {
+  const res = await fetch(`${apiBaseUrl}/listings/${encodeURIComponent(listingId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(data?.detail || `Request failed (${res.status})`);
+  }
 }

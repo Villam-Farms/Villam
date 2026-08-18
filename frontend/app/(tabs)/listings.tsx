@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, View, TouchableOpacity } from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { RefreshControl, ScrollView, StyleSheet, View, TouchableOpacity } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,11 +9,9 @@ import { Image } from "expo-image";
 import { useTheme } from "@/hooks/useTheme";
 import { theme } from "@/constants/theme";
 import { ThemedText } from "@/components/themed-text";
-import { useCurrentLocation } from "@/hooks/useCurrentLocation";
-import { useFarms } from "@/hooks/useFarms";
-import { openDirections } from "@/lib/directions";
-import { formatAddress } from "@/lib/address";
-import { fetchMarketplaceListings } from "@/lib/marketplace";
+import { useAuth } from "@/context/auth-context";
+import { fetchOwnedFarmByUserId } from "@/lib/farms";
+import { fetchFarmListingsByFarmId } from "@/lib/marketplace";
 import { getListingVisuals } from "@/lib/listing-visuals";
 import {
   buildListingRows,
@@ -26,21 +24,36 @@ import { SaveButton } from "@/components/save-button";
 export default function ListingsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const { coords: userCoords, locationText } = useCurrentLocation();
-  const { data: farms = [], isLoading, error } = useFarms();
+  const { session } = useAuth();
   const [activeFilter, setActiveFilter] = useState<ListingCategory>("All");
+  const [refreshing, setRefreshing] = useState(false);
   const {
-    data: marketplaceListings = [],
+    data: ownedFarm,
+    isLoading: farmLoading,
+    error: farmError,
+    refetch: refetchFarm,
+  } = useQuery({
+    queryKey: ["owned-farm", session?.user.id],
+    enabled: !!session?.user.id,
+    queryFn: async () => {
+      if (!session?.user.id) return null;
+      return fetchOwnedFarmByUserId(session.user.id);
+    },
+  });
+  const {
+    data: ownedListings = [],
     isLoading: listingsLoading,
     error: listingsError,
+    refetch: refetchListings,
   } = useQuery({
-    queryKey: ["marketplace-listings"],
-    queryFn: fetchMarketplaceListings,
+    queryKey: ["owned-marketplace-listings", ownedFarm?.id],
+    enabled: !!ownedFarm?.id,
+    queryFn: async () => fetchFarmListingsByFarmId(ownedFarm!.id),
   });
 
   const listings = useMemo<ListingRow[]>(
-    () => buildListingRows(marketplaceListings, userCoords),
-    [marketplaceListings, userCoords]
+    () => buildListingRows(ownedListings, null),
+    [ownedListings]
   );
 
   const filters = useMemo<ListingCategory[]>(
@@ -52,6 +65,15 @@ export default function ListingsScreen() {
     () => filterListingRows(listings, activeFilter, ""),
     [listings, activeFilter]
   );
+
+  const shouldOpenFarmSetup =
+    !!session?.user.id && !farmLoading && !farmError && !ownedFarm;
+
+  useEffect(() => {
+    if (shouldOpenFarmSetup) {
+      router.replace("/listing/new");
+    }
+  }, [shouldOpenFarmSetup]);
 
   const getFilterColors = (filter: ListingCategory) => {
     if (filter === "All") {
@@ -70,34 +92,23 @@ export default function ListingsScreen() {
     };
   };
 
-  const handleFarmPress = (farmId: string) => {
-    router.push(`/farm/${farmId}`);
-  };
+  if (shouldOpenFarmSetup) {
+    return (
+      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+        <ThemedText style={{ color: colors.text.secondary }}>Opening farm setup…</ThemedText>
+      </SafeAreaView>
+    );
+  }
 
-  const handleDirectionPress = async (farmId: string) => {
-    const farm = farms.find((f) => f.id === farmId);
-    const listing = listings.find((item) => item.farmId === farmId);
-    const fallbackAddress = listing
-      ? formatAddress({
-          city: listing.city,
-          state: listing.state,
-          postal_code: listing.postal_code,
-          country: listing.country,
-        })
-      : "";
-
-    if (!farm) return;
-
-    const formattedFarmAddress = formatAddress(farm);
-    const finalDest =
-      formattedFarmAddress.trim() || fallbackAddress.trim()
-        ? formattedFarmAddress.trim() || fallbackAddress.trim()
-        : `${farm.latitude},${farm.longitude}`;
-
+  const refreshListings = async () => {
+    setRefreshing(true);
     try {
-      await openDirections(finalDest);
-    } catch (e) {
-      console.log("Could not open directions", e);
+      const farmResult = await refetchFarm();
+      if (farmResult.data?.id) {
+        await refetchListings();
+      }
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -109,18 +120,31 @@ export default function ListingsScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void refreshListings()}
+            tintColor={theme.brand.primary}
+          />
+        }
       >
         {/* ── Hero Header ── */}
         <View style={[styles.hero, { paddingTop: theme.spacing.lg + insets.top }]}>
+          {ownedFarm?.imageUrl ? (
+            <>
+              <Image source={{ uri: ownedFarm.imageUrl }} style={styles.heroImage} contentFit="cover" />
+              <View style={styles.heroImageOverlay} />
+            </>
+          ) : null}
           {/* Decorative blobs */}
           <View style={styles.blobLarge} />
           <View style={styles.blobSmall} />
 
           <View style={styles.heroInner}>
-            <ThemedText style={styles.heroEyebrow}>Nearby produce</ThemedText>
-            <ThemedText style={styles.heroTitle}>Listings</ThemedText>
+            <ThemedText style={styles.heroEyebrow}>Your farm</ThemedText>
+            <ThemedText style={styles.heroTitle}>{ownedFarm?.name ?? "My listings"}</ThemedText>
             <ThemedText style={styles.heroSubtitle}>
-              Browse farm produce by item, price, and source.
+              Add produce and keep your availability up to date.
             </ThemedText>
 
             <View style={styles.actionButtonsRow}>
@@ -136,89 +160,96 @@ export default function ListingsScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.manageListingButton}
-                onPress={() => router.push("/listing/manage")}
+                style={styles.manageFarmButton}
+                onPress={() => router.push("/farm/manage")}
                 activeOpacity={0.88}
               >
-                <Ionicons name="settings-outline" size={18} color="#2E2A1F" />
-                <ThemedText style={styles.manageListingButtonText}>
-                  Manage listings
-                </ThemedText>
+                <Ionicons name="leaf-outline" size={18} color="#2E2A1F" />
+                <ThemedText style={styles.manageFarmButtonText}>Manage farm</ThemedText>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.locationPill}>
-              <View style={styles.locationDot} />
-              <ThemedText style={styles.locationText}>{locationText}</ThemedText>
-            </View>
-
-            <TouchableOpacity
-              style={[
-                styles.searchBar,
-                {
-                  backgroundColor: "rgba(255,255,255,0.78)",
-                  borderColor: "rgba(46,42,31,0.08)",
-                },
-              ]}
-              onPress={() => router.push("/listing/search")}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="search" size={18} color={colors.text.tertiary} />
-              <ThemedText style={[styles.searchInput, { color: colors.input.placeholder }]}>
-                Search produce, farm, or category
-              </ThemedText>
-            </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Filter Pills ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterRow}
-          style={styles.filterScroll}
-        >
-          {filters.map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              style={[
-                styles.filterPill,
-                activeFilter === filter
-                  ? getFilterColors(filter)
-                  : { borderColor: colors.border.light, backgroundColor: colors.background },
-              ]}
-              onPress={() => setActiveFilter(filter)}
-              activeOpacity={0.8}
-            >
-              <ThemedText
+        <View style={styles.listHeader}>
+          <View>
+            <ThemedText style={[styles.listTitle, { color: colors.text.primary }]}>
+              Your listings
+            </ThemedText>
+            <ThemedText style={[styles.listCount, { color: colors.text.secondary }]}>
+              {listings.length} {listings.length === 1 ? "item" : "items"} listed
+            </ThemedText>
+          </View>
+          <TouchableOpacity
+            style={[styles.manageTextButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
+            onPress={() => router.push("/listing/manage")}
+            activeOpacity={0.85}
+          >
+            <ThemedText style={[styles.manageTextButtonText, { color: colors.text.primary }]}>
+              Manage
+            </ThemedText>
+            <Ionicons name="chevron-forward" size={15} color={colors.text.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {filters.length > 1 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+            style={styles.filterScroll}
+          >
+            {filters.map((filter) => (
+              <TouchableOpacity
+                key={filter}
                 style={[
-                  styles.filterPillText,
-                  {
-                    color:
-                      activeFilter === filter
-                        ? getFilterColors(filter).textColor
-                        : colors.text.secondary,
-                  },
+                  styles.filterPill,
+                  activeFilter === filter
+                    ? getFilterColors(filter)
+                    : { borderColor: colors.border.light, backgroundColor: colors.background },
                 ]}
+                onPress={() => setActiveFilter(filter)}
+                activeOpacity={0.8}
               >
-                {filter}
-              </ThemedText>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+                <ThemedText
+                  style={[
+                    styles.filterPillText,
+                    {
+                      color:
+                        activeFilter === filter
+                          ? getFilterColors(filter).textColor
+                          : colors.text.secondary,
+                    },
+                  ]}
+                >
+                  {filter}
+                </ThemedText>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : null}
 
         {/* ── Listings ── */}
-        {isLoading || listingsLoading ? (
+        {!session?.user.id ? (
+          <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
+            Sign in to view and manage your farm listings.
+          </ThemedText>
+        ) : farmLoading || listingsLoading ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
             Loading listings…
           </ThemedText>
-        ) : error || listingsError ? (
+        ) : farmError || listingsError ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
             Could not load listings.
           </ThemedText>
+        ) : !ownedFarm ? (
+          <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
+            Create your farm to start adding produce.
+          </ThemedText>
         ) : filteredListings.length === 0 ? (
           <ThemedText style={[styles.statusText, { color: colors.text.tertiary }]}>
-            No listings in this category yet.
+            You have no listings in this category yet.
           </ThemedText>
         ) : (
           <View style={styles.listingsStack}>
@@ -230,13 +261,17 @@ export default function ListingsScreen() {
                   { backgroundColor: colors.surface, borderColor: colors.border.light },
                 ]}
                 activeOpacity={0.88}
-                onPress={() => handleFarmPress(item.farmId)}
+                onPress={() => router.push("/listing/manage")}
               >
                 <View style={styles.cardSave}><SaveButton type="listing" itemId={item.id} size={18} /></View>
                 {/* Thumb */}
                 <View style={[styles.cardThumb, { backgroundColor: item.color }]}>
-                  {item.imageUrl ? (
-                    <Image source={{ uri: item.imageUrl }} style={styles.cardThumbImage} contentFit="cover" />
+                  {item.imageUrl || item.farmImageUrl ? (
+                    <Image
+                      source={{ uri: item.imageUrl ?? item.farmImageUrl! }}
+                      style={styles.cardThumbImage}
+                      contentFit="cover"
+                    />
                   ) : (
                     <Ionicons name={item.icon} size={30} color={theme.brand.primary} />
                   )}
@@ -284,35 +319,11 @@ export default function ListingsScreen() {
                     {item.note}
                   </ThemedText>
 
-                  {/* Footer: farm + directions */}
                   <View style={styles.cardFooter}>
-                    <View style={styles.farmTag}>
-                      <View
-                        style={[styles.farmDot, { backgroundColor: item.farmDotColor }]}
-                      />
-                      <ThemedText
-                        style={[styles.farmName, { color: colors.text.secondary }]}
-                        numberOfLines={1}
-                      >
-                        {item.farmName}
-                      </ThemedText>
-                    </View>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.dirButton,
-                        { borderColor: colors.border.light, backgroundColor: colors.card },
-                      ]}
-                      onPress={() => handleDirectionPress(item.farmId)}
-                      hitSlop={8}
-                    >
-                      <Ionicons name="navigate-outline" size={12} color={colors.text.primary} />
-                      <ThemedText
-                        style={[styles.dirButtonText, { color: colors.text.primary }]}
-                      >
-                        Directions
-                      </ThemedText>
-                    </TouchableOpacity>
+                    <ThemedText style={[styles.editHint, { color: colors.text.tertiary }]}>
+                      Tap to edit
+                    </ThemedText>
+                    <Ionicons name="chevron-forward" size={16} color={colors.text.tertiary} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -329,6 +340,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  centered: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: theme.spacing.lg,
+  },
   content: {
     paddingBottom: theme.spacing.sm,
   },
@@ -341,6 +358,13 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.xl,
     overflow: "hidden",
     position: "relative",
+  },
+  heroImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  heroImageOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(247, 229, 191, 0.38)",
   },
   blobLarge: {
     position: "absolute",
@@ -385,17 +409,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     maxWidth: "85%",
   },
-  locationPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.72)",
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginTop: theme.spacing.sm,
-  },
   createListingButton: {
     borderRadius: theme.borderRadius.full,
     backgroundColor: "#3D6B2F",
@@ -416,7 +429,7 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: theme.spacing.md,
   },
-  manageListingButton: {
+  manageFarmButton: {
     borderRadius: theme.borderRadius.full,
     backgroundColor: "rgba(255,255,255,0.72)",
     paddingHorizontal: 14,
@@ -427,41 +440,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(46,42,31,0.08)",
   },
-  manageListingButtonText: {
+  manageFarmButtonText: {
     color: "#2E2A1F",
     fontSize: 13,
     fontWeight: "700",
   },
-  locationDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: "#6E7B37",
-  },
-  locationText: {
-    fontSize: 12,
-    color: "#5A564B",
-    fontWeight: "500",
-  },
-  searchBar: {
-    marginTop: theme.spacing.md,
-    borderRadius: theme.borderRadius.full,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-    color: "#2E2A1F",
-  },
 
   // ── Filters ──
   filterScroll: {
-    marginTop: theme.spacing.md,
+    marginTop: theme.spacing.sm,
   },
   filterRow: {
     paddingHorizontal: theme.spacing.lg,
@@ -477,12 +464,41 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "500",
   },
+  listHeader: {
+    paddingHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
+  },
+  listTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+  },
+  listCount: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  manageTextButton: {
+    borderWidth: 1,
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+  },
+  manageTextButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
 
   // ── Listings ──
   listingsStack: {
     gap: 12,
     paddingHorizontal: theme.spacing.lg,
-    marginTop: theme.spacing.md,
+    marginTop: theme.spacing.sm,
   },
   statusText: {
     fontSize: 14,
@@ -560,32 +576,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 6,
   },
-  farmTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    flex: 1,
-  },
-  farmDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    flexShrink: 0,
-  },
-  farmName: {
-    fontSize: 11,
-    flex: 1,
-  },
-  dirButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  dirButtonText: {
+  editHint: {
     fontSize: 11,
     fontWeight: "600",
   },

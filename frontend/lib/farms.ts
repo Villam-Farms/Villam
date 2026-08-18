@@ -1,8 +1,14 @@
 import { supabase } from "@/lib/supabase";
+import { apiBaseUrl } from "@/lib/api";
+import {
+  FARM_IMAGE_BUCKET,
+  farmImagePathFromUrl,
+  resolveFarmImageUrl,
+} from "@/lib/farm-image-storage";
 import type { FarmWithCoords } from "@/lib/location";
 
 const FARM_SELECT_COLUMNS =
-  "id,name,latitude,longitude,city,state,postal_code,country,website,description";
+  "id,name,latitude,longitude,city,state,postal_code,country,website,description,image_url,image_path";
 
 type FarmRatingAggregate = {
   average: number;
@@ -61,11 +67,23 @@ function normalizeFarmRecord(
 
   return {
     ...data,
+    imageUrl: typeof data.image_url === "string" ? data.image_url : null,
+    imagePath: typeof data.image_path === "string" ? data.image_path : null,
     rating: ratingSummary?.average ?? 0,
     reviews: ratingSummary?.count ?? 0,
     products: "",
     street: null,
   } as FarmWithCoords;
+}
+
+async function hydrateFarmImage(record: Record<string, unknown>) {
+  const storedImagePath = typeof record.image_path === "string" ? record.image_path : null;
+  const fallbackUrl = typeof record.image_url === "string" ? record.image_url : null;
+  const imagePath = storedImagePath || farmImagePathFromUrl(fallbackUrl);
+  if (!imagePath) return record;
+
+  const imageUrl = await resolveFarmImageUrl(imagePath, fallbackUrl);
+  return { ...record, image_path: imagePath, image_url: imageUrl };
 }
 
 export async function fetchFarms(): Promise<FarmWithCoords[]> {
@@ -83,7 +101,9 @@ export async function fetchFarms(): Promise<FarmWithCoords[]> {
       .filter((id): id is string => typeof id === "string")
   );
 
-  return farms.map((farm) => normalizeFarmRecord(farm, ratingAggregates));
+  return Promise.all(
+    farms.map(async (farm) => normalizeFarmRecord(await hydrateFarmImage(farm), ratingAggregates))
+  );
 }
 
 export type CreateFarmInput = {
@@ -144,7 +164,7 @@ export async function fetchFarmById(farmId: string): Promise<FarmWithCoords | nu
   if (error) throw error;
   if (!data) return null;
 
-  return normalizeFarmRecord(data);
+  return normalizeFarmRecord(await hydrateFarmImage(data));
 }
 
 export async function fetchOwnedFarmByUserId(userId: string): Promise<FarmWithCoords | null> {
@@ -158,7 +178,7 @@ export async function fetchOwnedFarmByUserId(userId: string): Promise<FarmWithCo
   if (error) throw error;
 
   const farm = data?.[0];
-  return farm ? normalizeFarmRecord(farm) : null;
+  return farm ? normalizeFarmRecord(await hydrateFarmImage(farm)) : null;
 }
 
 export async function createFarm(input: CreateFarmInput): Promise<FarmWithCoords> {
@@ -213,4 +233,122 @@ export async function updateFarm(input: UpdateFarmInput): Promise<FarmWithCoords
   }
 
   return normalizeFarmRecord(data);
+}
+
+function getImageExtension(uri: string) {
+  const extension = uri.split("?")[0].split(".").pop()?.toLowerCase();
+  return extension && /^[a-z0-9]+$/.test(extension) ? extension : "jpg";
+}
+
+function getImageMimeType(extension: string) {
+  if (extension === "png") return "image/png";
+  if (extension === "webp") return "image/webp";
+  return "image/jpeg";
+}
+
+export async function uploadFarmImage(
+  userId: string,
+  farmId: string,
+  uri: string
+) {
+  const { data: currentFarm, error: currentFarmError } = await supabase
+    .from("farms")
+    .select("image_path")
+    .eq("id", farmId)
+    .maybeSingle();
+  if (currentFarmError) throw currentFarmError;
+
+  const extension = getImageExtension(uri);
+  const path = `${userId}/${farmId}/${Date.now()}.${extension}`;
+  const response = await fetch(uri);
+  const arrayBuffer = await response.arrayBuffer();
+  const { data: uploaded, error: uploadError } = await supabase.storage
+    .from(FARM_IMAGE_BUCKET)
+    .upload(path, arrayBuffer, { contentType: getImageMimeType(extension), upsert: false });
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = supabase.storage.from(FARM_IMAGE_BUCKET).getPublicUrl(uploaded.path);
+  const { error: updateError } = await supabase
+    .from("farms")
+    .update({ image_path: uploaded.path, image_url: urlData.publicUrl })
+    .eq("id", farmId);
+  if (updateError) {
+    await supabase.storage.from(FARM_IMAGE_BUCKET).remove([uploaded.path]);
+    throw updateError;
+  }
+  const previousPath =
+    currentFarm && typeof currentFarm.image_path === "string" ? currentFarm.image_path : null;
+  if (previousPath && previousPath !== uploaded.path) {
+    const { error: removeError } = await supabase.storage.from(FARM_IMAGE_BUCKET).remove([previousPath]);
+    if (removeError) console.warn("Could not remove previous farm image", removeError.message);
+  }
+
+  return { path: uploaded.path, url: urlData.publicUrl };
+}
+
+export async function clearFarmImage(farmId: string, imagePath?: string | null) {
+  if (imagePath) {
+    const { error } = await supabase.storage.from(FARM_IMAGE_BUCKET).remove([imagePath]);
+    if (error) throw error;
+  }
+  const { error } = await supabase
+    .from("farms")
+    .update({ image_path: null, image_url: null })
+    .eq("id", farmId);
+  if (error) throw error;
+}
+
+export async function deleteFarm(accessToken: string, farmId: string) {
+  const res = await fetch(`${apiBaseUrl}/farms/${encodeURIComponent(farmId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.status === 404) {
+    await deleteFarmDirectly(farmId);
+    return;
+  }
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(data?.detail || `Request failed (${res.status})`);
+  }
+}
+
+async function deleteFarmDirectly(farmId: string) {
+  const { data: farm, error: farmLookupError } = await supabase
+    .from("farms")
+    .select("id,image_path")
+    .eq("id", farmId)
+    .maybeSingle();
+  if (farmLookupError) throw farmLookupError;
+  if (!farm) throw new Error("Farm not found.");
+
+  // Farm listings normally cascade when their farm is removed. Delete them explicitly
+  // first so this also works with databases that use restrictive foreign keys.
+  const { error: listingsError } = await supabase
+    .from("farm_listings")
+    .delete()
+    .eq("farm_id", farmId);
+  if (listingsError) throw listingsError;
+
+  const { error: ratingsError } = await supabase
+    .from("farm_ratings")
+    .delete()
+    .eq("farm_id", farmId);
+  if (ratingsError) throw ratingsError;
+
+  const { data: deletedFarm, error: deleteError } = await supabase
+    .from("farms")
+    .delete()
+    .eq("id", farmId)
+    .select("id")
+    .maybeSingle();
+  if (deleteError) throw deleteError;
+  if (!deletedFarm) throw new Error("You do not have permission to delete this farm.");
+
+  if (typeof farm.image_path === "string" && farm.image_path) {
+    const { error: imageError } = await supabase.storage
+      .from(FARM_IMAGE_BUCKET)
+      .remove([farm.image_path]);
+    if (imageError) console.warn("Could not remove deleted farm image", imageError.message);
+  }
 }

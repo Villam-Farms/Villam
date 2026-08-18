@@ -40,6 +40,8 @@ export type FarmWithCoords = {
   country?: string | null;
   website?: string | null;
   description?: string | null;
+  imageUrl?: string | null;
+  imagePath?: string | null;
 };
 
 

@@ -23,7 +23,7 @@ import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useCurrentLocation } from "@/hooks/useCurrentLocation";
 import { useAuth } from "@/context/auth-context";
-import { createFarm, fetchOwnedFarmByUserId } from "@/lib/farms";
+import { createFarm, fetchOwnedFarmByUserId, uploadFarmImage } from "@/lib/farms";
 import {
   createFarmListing,
   CURRENCY_OPTIONS,
@@ -90,6 +90,7 @@ export default function NewListingScreen() {
   const [activePicker, setActivePicker] = useState<PickerField>(null);
   const [submittingFarm, setSubmittingFarm] = useState(false);
   const [submittingListing, setSubmittingListing] = useState(false);
+  const [farmImage, setFarmImage] = useState<PickedListingImage | null>(null);
   const [listingImage, setListingImage] = useState<PickedListingImage | null>(null);
 
   const { data: produceCatalog, isLoading: catalogLoading, error: catalogError } = useQuery({
@@ -223,9 +224,10 @@ export default function NewListingScreen() {
     }
 
     setSubmittingFarm(true);
+    let createdFarm: Awaited<ReturnType<typeof createFarm>> | null = null;
 
     try {
-      await createFarm({
+      createdFarm = await createFarm({
         user_id: session.user.id,
         name: farmName.trim(),
         latitude: pickedCoords.latitude,
@@ -238,11 +240,24 @@ export default function NewListingScreen() {
         description: farmDescription,
       });
 
+      if (farmImage) {
+        await uploadFarmImage(session.user.id, createdFarm.id, farmImage.uri);
+      }
+
       await queryClient.invalidateQueries({ queryKey: ["owned-farm", session.user.id] });
       await queryClient.invalidateQueries({ queryKey: ["farms"] });
       Alert.alert("Farm created", "Your farm is ready. You can list produce now.");
     } catch (error) {
       console.log("Could not create farm", error);
+      if (createdFarm) {
+        await queryClient.invalidateQueries({ queryKey: ["owned-farm", session.user.id] });
+        await queryClient.invalidateQueries({ queryKey: ["farms"] });
+        Alert.alert(
+          "Farm created, photo not uploaded",
+          "Your farm was saved, but its photo could not be uploaded. Please try again later."
+        );
+        return;
+      }
       const message =
         error instanceof Error && error.message.trim()
           ? error.message
@@ -251,6 +266,29 @@ export default function NewListingScreen() {
     } finally {
       setSubmittingFarm(false);
     }
+  };
+
+  const handlePickFarmImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("Permission needed", "Please allow photo library access to upload a farm photo.");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.85,
+    });
+    if (result.canceled || !result.assets?.[0]?.uri) return;
+
+    const asset = result.assets[0];
+    if (asset.fileSize != null && asset.fileSize > 10 * 1024 * 1024) {
+      Alert.alert("Too large", "Please choose an image under 10MB.");
+      return;
+    }
+    setFarmImage({ uri: asset.uri, name: "farm.jpg", type: asset.mimeType ?? "image/jpeg" });
   };
 
   const handleCreateListing = async () => {
@@ -291,7 +329,7 @@ export default function NewListingScreen() {
       Alert.alert("Listing created", "Your produce listing is now live.", [
         {
           text: "Done",
-          onPress: () => router.back(),
+          onPress: () => router.replace("/(tabs)/listings"),
         },
       ]);
     } catch (error) {
@@ -410,7 +448,7 @@ export default function NewListingScreen() {
         >
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: "rgba(255,255,255,0.92)" }]}
-            onPress={() => router.back()}
+            onPress={() => router.canGoBack() ? router.back() : router.replace("/(tabs)")}
             activeOpacity={0.85}
           >
             <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
@@ -452,6 +490,37 @@ export default function NewListingScreen() {
                   },
                 ]}
               />
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <ThemedText style={[styles.fieldLabel, { color: colors.text.primary }]}>Farm photo</ThemedText>
+              <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>
+                Optional. Add a photo so shoppers can recognize your farm.
+              </ThemedText>
+              {farmImage ? (
+                <View style={[styles.imagePreviewCard, { borderColor: colors.border.light }]}>
+                  <Image source={{ uri: farmImage.uri }} style={styles.imagePreview} contentFit="cover" />
+                </View>
+              ) : (
+                <View style={[styles.imagePlaceholderCard, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}>
+                  <Ionicons name="image-outline" size={24} color={colors.text.tertiary} />
+                  <ThemedText style={{ color: colors.text.secondary }}>No farm photo selected</ThemedText>
+                </View>
+              )}
+              <View style={styles.imageActionsRow}>
+                <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.border.light, backgroundColor: colors.card }]} onPress={handlePickFarmImage} activeOpacity={0.85}>
+                  <Ionicons name="images-outline" size={16} color={colors.text.primary} />
+                  <ThemedText style={[styles.secondaryButtonText, { color: colors.text.primary }]}>
+                    {farmImage ? "Change photo" : "Add photo"}
+                  </ThemedText>
+                </TouchableOpacity>
+                {farmImage ? (
+                  <TouchableOpacity style={[styles.secondaryButton, { borderColor: colors.border.light, backgroundColor: colors.card }]} onPress={() => setFarmImage(null)} activeOpacity={0.85}>
+                    <Ionicons name="trash-outline" size={16} color={colors.text.primary} />
+                    <ThemedText style={[styles.secondaryButtonText, { color: colors.text.primary }]}>Remove</ThemedText>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
             </View>
 
             <View style={styles.fieldGroup}>

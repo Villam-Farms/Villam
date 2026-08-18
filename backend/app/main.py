@@ -1,5 +1,6 @@
 from io import BytesIO
 import os
+from urllib.parse import unquote, urlparse
 from datetime import datetime, timezone
 
 import jwt
@@ -111,6 +112,15 @@ class UserProfileOut(MeOut):
 class ListingImageOut(BaseModel):
     id: str
     image_url: str | None = None
+
+
+class FarmImageOut(BaseModel):
+    id: str
+    image_url: str | None = None
+
+
+class FarmDeleteOut(BaseModel):
+    id: str
 
 
 class FarmRatingIn(BaseModel):
@@ -553,6 +563,63 @@ def _set_listing_image_url(listing_id: str, image_url: str | None) -> ListingIma
     return ListingImageOut(id=listing_id, image_url=image_url)
 
 
+def _listing_image_storage_path(image_url: str | None) -> str | None:
+    """Return a path only for URLs created in the listing-images public bucket."""
+    if not image_url:
+        return None
+
+    path = urlparse(image_url).path
+    prefix = "/storage/v1/object/public/listing-images/"
+    if not path.startswith(prefix):
+        return None
+
+    object_path = unquote(path.removeprefix(prefix)).strip("/")
+    return object_path or None
+
+
+def _delete_listing_image_from_storage(image_url: str | None) -> None:
+    object_path = _listing_image_storage_path(image_url)
+    if object_path:
+        supabase.storage.from_("listing-images").remove([object_path])
+
+
+def _get_farm_owner(farm_id: str) -> tuple[str, str | None]:
+    response = supabase.table("farms").select("id,user_id,image_url").eq("id", farm_id).maybe_single().execute()
+    farm = getattr(response, "data", None)
+    if not isinstance(farm, dict) or not farm.get("user_id"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Farm not found")
+    return str(farm["user_id"]), farm.get("image_url")
+
+
+def _ensure_farm_owner(farm_id: str, user_id: str) -> str | None:
+    owner_id, image_url = _get_farm_owner(farm_id)
+    if owner_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You do not own this farm")
+    return image_url
+
+
+def _set_farm_image_url(farm_id: str, image_url: str | None) -> FarmImageOut:
+    supabase.table("farms").update({"image_url": image_url}).eq("id", farm_id).execute()
+    return FarmImageOut(id=farm_id, image_url=image_url)
+
+
+def _farm_image_storage_path(image_url: str | None) -> str | None:
+    if not image_url:
+        return None
+    prefix = "/storage/v1/object/public/farm-images/"
+    path = urlparse(image_url).path
+    if not path.startswith(prefix):
+        return None
+    object_path = unquote(path.removeprefix(prefix)).strip("/")
+    return object_path or None
+
+
+def _delete_farm_image_from_storage(image_url: str | None) -> None:
+    object_path = _farm_image_storage_path(image_url)
+    if object_path:
+        supabase.storage.from_("farm-images").remove([object_path])
+
+
 @app.post("/me/avatar", response_model=MeOut)
 async def upload_avatar(
     file: UploadFile = File(...), user_id: str = Depends(get_current_user_id)
@@ -585,7 +652,7 @@ async def upload_avatar(
 async def upload_listing_image(
     listing_id: str, file: UploadFile = File(...), user_id: str = Depends(get_current_user_id)
 ) -> ListingImageOut:
-    _ensure_listing_owner(listing_id, user_id)
+    previous_image_url = _ensure_listing_owner(listing_id, user_id)
 
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type")
@@ -607,15 +674,126 @@ async def upload_listing_image(
     )
 
     public_url = supabase.storage.from_("listing-images").get_public_url(object_path)
-    return _set_listing_image_url(listing_id, public_url)
+    try:
+        result = _set_listing_image_url(listing_id, public_url)
+    except Exception:
+        # The upload is not useful if its URL could not be persisted.
+        _delete_listing_image_from_storage(public_url)
+        raise
+
+    # The database now points to the new object, so the old object can be cleaned up.
+    _delete_listing_image_from_storage(previous_image_url)
+    return result
+
+
+@app.post("/farms/{farm_id}/image", response_model=FarmImageOut)
+async def upload_farm_image(
+    farm_id: str, file: UploadFile = File(...), user_id: str = Depends(get_current_user_id)
+) -> FarmImageOut:
+    previous_image_url = _ensure_farm_owner(farm_id, user_id)
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid file type")
+
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large")
+    try:
+        compressed = _compress_image_to_jpeg(raw, max_dim=1200)
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to process image")
+
+    object_path = f"{user_id}/{farm_id}_{int.from_bytes(os.urandom(4), 'big')}.jpg"
+    supabase.storage.from_("farm-images").upload(
+        object_path, compressed, {"content-type": "image/jpeg", "cache-control": "3600"}
+    )
+    public_url = supabase.storage.from_("farm-images").get_public_url(object_path)
+    try:
+        result = _set_farm_image_url(farm_id, public_url)
+    except Exception:
+        _delete_farm_image_from_storage(public_url)
+        raise
+
+    _delete_farm_image_from_storage(previous_image_url)
+    return result
+
+
+@app.delete("/farms/{farm_id}/image", response_model=FarmImageOut)
+def delete_farm_image(
+    farm_id: str, user_id: str = Depends(get_current_user_id)
+) -> FarmImageOut:
+    previous_image_url = _ensure_farm_owner(farm_id, user_id)
+    _delete_farm_image_from_storage(previous_image_url)
+    return _set_farm_image_url(farm_id, None)
+
+
+@app.delete("/farms/{farm_id}", response_model=FarmDeleteOut)
+def delete_farm(farm_id: str, user_id: str = Depends(get_current_user_id)) -> FarmDeleteOut:
+    _ensure_farm_owner(farm_id, user_id)
+
+    farm_response = (
+        supabase.table("farms")
+        .select("image_url,image_path")
+        .eq("id", farm_id)
+        .single()
+        .execute()
+    )
+    farm = getattr(farm_response, "data", None) or {}
+    listing_response = (
+        supabase.table("farm_listings")
+        .select("image_url")
+        .eq("farm_id", farm_id)
+        .execute()
+    )
+    listing_image_urls = [
+        row.get("image_url")
+        for row in (getattr(listing_response, "data", None) or [])
+        if isinstance(row, dict)
+    ]
+
+    # Remove related data before the farm in case the database has restrictive foreign keys.
+    supabase.table("farm_ratings").delete().eq("farm_id", farm_id).execute()
+    supabase.table("farm_listings").delete().eq("farm_id", farm_id).execute()
+    supabase.table("farms").delete().eq("id", farm_id).execute()
+
+    for image_url in listing_image_urls:
+        try:
+            _delete_listing_image_from_storage(image_url)
+        except Exception as error:
+            print("Could not remove deleted farm listing image", error)
+
+    image_path = farm.get("image_path") if isinstance(farm, dict) else None
+    if isinstance(image_path, str) and image_path:
+        try:
+            supabase.storage.from_("farm-images").remove([image_path])
+        except Exception as error:
+            print("Could not remove deleted farm image", error)
+    else:
+        _delete_farm_image_from_storage(farm.get("image_url") if isinstance(farm, dict) else None)
+
+    return FarmDeleteOut(id=farm_id)
 
 
 @app.delete("/listings/{listing_id}/image", response_model=ListingImageOut)
 def delete_listing_image(
     listing_id: str, user_id: str = Depends(get_current_user_id)
 ) -> ListingImageOut:
-    _ensure_listing_owner(listing_id, user_id)
+    previous_image_url = _ensure_listing_owner(listing_id, user_id)
+    _delete_listing_image_from_storage(previous_image_url)
     return _set_listing_image_url(listing_id, None)
+
+
+@app.delete("/listings/{listing_id}", response_model=ListingImageOut)
+def delete_listing(
+    listing_id: str, user_id: str = Depends(get_current_user_id)
+) -> ListingImageOut:
+    image_url = _ensure_listing_owner(listing_id, user_id)
+    supabase.table("farm_listings").delete().eq("id", listing_id).execute()
+    try:
+        _delete_listing_image_from_storage(image_url)
+    except Exception as error:
+        # The listing is already deleted; do not make the client retry and receive a 404.
+        print("Could not remove deleted listing image", error)
+    return ListingImageOut(id=listing_id, image_url=None)
 
 
 @app.get("/followers", response_model=list[SearchUserOut])
