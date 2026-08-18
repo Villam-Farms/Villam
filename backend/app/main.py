@@ -119,6 +119,10 @@ class FarmImageOut(BaseModel):
     image_url: str | None = None
 
 
+class FarmDeleteOut(BaseModel):
+    id: str
+
+
 class FarmRatingIn(BaseModel):
     rating: float = Field(..., ge=1, le=5)
     review: str = Field(..., min_length=1, max_length=500)
@@ -720,6 +724,53 @@ def delete_farm_image(
     previous_image_url = _ensure_farm_owner(farm_id, user_id)
     _delete_farm_image_from_storage(previous_image_url)
     return _set_farm_image_url(farm_id, None)
+
+
+@app.delete("/farms/{farm_id}", response_model=FarmDeleteOut)
+def delete_farm(farm_id: str, user_id: str = Depends(get_current_user_id)) -> FarmDeleteOut:
+    _ensure_farm_owner(farm_id, user_id)
+
+    farm_response = (
+        supabase.table("farms")
+        .select("image_url,image_path")
+        .eq("id", farm_id)
+        .single()
+        .execute()
+    )
+    farm = getattr(farm_response, "data", None) or {}
+    listing_response = (
+        supabase.table("farm_listings")
+        .select("image_url")
+        .eq("farm_id", farm_id)
+        .execute()
+    )
+    listing_image_urls = [
+        row.get("image_url")
+        for row in (getattr(listing_response, "data", None) or [])
+        if isinstance(row, dict)
+    ]
+
+    # Remove related data before the farm in case the database has restrictive foreign keys.
+    supabase.table("farm_ratings").delete().eq("farm_id", farm_id).execute()
+    supabase.table("farm_listings").delete().eq("farm_id", farm_id).execute()
+    supabase.table("farms").delete().eq("id", farm_id).execute()
+
+    for image_url in listing_image_urls:
+        try:
+            _delete_listing_image_from_storage(image_url)
+        except Exception as error:
+            print("Could not remove deleted farm listing image", error)
+
+    image_path = farm.get("image_path") if isinstance(farm, dict) else None
+    if isinstance(image_path, str) and image_path:
+        try:
+            supabase.storage.from_("farm-images").remove([image_path])
+        except Exception as error:
+            print("Could not remove deleted farm image", error)
+    else:
+        _delete_farm_image_from_storage(farm.get("image_url") if isinstance(farm, dict) else None)
+
+    return FarmDeleteOut(id=farm_id)
 
 
 @app.delete("/listings/{listing_id}/image", response_model=ListingImageOut)

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, View, TouchableOpacity } from "react-native";
+import { RefreshControl, ScrollView, StyleSheet, View, TouchableOpacity } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,10 +25,12 @@ export default function ListingsScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const [activeFilter, setActiveFilter] = useState<ListingCategory>("All");
+  const [refreshing, setRefreshing] = useState(false);
   const {
     data: ownedFarm,
     isLoading: farmLoading,
     error: farmError,
+    refetch: refetchFarm,
   } = useQuery({
     queryKey: ["owned-farm", session?.user.id],
     enabled: !!session?.user.id,
@@ -41,6 +43,7 @@ export default function ListingsScreen() {
     data: ownedListings = [],
     isLoading: listingsLoading,
     error: listingsError,
+    refetch: refetchListings,
   } = useQuery({
     queryKey: ["owned-marketplace-listings", ownedFarm?.id],
     enabled: !!ownedFarm?.id,
@@ -79,6 +82,18 @@ export default function ListingsScreen() {
     };
   };
 
+  const refreshListings = async () => {
+    setRefreshing(true);
+    try {
+      const farmResult = await refetchFarm();
+      if (farmResult.data?.id) {
+        await refetchListings();
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -87,6 +102,13 @@ export default function ListingsScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void refreshListings()}
+            tintColor={theme.brand.primary}
+          />
+        }
       >
         {/* ── Hero Header ── */}
         <View style={[styles.hero, { paddingTop: theme.spacing.lg + insets.top }]}>
