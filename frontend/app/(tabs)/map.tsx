@@ -1,6 +1,6 @@
 // app/(tabs)/map.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Platform } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
@@ -211,7 +211,8 @@ export default function MapTab() {
 
   if (!region) return <Text>Loading map…</Text>;
 
-  if (!hasGoogleMapsApiKey) {
+  // iOS uses Apple Maps by default, so a Google Maps key is only required for Android.
+  if (Platform.OS === "android" && !hasGoogleMapsApiKey) {
     return (
       <View style={[styles.mapUnavailable, { backgroundColor: colors.background }]}>
         <Text style={[styles.mapUnavailableTitle, { color: colors.text.primary }]}>
