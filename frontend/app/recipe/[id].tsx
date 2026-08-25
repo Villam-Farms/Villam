@@ -46,8 +46,11 @@ type DBStep = {
 
 type DBRecipe = {
   id: string;
+  user_id: string;
   title: string;
   description: string | null;
+  difficulty: string | null;
+  tags: string[] | null;
   cover_image_url: string | null;
   cover_image_path: string | null;
   cover_media: { path?: string; url?: string; position?: number }[] | null;
@@ -106,6 +109,8 @@ type NormalizedRecipe = {
   description: string;
   imageUrl?: string;
   duration: string;
+  difficulty?: string;
+  tags: string[];
   servings?: string;
   rating?: string;
   ratingsCount?: string;
@@ -148,6 +153,7 @@ export default function RecipeDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const [dbRecipe, setDbRecipe] = useState<DBRecipe | null>(null);
+  const [viewerUserId, setViewerUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [choosingList, setChoosingList] = useState(false);
   const [addingToList, setAddingToList] = useState(false);
@@ -157,6 +163,12 @@ export default function RecipeDetailScreen() {
     () => localRecipes.find((item) => item.id === id),
     [id]
   );
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data, error }) => {
+      if (!error) setViewerUserId(data.user?.id ?? null);
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -173,8 +185,11 @@ export default function RecipeDetailScreen() {
         .from("recipes")
         .select(`
           id,
+          user_id,
           title,
           description,
+          difficulty,
+          tags,
           cover_image_url,
           cover_image_path,
           cover_media,
@@ -243,6 +258,8 @@ export default function RecipeDetailScreen() {
         description: dbRecipe.description ?? "",
         imageUrl: dbRecipe.resolved_image_url ?? dbRecipe.cover_image_url ?? undefined,
         duration: dbRecipe.total_time_minutes > 0 ? `${dbRecipe.total_time_minutes} min` : "—",
+        difficulty: dbRecipe.difficulty?.trim() || undefined,
+        tags: Array.isArray(dbRecipe.tags) ? dbRecipe.tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0) : [],
         servings: dbRecipe.servings ? String(dbRecipe.servings) : undefined,
         ingredients,
         steps,
@@ -275,6 +292,7 @@ export default function RecipeDetailScreen() {
         duration: localRecipe.duration,
         rating: String(localRecipe.rating),
         ratingsCount: localRecipe.ratingsCount.toLocaleString(),
+        tags: [],
         ingredients,
         steps,
       };
@@ -294,6 +312,8 @@ export default function RecipeDetailScreen() {
         dedupeKey: buildIngredientKey(item.name, item.unit),
       }));
   }, [recipe]);
+
+  const canEditRecipe = recipe?.source === "db" && dbRecipe?.user_id === viewerUserId;
 
   const loadGroceryListChoices = async () => {
     const localLists = await getLocalGroceryLists();
@@ -675,7 +695,24 @@ export default function RecipeDetailScreen() {
                   color={recipe.imageUrl ? theme.neutral.white : colors.text.primary}
                 />
               </TouchableOpacity>
-              <SaveButton type="recipe" itemId={recipe.id} light={Boolean(recipe.imageUrl)} />
+              <View style={styles.heroActions}>
+                {canEditRecipe && (
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Edit recipe"
+                    style={styles.editButton}
+                    onPress={() => router.push({
+                      pathname: "/recipe/new",
+                      params: { recipeId: recipe.id, ...(recipe.imageUrl ? { coverImageUrl: recipe.imageUrl } : {}) },
+                    })}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="create-outline" size={18} color={theme.neutral.white} />
+                    <ThemedText style={styles.editButtonText}>Edit</ThemedText>
+                  </TouchableOpacity>
+                )}
+                <SaveButton type="recipe" itemId={recipe.id} light={Boolean(recipe.imageUrl)} />
+              </View>
             </View>
 
             <View style={[styles.heroContent, { paddingTop: insets.top + 72 }]}>
@@ -725,19 +762,25 @@ export default function RecipeDetailScreen() {
                 { backgroundColor: colors.background, borderColor: colors.border.light },
               ]}
             >
-              <Ionicons
-                name={recipe.servings ? "people-outline" : "restaurant-outline"}
-                size={18}
-                color={theme.brand.primary}
-              />
+              <Ionicons name="speedometer-outline" size={18} color={theme.brand.primary} />
               <ThemedText style={[styles.metaValue, { color: colors.text.primary }]}>
-                {recipe.servings ?? recipe.rating ?? "—"}
+                {recipe.difficulty ?? "—"}
               </ThemedText>
               <ThemedText style={[styles.metaLabel, { color: colors.text.secondary }]}>
-                {recipe.servings ? "Servings" : recipe.ratingsCount ? `${recipe.ratingsCount} ratings` : "Recipe"}
+                Difficulty
               </ThemedText>
             </View>
           </View>
+
+          {recipe.tags.length > 0 && (
+            <View style={styles.recipeDetails}>
+              {recipe.tags.map((tag) => (
+                <View key={tag} style={[styles.tagPill, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}>
+                  <ThemedText style={[styles.tagText, { color: colors.text.secondary }]}>#{tag.trim()}</ThemedText>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View
             style={[
@@ -945,6 +988,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  heroActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  editButton: {
+    minHeight: 42,
+    borderRadius: 21,
+    paddingHorizontal: theme.spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(17, 24, 28, 0.6)",
+  },
+  editButtonText: {
+    color: theme.neutral.white,
+    fontSize: 14,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
   heroContent: {
     paddingHorizontal: theme.spacing.lg,
     paddingBottom: theme.spacing.xl,
@@ -974,6 +1037,24 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: theme.spacing.md,
     ...theme.shadows.sm,
+  },
+  recipeDetails: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.lg,
+  },
+  tagPill: {
+    minHeight: 32,
+    borderWidth: 1,
+    borderRadius: theme.borderRadius.full,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.sm,
+  },
+  tagText: {
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily,
   },
   metaValue: {
     marginTop: theme.spacing.sm,

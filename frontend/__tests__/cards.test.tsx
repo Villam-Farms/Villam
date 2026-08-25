@@ -104,7 +104,7 @@ describe("RecipeCard", () => {
     expect(screen.getByText("35 min •  Easy ")).toBeTruthy();
     expect(mockSaveButton).toHaveBeenCalledWith({ type: "recipe", itemId: "r1", light: true });
     await fireEvent.press(screen.getByTestId("recipe-card-r1"));
-    await fireEvent.press(screen.getByText("Edit"));
+    await fireEvent.press(screen.getByLabelText("Edit recipe Watermelon Salad"));
     expect(onPress).toHaveBeenCalled();
     expect(onEdit).toHaveBeenCalled();
   });
