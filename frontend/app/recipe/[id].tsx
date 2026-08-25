@@ -46,7 +46,7 @@ type DBStep = {
 
 type DBRecipe = {
   id: string;
-  user_id: string;
+  user_id: string | null;
   title: string;
   description: string | null;
   difficulty: string | null;
@@ -63,6 +63,27 @@ type DBRecipe = {
   ingredients: DBIngredient[] | null;
   steps: DBStep[] | null;
 };
+
+type RecipeAuthor = {
+  id: string;
+  username: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+};
+
+async function loadRecipeAuthor(userId: string | null): Promise<RecipeAuthor | null> {
+  if (!userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id,username,full_name,avatar_url")
+      .eq("id", userId)
+      .maybeSingle();
+    return error ? null : (data as RecipeAuthor | null);
+  } catch {
+    return null;
+  }
+}
 
 const RECIPE_BUCKET = "recipes";
 
@@ -154,6 +175,7 @@ export default function RecipeDetailScreen() {
 
   const [dbRecipe, setDbRecipe] = useState<DBRecipe | null>(null);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  const [recipeAuthor, setRecipeAuthor] = useState<RecipeAuthor | null>(null);
   const [loading, setLoading] = useState(false);
   const [choosingList, setChoosingList] = useState(false);
   const [addingToList, setAddingToList] = useState(false);
@@ -214,9 +236,13 @@ export default function RecipeDetailScreen() {
       }
 
       const loadedRecipe = data as DBRecipe;
-      const resolvedImageUrl = await resolveRecipeCover(loadedRecipe);
+      const [resolvedImageUrl, author] = await Promise.all([
+        resolveRecipeCover(loadedRecipe),
+        loadRecipeAuthor(loadedRecipe.user_id),
+      ]);
       if (cancelled) return;
       setDbRecipe({ ...loadedRecipe, resolved_image_url: resolvedImageUrl });
+      setRecipeAuthor(author);
       setLoading(false);
     };
 
@@ -737,6 +763,31 @@ export default function RecipeDetailScreen() {
                   {recipe.description}
                 </ThemedText>
               )}
+
+              {recipe.source === "db" && dbRecipe?.user_id ? (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={`View ${recipeAuthor?.full_name ?? recipeAuthor?.username ?? "recipe author"}'s profile`}
+                  style={styles.authorRow}
+                  onPress={() => router.push(`/user/${dbRecipe.user_id}`)}
+                  activeOpacity={0.8}
+                >
+                  {recipeAuthor?.avatar_url ? (
+                    <Image source={{ uri: recipeAuthor.avatar_url }} style={styles.authorAvatar} />
+                  ) : (
+                    <View style={styles.authorAvatarFallback}>
+                      <Ionicons name="person" size={16} color={theme.neutral.white} />
+                    </View>
+                  )}
+                  <View style={styles.authorCopy}>
+                    <ThemedText style={styles.authorEyebrow}>Recipe by</ThemedText>
+                    <ThemedText style={styles.authorName}>
+                      {recipeAuthor?.full_name ?? recipeAuthor?.username ?? "Villam cook"}
+                    </ThemedText>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.neutral.white} />
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
 
@@ -943,322 +994,4 @@ export default function RecipeDetailScreen() {
               )}
             </ScrollView>
           </View>
-        </View>
-      </Modal>
-    </>
-  );
-}
 
-const styles = StyleSheet.create({
-  content: {
-    paddingBottom: theme.spacing["4xl"],
-  },
-  hero: {
-    minHeight: 320,
-    justifyContent: "space-between",
-  },
-  heroImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: "100%",
-    height: "100%",
-  },
-  heroOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(17, 24, 28, 0.32)",
-  },
-  heroFallback: {
-    ...StyleSheet.absoluteFillObject,
-    borderBottomWidth: 1,
-  },
-  heroTopRow: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: theme.spacing.lg,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    zIndex: 2,
-  },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  heroActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-  },
-  editButton: {
-    minHeight: 42,
-    borderRadius: 21,
-    paddingHorizontal: theme.spacing.md,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(17, 24, 28, 0.6)",
-  },
-  editButtonText: {
-    color: theme.neutral.white,
-    fontSize: 14,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  heroContent: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
-    gap: theme.spacing.md,
-  },
-  heroTitle: {
-    fontSize: 34,
-    lineHeight: 40,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  heroDescription: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: theme.typography.fontFamily,
-    maxWidth: "90%",
-  },
-  metaRow: {
-    flexDirection: "row",
-    gap: theme.spacing.md,
-    paddingHorizontal: theme.spacing.lg,
-    marginTop: -theme.spacing.lg,
-  },
-  metaCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: theme.spacing.md,
-    ...theme.shadows.sm,
-  },
-  recipeDetails: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.lg,
-    marginTop: theme.spacing.lg,
-  },
-  tagPill: {
-    minHeight: 32,
-    borderWidth: 1,
-    borderRadius: theme.borderRadius.full,
-    justifyContent: "center",
-    paddingHorizontal: theme.spacing.sm,
-  },
-  tagText: {
-    fontSize: 13,
-    fontFamily: theme.typography.fontFamily,
-  },
-  metaValue: {
-    marginTop: theme.spacing.sm,
-    fontSize: 20,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  metaLabel: {
-    marginTop: 4,
-    fontSize: 13,
-    fontFamily: theme.typography.fontFamily,
-  },
-  actionCard: {
-    marginTop: theme.spacing.lg,
-    marginHorizontal: theme.spacing.lg,
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: theme.spacing.lg,
-  },
-  addToListBtn: {
-    minHeight: 48,
-    borderRadius: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingHorizontal: 16,
-  },
-  addToListBtnText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  sectionCard: {
-    marginTop: theme.spacing.lg,
-    marginHorizontal: theme.spacing.lg,
-    borderWidth: 1,
-    borderRadius: 24,
-    padding: theme.spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: theme.typography.fontSizes.h2,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  ingredientList: {
-    marginTop: theme.spacing.md,
-    gap: theme.spacing.md,
-  },
-  ingredientRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-  },
-  ingredientDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: theme.brand.primary,
-  },
-  ingredientCopy: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 8,
-    flexWrap: "wrap",
-    flex: 1,
-  },
-  ingredientAmount: {
-    fontSize: 14,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  ingredientName: {
-    fontSize: 16,
-    fontWeight: theme.typography.fontWeights.medium,
-    fontFamily: theme.typography.fontFamily,
-  },
-  stepsList: {
-    marginTop: theme.spacing.md,
-    gap: theme.spacing.md,
-  },
-  stepRow: {
-    flexDirection: "row",
-    gap: theme.spacing.md,
-    alignItems: "flex-start",
-  },
-  stepBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: theme.brand.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-  stepBadgeText: {
-    color: theme.neutral.white,
-    fontSize: 14,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  stepText: {
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: theme.typography.fontFamily,
-  },
-  centerState: {
-    flex: 1,
-    paddingHorizontal: theme.spacing.lg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stateText: {
-    marginTop: theme.spacing.md,
-    fontSize: 15,
-  },
-  missingTitle: {
-    marginTop: theme.spacing.lg,
-    fontSize: 28,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  missingBody: {
-    marginTop: theme.spacing.sm,
-    textAlign: "center",
-    fontSize: 15,
-    lineHeight: 22,
-    fontFamily: theme.typography.fontFamily,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(17,24,28,0.38)",
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  modalCard: {
-    borderRadius: 24,
-    borderWidth: 1,
-    maxHeight: "75%",
-    padding: 18,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: theme.spacing.md,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  createNewListButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderWidth: 1.5,
-    borderStyle: "dashed",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: theme.spacing.md,
-  },
-  createNewListText: {
-    fontSize: 14,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  choiceList: {
-    flexGrow: 0,
-  },
-  choiceListContent: {
-    gap: 10,
-    paddingBottom: 4,
-  },
-  emptyChoiceText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  choiceRow: {
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  choiceIconWrap: {
-    width: 34,
-    alignItems: "center",
-  },
-  choiceCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  choiceTitle: {
-    fontSize: 15,
-    fontWeight: theme.typography.fontWeights.bold,
-    fontFamily: theme.typography.fontFamily,
-  },
-  choiceSubtitle: {
-    fontSize: 12,
-    fontFamily: theme.typography.fontFamily,
-  },
-});

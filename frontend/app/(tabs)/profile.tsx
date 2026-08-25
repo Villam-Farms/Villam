@@ -304,22 +304,74 @@ export default function ProfileScreen() {
             { backgroundColor: theme.brand.light },
           ]}
         >
-          <Pressable
-            onPress={() => router.push("/settings")}
+          <View
             style={[
-              styles.settingsButton,
+              styles.headerActions,
               {
                 top: insets.top + theme.spacing.sm,
-                backgroundColor: colors.background,
-                borderColor: colors.border.light,
               },
             ]}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel="Open settings"
           >
-            <Ionicons name="settings-outline" size={22} color={colors.text.primary} />
-          </Pressable>
+            <Pressable
+              onPress={() => router.navigate("/(profile)/alerts")}
+              style={[
+                styles.headerIconButton,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border.light,
+                },
+              ]}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Open follow notifications"
+            >
+              <Ionicons name="heart-outline" size={20} color={colors.text.primary} />
+              {unreadAlertsCount > 0 ? (
+                <View style={styles.headerBadge}>
+                  <ThemedText style={styles.headerBadgeText}>
+                    {unreadAlertsCount > 9 ? "9+" : unreadAlertsCount}
+                  </ThemedText>
+                </View>
+              ) : null}
+            </Pressable>
+            <Pressable
+              onPress={() => router.navigate("/(profile)/inbox")}
+              style={[
+                styles.headerIconButton,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border.light,
+                },
+              ]}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Open messages"
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={20} color={colors.text.primary} />
+              {unreadInboxCount > 0 ? (
+                <View style={styles.headerBadge}>
+                  <ThemedText style={styles.headerBadgeText}>
+                    {unreadInboxCount > 9 ? "9+" : unreadInboxCount}
+                  </ThemedText>
+                </View>
+              ) : null}
+            </Pressable>
+            <Pressable
+              onPress={() => router.push("/settings")}
+              style={[
+                styles.headerIconButton,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border.light,
+                },
+              ]}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
+            >
+              <Ionicons name="settings-outline" size={20} color={colors.text.primary} />
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.profileSection}>
@@ -434,22 +486,6 @@ export default function ProfileScreen() {
               >
                 {loading ? "Loading..." : "Find People"}
               </Button>
-              <View style={styles.secondaryActionsRow}>
-                <Button
-                  variant="outline"
-                  onPress={() => router.navigate("/(profile)/alerts")}
-                  style={styles.secondaryActionButton}
-                >
-                  {unreadAlertsCount > 0 ? `Alerts (${unreadAlertsCount})` : "Alerts"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onPress={() => router.navigate("/(profile)/inbox")}
-                  style={styles.secondaryActionButton}
-                >
-                  {unreadInboxCount > 0 ? `Inbox (${unreadInboxCount})` : "Inbox"}
-                </Button>
-              </View>
             </View>
           </View>
         </View>
@@ -636,9 +672,13 @@ const styles = StyleSheet.create({
     width: "100%",
     position: "relative",
   },
-  settingsButton: {
+  headerActions: {
     position: "absolute",
     right: theme.spacing.lg,
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+  },
+  headerIconButton: {
     width: 42,
     height: 42,
     borderRadius: 21,
@@ -646,6 +686,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     ...theme.shadows.sm,
+  },
+  headerBadge: {
+    position: "absolute",
+    top: -4,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: theme.brand.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: theme.neutral.white,
+  },
+  headerBadgeText: {
+    color: theme.neutral.white,
+    fontSize: 10,
+    fontWeight: "700",
   },
   profileSection: {
     paddingHorizontal: theme.spacing.lg,
@@ -695,16 +754,6 @@ const styles = StyleSheet.create({
   addFriendsButton: {
     marginTop: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.xs,
-  },
-  secondaryActionsRow: {
-    flexDirection: "row",
-    gap: theme.spacing.sm,
-    marginTop: theme.spacing.sm,
-  },
-  secondaryActionButton: {
-    minWidth: 110,
-    paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.xs,
   },
   userInfo: {
