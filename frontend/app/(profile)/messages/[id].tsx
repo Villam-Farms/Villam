@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -63,6 +64,12 @@ export default function MessageThreadScreen() {
     return detail?.thread.other_user?.full_name ?? detail?.thread.other_user?.username ?? "Conversation";
   }, [detail?.thread.other_user]);
 
+  const openOtherUserProfile = () => {
+    const otherUserId = detail?.thread.other_user?.id;
+    if (!otherUserId) return;
+    router.push(`/user/${otherUserId}`);
+  };
+
   const handleSend = async () => {
     if (!accessToken || !threadId || !draft.trim()) return;
     setSending(true);
@@ -97,12 +104,30 @@ export default function MessageThreadScreen() {
             <Pressable onPress={() => router.back()} hitSlop={8}>
               <Ionicons name="arrow-back" size={26} color={colors.text.primary} />
             </Pressable>
-            <View style={{ flex: 1 }}>
-              <ThemedText style={[styles.title, { color: colors.text.primary }]}>{title}</ThemedText>
-              <ThemedText style={[styles.subtitle, { color: colors.text.secondary }]}>
-                {detail?.thread.farm_name ? `About ${detail.thread.farm_name}` : "Direct message"}
-              </ThemedText>
-            </View>
+            <Pressable
+              onPress={openOtherUserProfile}
+              disabled={!detail?.thread.other_user?.id}
+              style={styles.profileLink}
+              hitSlop={8}
+            >
+              {detail?.thread.other_user?.avatar_url ? (
+                <Image
+                  source={{ uri: detail.thread.other_user.avatar_url }}
+                  style={styles.avatar}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.card, borderColor: colors.border.light }]}>
+                  <Ionicons name="person" size={20} color={colors.text.secondary} />
+                </View>
+              )}
+              <View style={styles.profileText}>
+                <ThemedText style={[styles.title, { color: colors.text.primary }]}>{title}</ThemedText>
+                <ThemedText style={[styles.subtitle, { color: colors.text.secondary }]}>
+                  {detail?.thread.farm_name ? `About ${detail.thread.farm_name}` : "Direct message"}
+                </ThemedText>
+              </View>
+            </Pressable>
           </View>
 
           {loading && !detail ? (
@@ -176,6 +201,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: theme.spacing.md,
     paddingVertical: theme.spacing.md,
+  },
+  profileLink: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  profileText: {
+    flex: 1,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  avatarFallback: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
   },
   title: { fontSize: theme.typography.fontSizes.h3, fontWeight: theme.typography.fontWeights.bold },
   subtitle: { fontSize: theme.typography.fontSizes.h5 },

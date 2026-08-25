@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
@@ -82,6 +83,23 @@ export default function InboxScreen() {
                 style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border.light }]}
               >
                 <View style={styles.cardHeader}>
+                  {item.other_user?.avatar_url ? (
+                    <Image
+                      source={{ uri: item.other_user.avatar_url }}
+                      style={styles.avatar}
+                      contentFit="cover"
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        styles.avatar,
+                        styles.avatarFallback,
+                        { backgroundColor: colors.background, borderColor: colors.border.light },
+                      ]}
+                    >
+                      <Ionicons name="person" size={18} color={colors.text.secondary} />
+                    </View>
+                  )}
                   <View style={{ flex: 1 }}>
                     <ThemedText style={[styles.cardTitle, { color: colors.text.primary }]}>
                       {item.other_user?.full_name ?? item.other_user?.username ?? "Farmer"}
@@ -132,7 +150,17 @@ const styles = StyleSheet.create({
   loadingState: { paddingTop: theme.spacing.xl, alignItems: "center" },
   listContent: { paddingBottom: theme.spacing.xl, gap: theme.spacing.sm },
   card: { borderWidth: 1, borderRadius: theme.borderRadius.lg, padding: theme.spacing.md },
-  cardHeader: { flexDirection: "row", gap: theme.spacing.sm, marginBottom: theme.spacing.xs },
+  cardHeader: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, marginBottom: theme.spacing.xs },
+  avatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+  },
+  avatarFallback: {
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   cardTitle: { fontSize: theme.typography.fontSizes.h4, fontWeight: theme.typography.fontWeights.semibold },
   cardMeta: { fontSize: theme.typography.fontSizes.body },
   preview: { fontSize: theme.typography.fontSizes.h5, lineHeight: 20 },
