@@ -46,6 +46,7 @@ type DBStep = {
 
 type DBRecipe = {
   id: string;
+  user_id: string | null;
   title: string;
   description: string | null;
   cover_image_url: string | null;
@@ -60,6 +61,27 @@ type DBRecipe = {
   ingredients: DBIngredient[] | null;
   steps: DBStep[] | null;
 };
+
+type RecipeAuthor = {
+  id: string;
+  username: string | null;
+  full_name: string | null;
+  avatar_url: string | null;
+};
+
+async function loadRecipeAuthor(userId: string | null): Promise<RecipeAuthor | null> {
+  if (!userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id,username,full_name,avatar_url")
+      .eq("id", userId)
+      .maybeSingle();
+    return error ? null : (data as RecipeAuthor | null);
+  } catch {
+    return null;
+  }
+}
 
 const RECIPE_BUCKET = "recipes";
 
@@ -148,6 +170,7 @@ export default function RecipeDetailScreen() {
   const insets = useSafeAreaInsets();
 
   const [dbRecipe, setDbRecipe] = useState<DBRecipe | null>(null);
+  const [recipeAuthor, setRecipeAuthor] = useState<RecipeAuthor | null>(null);
   const [loading, setLoading] = useState(false);
   const [choosingList, setChoosingList] = useState(false);
   const [addingToList, setAddingToList] = useState(false);
@@ -173,6 +196,7 @@ export default function RecipeDetailScreen() {
         .from("recipes")
         .select(`
           id,
+          user_id,
           title,
           description,
           cover_image_url,
@@ -199,9 +223,13 @@ export default function RecipeDetailScreen() {
       }
 
       const loadedRecipe = data as DBRecipe;
-      const resolvedImageUrl = await resolveRecipeCover(loadedRecipe);
+      const [resolvedImageUrl, author] = await Promise.all([
+        resolveRecipeCover(loadedRecipe),
+        loadRecipeAuthor(loadedRecipe.user_id),
+      ]);
       if (cancelled) return;
       setDbRecipe({ ...loadedRecipe, resolved_image_url: resolvedImageUrl });
+      setRecipeAuthor(author);
       setLoading(false);
     };
 
@@ -700,6 +728,31 @@ export default function RecipeDetailScreen() {
                   {recipe.description}
                 </ThemedText>
               )}
+
+              {recipe.source === "db" && dbRecipe?.user_id ? (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={`View ${recipeAuthor?.full_name ?? recipeAuthor?.username ?? "recipe author"}'s profile`}
+                  style={styles.authorRow}
+                  onPress={() => router.push(`/user/${dbRecipe.user_id}`)}
+                  activeOpacity={0.8}
+                >
+                  {recipeAuthor?.avatar_url ? (
+                    <Image source={{ uri: recipeAuthor.avatar_url }} style={styles.authorAvatar} />
+                  ) : (
+                    <View style={styles.authorAvatarFallback}>
+                      <Ionicons name="person" size={16} color={theme.neutral.white} />
+                    </View>
+                  )}
+                  <View style={styles.authorCopy}>
+                    <ThemedText style={styles.authorEyebrow}>Recipe by</ThemedText>
+                    <ThemedText style={styles.authorName}>
+                      {recipeAuthor?.full_name ?? recipeAuthor?.username ?? "Villam cook"}
+                    </ThemedText>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.neutral.white} />
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
 
@@ -961,6 +1014,46 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontFamily: theme.typography.fontFamily,
     maxWidth: "90%",
+  },
+  authorRow: {
+    alignSelf: "flex-start",
+    maxWidth: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    backgroundColor: "rgba(17, 24, 28, 0.48)",
+  },
+  authorAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  authorAvatarFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  authorCopy: {
+    flexShrink: 1,
+  },
+  authorEyebrow: {
+    color: "rgba(255, 255, 255, 0.78)",
+    fontSize: 11,
+    lineHeight: 14,
+    fontFamily: theme.typography.fontFamily,
+  },
+  authorName: {
+    color: theme.neutral.white,
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
   },
   metaRow: {
     flexDirection: "row",
