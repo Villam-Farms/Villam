@@ -6,6 +6,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useTheme } from "@/hooks/useTheme";
 import { BorderRadius, Spacing, theme } from "@/constants/theme";
 import { SaveButton } from "@/components/save-button";
+import { Ionicons } from "@expo/vector-icons";
 
 interface FarmCardProps {
   id?: string;
@@ -64,7 +65,15 @@ export default function FarmCard({
         >
           {imageUrl ? (
             <Image source={{ uri: imageUrl }} style={styles.farmImageContent} />
-          ) : null}
+          ) : (
+            <View style={styles.farmPlaceholder}>
+              <View style={[styles.placeholderOrb, styles.placeholderOrbLarge]} />
+              <View style={[styles.placeholderOrb, styles.placeholderOrbSmall]} />
+              <View style={styles.placeholderIcon}>
+                <Ionicons name="leaf" size={30} color={theme.brand.primary} />
+              </View>
+            </View>
+          )}
         </ThemedView>
 
         {/* Info */}
@@ -177,6 +186,39 @@ const styles = StyleSheet.create({
   farmImageContent: {
     height: "100%",
     width: "100%",
+  },
+  farmPlaceholder: {
+    flex: 1,
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: theme.brand.light,
+  },
+  placeholderOrb: {
+    position: "absolute",
+    borderRadius: 999,
+    backgroundColor: theme.brand.secondary,
+    opacity: 0.3,
+  },
+  placeholderOrbLarge: {
+    width: 150,
+    height: 150,
+    right: -30,
+    top: -65,
+  },
+  placeholderOrbSmall: {
+    width: 90,
+    height: 90,
+    left: -15,
+    bottom: -40,
+  },
+  placeholderIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.72)",
   },
 
   farmInfo: {
