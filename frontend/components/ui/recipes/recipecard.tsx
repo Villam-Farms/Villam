@@ -141,9 +141,15 @@ export function RecipeCard({
       </TouchableOpacity>
 
       {isOwner && onEdit && (
-        <TouchableOpacity style={styles.editButton} onPress={onEdit} activeOpacity={0.85}>
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel={`Edit recipe ${title}`}
+          style={styles.editButton}
+          onPress={onEdit}
+          activeOpacity={0.85}
+        >
           <Ionicons name="create-outline" size={14} color={theme.neutral.white} />
-          <ThemedText style={styles.editButtonText}>Edit</ThemedText>
+          <ThemedText style={styles.editButtonText}>Edit recipe</ThemedText>
         </TouchableOpacity>
       )}
     </View>

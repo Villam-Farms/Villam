@@ -537,11 +537,15 @@ export default function ProfileScreen() {
                 duration={recipe.duration}
                 difficulty={recipe.difficulty}
                 imageUrl={recipe.imageUrl}
+                isOwner
                 onPress={() => {
                   router.push(`/recipe/${recipe.id}`);
                 }}
                 onEdit={() => {
-                  console.log("Edit recipe:", recipe.id);
+                  router.push({
+                    pathname: "/recipe/new",
+                    params: { recipeId: recipe.id, ...(recipe.imageUrl ? { coverImageUrl: recipe.imageUrl } : {}) },
+                  });
                 }}
               />
             ))}

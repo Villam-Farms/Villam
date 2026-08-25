@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
-  FlatList,
   Image,
   ScrollView,
   StyleSheet,
@@ -16,7 +15,7 @@ import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Stack, router } from "expo-router";
+import { Stack, router, useLocalSearchParams } from "expo-router";
 import DraggableFlatList, { type RenderItemParams } from "react-native-draggable-flatlist";
 
 import { ThemedView } from "@/components/themed-view";
@@ -36,7 +35,14 @@ interface Ingredient {
 interface Step {
   id: string;
   instruction: string;
-  photoUris: string[];
+  photoUris: RecipeImage[];
+}
+
+interface RecipeImage {
+  uri: string;
+  path?: string;
+  url?: string;
+  existing: boolean;
 }
 
 interface StoredMediaItem {
@@ -365,9 +371,9 @@ function StepCard({
         />
 
         <View style={stepStyles.photoRow}>
-          {step.photoUris.map((uri, pi) => (
+          {step.photoUris.map((photo, pi) => (
             <View key={`${step.id}-photo-${pi}`} style={stepStyles.photoThumbWrapper}>
-              <Image source={{ uri }} style={stepStyles.photoThumb} resizeMode="cover" />
+              <Image source={{ uri: photo.uri }} style={stepStyles.photoThumb} resizeMode="cover" />
               <TouchableOpacity
                 style={stepStyles.photoDeleteBtn}
                 onPress={() => onDeletePhoto(step.id, pi)}
@@ -465,10 +471,20 @@ const stepStyles = StyleSheet.create({
 
 export default function NewRecipeScreen() {
   const { colors } = useTheme();
+  const { recipeId: recipeIdParam, coverImageUrl: coverImageUrlParam } = useLocalSearchParams<{ recipeId?: string | string[]; coverImageUrl?: string | string[] }>();
+  const recipeId = Array.isArray(recipeIdParam) ? recipeIdParam[0] : recipeIdParam;
+  const coverImageUrl = Array.isArray(coverImageUrlParam) ? coverImageUrlParam[0] : coverImageUrlParam;
+  const isEditing = Boolean(recipeId);
   const [isDraggingStep, setIsDraggingStep] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingRecipe, setIsLoadingRecipe] = useState(isEditing);
+  const initialEditSnapshotRef = useRef<string | null>(null);
 
-  const [mediaUris, setMediaUris] = useState<string[]>([]);
+  const [mediaUris, setMediaUris] = useState<RecipeImage[]>(() =>
+    typeof coverImageUrl === "string" && coverImageUrl.trim()
+      ? [{ uri: coverImageUrl.trim(), url: coverImageUrl.trim(), existing: true }]
+      : []
+  );
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [difficulty, setDifficulty] = useState<RecipeDifficulty>("Easy");
@@ -484,6 +500,86 @@ export default function NewRecipeScreen() {
   ]);
 
   const [steps, setSteps] = useState<Step[]>([{ id: uid(), instruction: "", photoUris: [] }]);
+
+  useEffect(() => {
+    if (!recipeId) return;
+
+    let isActive = true;
+
+    const loadRecipe = async () => {
+      try {
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser();
+        if (userError) throw userError;
+        if (!user) throw new Error("Please sign in to edit this recipe.");
+
+        const { data: recipe, error } = await supabase
+          .from("recipes")
+          .select("id, user_id, title, description, difficulty, tags, cover_image_url, cover_image_path, cover_media, prep_time_minutes, cook_time_minutes, additional_time_minutes, servings, ingredients, steps")
+          .eq("id", recipeId)
+          .eq("user_id", user.id)
+          .single();
+        if (error) throw error;
+        if (!recipe) throw new Error("Recipe not found.");
+        if (!isActive) return;
+
+        const gallery = Array.isArray(recipe.cover_media) ? recipe.cover_media : [];
+        let coverImage: RecipeImage | null = null;
+        if (typeof recipe.cover_image_path === "string" && recipe.cover_image_path) {
+          const { data } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(recipe.cover_image_path, 60 * 60);
+          if (data?.signedUrl) coverImage = { uri: data.signedUrl, path: recipe.cover_image_path, existing: true };
+        }
+        if (!coverImage && typeof recipe.cover_image_url === "string" && recipe.cover_image_url.trim()) {
+          coverImage = { uri: recipe.cover_image_url.trim(), url: recipe.cover_image_url.trim(), path: recipe.cover_image_path ?? undefined, existing: true };
+        }
+        if (!coverImage) {
+          const firstMedia = gallery.slice().sort((a: StoredMediaItem, b: StoredMediaItem) => (a.position ?? 0) - (b.position ?? 0))[0];
+          if (firstMedia?.path) {
+            const { data } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(firstMedia.path, 60 * 60);
+            if (data?.signedUrl) coverImage = { uri: data.signedUrl, path: firstMedia.path, url: firstMedia.url, existing: true };
+          }
+          if (!coverImage && typeof firstMedia?.url === "string" && firstMedia.url.trim()) {
+            coverImage = { uri: firstMedia.url.trim(), url: firstMedia.url.trim(), path: firstMedia.path, existing: true };
+          }
+        }
+
+        const storedIngredients = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+        const storedSteps = Array.isArray(recipe.steps) ? recipe.steps : [];
+        const nextTitle = typeof recipe.title === "string" ? recipe.title : "";
+        const nextDescription = typeof recipe.description === "string" ? recipe.description : "";
+        const nextDifficulty: RecipeDifficulty = recipe.difficulty === "Medium" || recipe.difficulty === "Hard" ? recipe.difficulty : "Easy";
+        const nextTags = Array.isArray(recipe.tags) ? recipe.tags.filter((tag: unknown): tag is string => typeof tag === "string") : [];
+        const nextPrepTime = String(recipe.prep_time_minutes || "");
+        const nextCookTime = String(recipe.cook_time_minutes || "");
+        const nextAdditionalTime = String(recipe.additional_time_minutes || "");
+        const nextServings = recipe.servings ? String(recipe.servings) : "";
+        const nextIngredients = storedIngredients.length ? storedIngredients.map((item: any) => ({ id: typeof item.id === "string" ? item.id : uid(), quantity: String(item.quantity || ""), unit: String(item.unit || ""), name: String(item.name || "") })) : [{ id: uid(), quantity: "", unit: "", name: "" }];
+        const nextSteps = storedSteps.length ? storedSteps.sort((a: StoredStep, b: StoredStep) => (a.position ?? 0) - (b.position ?? 0)).map((item: any) => ({ id: typeof item.id === "string" ? item.id : uid(), instruction: String(item.instruction || ""), photoUris: (Array.isArray(item.photo_urls) ? item.photo_urls : []).map((url: unknown, index: number) => typeof url === "string" ? ({ uri: url, url, path: Array.isArray(item.photo_paths) ? item.photo_paths[index] : undefined, existing: true }) : null).filter(Boolean) as RecipeImage[] })) : [{ id: uid(), instruction: "", photoUris: [] }];
+        setTitle(nextTitle);
+        setDescription(nextDescription);
+        setDifficulty(nextDifficulty);
+        setTags(nextTags);
+        setPrepTime(nextPrepTime);
+        setCookTime(nextCookTime);
+        setAdditionalTime(nextAdditionalTime);
+        setServings(nextServings);
+        if (coverImage) setMediaUris([coverImage]);
+        setIngredients(nextIngredients);
+        setSteps(nextSteps);
+        initialEditSnapshotRef.current = JSON.stringify({ mediaUris: coverImage ? [coverImage] : mediaUris, title: nextTitle, description: nextDescription, difficulty: nextDifficulty, prepTime: nextPrepTime, cookTime: nextCookTime, additionalTime: nextAdditionalTime, servings: nextServings, tags: nextTags, tagInput: "", ingredients: nextIngredients, steps: nextSteps });
+      } catch (error) {
+        Alert.alert("Could not load recipe", error instanceof Error ? error.message : "Please try again.");
+        router.back();
+      } finally {
+        if (isActive) setIsLoadingRecipe(false);
+      }
+    };
+
+    loadRecipe();
+    return () => { isActive = false; };
+  }, [recipeId]);
 
   const totalMins =
     (parseInt(prepTime, 10) || 0) +
@@ -503,9 +599,15 @@ export default function NewRecipeScreen() {
     [steps]
   );
 
-  const canPublish = title.trim().length > 0 && hasValidIngredient && hasValidStep && !isSaving;
+  const canPublish = title.trim().length > 0 && hasValidIngredient && hasValidStep && !isSaving && !isLoadingRecipe;
+
+  const formSnapshot = useMemo(
+    () => JSON.stringify({ mediaUris, title, description, difficulty, prepTime, cookTime, additionalTime, servings, tags, tagInput, ingredients, steps }),
+    [mediaUris, title, description, difficulty, prepTime, cookTime, additionalTime, servings, tags, tagInput, ingredients, steps]
+  );
 
   const isDirty = useMemo(() => {
+    if (isEditing && initialEditSnapshotRef.current) return formSnapshot !== initialEditSnapshotRef.current;
     const hasMedia = mediaUris.length > 0;
     const hasBasicInfo = title.trim().length > 0 || description.trim().length > 0;
     const hasTimeInfo =
@@ -515,7 +617,7 @@ export default function NewRecipeScreen() {
     const hasStepData = steps.some((step) => step.instruction.trim().length > 0 || step.photoUris.length > 0);
 
     return hasMedia || hasBasicInfo || hasTimeInfo || hasTags || hasIngredientData || hasStepData;
-  }, [mediaUris, title, description, prepTime, cookTime, additionalTime, servings, tags, tagInput, ingredients, steps]);
+  }, [isEditing, formSnapshot, mediaUris, title, description, prepTime, cookTime, additionalTime, servings, tags, tagInput, ingredients, steps]);
 
   const confirmLeave = () => {
     if (isSaving) return;
@@ -532,9 +634,16 @@ export default function NewRecipeScreen() {
   };
 
   const handleMediaUpload = async () => {
-    const uris = await pickPhotosFromLibrary();
-    if (uris.length === 0) return;
-    setMediaUris((prev) => [...prev, ...uris]);
+    const [uri] = await pickPhotosFromLibrary();
+    if (!uri) return;
+    setMediaUris([{ uri, existing: false }]);
+  };
+
+  const handleReplaceCoverPhoto = async () => {
+    const [uri] = await pickPhotosFromLibrary();
+    if (!uri) return;
+
+    setMediaUris([{ uri, existing: false }]);
   };
 
   const handleDeleteMedia = (index: number) => {
@@ -591,7 +700,7 @@ export default function NewRecipeScreen() {
     const uris = await pickPhotosFromLibrary();
     if (uris.length === 0) return;
 
-    setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, photoUris: [...s.photoUris, ...uris] } : s)));
+    setSteps((prev) => prev.map((s) => (s.id === stepId ? { ...s, photoUris: [...s.photoUris, ...uris.map((uri) => ({ uri, existing: false }))] } : s)));
   };
 
   const deleteStepPhoto = (stepId: string, photoIndex: number) => {
@@ -688,35 +797,46 @@ export default function NewRecipeScreen() {
         })),
       };
 
-      const { data: recipe, error: insertError } = await supabase
-        .from("recipes")
-        .insert(initialPayload)
-        .select()
-        .single();
+      let savedRecipeId = recipeId;
+      if (!savedRecipeId) {
+        const { data: recipe, error: insertError } = await supabase
+          .from("recipes")
+          .insert(initialPayload)
+          .select()
+          .single();
 
-      if (insertError) {
-        console.error("Recipe insert error:", insertError);
-        throw insertError;
+        if (insertError) {
+          console.error("Recipe insert error:", insertError);
+          throw insertError;
+        }
+        savedRecipeId = recipe.id as string;
       }
-
-      const recipeId = recipe.id as string;
 
       const uploadedCoverMedia: StoredMediaItem[] = [];
       let coverImagePath: string | null = null;
       let coverImageUrl: string | null = null;
 
       for (let i = 0; i < mediaUris.length; i++) {
-        const uri = mediaUris[i];
-        const ext = getFileExtension(uri);
+        const image = mediaUris[i];
+        if (image.existing) {
+          uploadedCoverMedia.push({ path: image.path ?? "", url: image.url ?? image.uri, type: "image", position: i });
+          if (i === 0) {
+            coverImagePath = image.path ?? null;
+            coverImageUrl = image.url ?? image.uri;
+          }
+          continue;
+        }
+
+        const ext = getFileExtension(image.uri);
         const path = buildStoragePath({
           userId: user.id,
-          recipeId,
+          recipeId: savedRecipeId,
           ext,
           kind: "gallery",
           index: i,
         });
 
-        const uploaded = await uploadImageToStorage(uri, path);
+        const uploaded = await uploadImageToStorage(image.uri, path);
 
         uploadedCoverMedia.push({
           path: uploaded.path,
@@ -738,18 +858,24 @@ export default function NewRecipeScreen() {
         const photoUrls: string[] = [];
 
         for (let i = 0; i < step.localPhotoUris.length; i++) {
-          const uri = step.localPhotoUris[i];
-          const ext = getFileExtension(uri);
+          const image = step.localPhotoUris[i];
+          if (image.existing) {
+            photoPaths.push(image.path ?? "");
+            photoUrls.push(image.url ?? image.uri);
+            continue;
+          }
+
+          const ext = getFileExtension(image.uri);
           const path = buildStoragePath({
             userId: user.id,
-            recipeId,
+            recipeId: savedRecipeId,
             ext,
             kind: "step",
             index: i,
             stepId: step.id,
           });
 
-          const uploaded = await uploadImageToStorage(uri, path);
+          const uploaded = await uploadImageToStorage(image.uri, path);
           photoPaths.push(uploaded.path);
           photoUrls.push(uploaded.url);
         }
@@ -766,20 +892,21 @@ export default function NewRecipeScreen() {
       const { error: updateError } = await supabase
         .from("recipes")
         .update({
+          ...initialPayload,
           cover_image_path: coverImagePath,
           cover_image_url: coverImageUrl,
           cover_media: uploadedCoverMedia,
           steps: uploadedSteps,
           updated_at: new Date().toISOString(),
         })
-        .eq("id", recipeId);
+        .eq("id", savedRecipeId);
 
       if (updateError) {
         console.error("Recipe update error:", updateError);
         throw updateError;
       }
 
-      Alert.alert("Recipe saved!", "Your recipe and images were uploaded successfully.", [
+      Alert.alert(isEditing ? "Recipe updated!" : "Recipe saved!", "Your recipe and images were uploaded successfully.", [
         {
           text: "OK",
           onPress: () => router.replace("/"),
@@ -823,7 +950,7 @@ export default function NewRecipeScreen() {
               activeOpacity={0.85}
               disabled={!canPublish}
             >
-              {isSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.publishBtnText}>Publish</Text>}
+                  {isSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.publishBtnText}>{isEditing ? "Save" : "Publish"}</Text>}
             </TouchableOpacity>
           ),
           headerStyle: { backgroundColor: colors.background },
@@ -839,7 +966,7 @@ export default function NewRecipeScreen() {
           scrollEnabled={!isDraggingStep}
         >
           <ThemedView style={styles.container}>
-            <Text style={[styles.pageTitle, { color: colors.text.primary }]}>New Recipe</Text>
+            <Text style={[styles.pageTitle, { color: colors.text.primary }]}>{isEditing ? "Edit Recipe" : "New Recipe"}</Text>
 
             {mediaUris.length === 0 ? (
               <TouchableOpacity
@@ -854,8 +981,14 @@ export default function NewRecipeScreen() {
             ) : (
               <View style={styles.mediaPreviewContainer}>
                 <View style={styles.mainImageWrapper}>
-                  <TouchableOpacity onPress={handleMediaUpload} activeOpacity={0.85} style={{ flex: 1 }}>
-                    <Image source={{ uri: mediaUris[0] }} style={styles.mainImage} resizeMode="cover" />
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Replace cover photo"
+                    onPress={handleReplaceCoverPhoto}
+                    activeOpacity={0.85}
+                    style={{ flex: 1 }}
+                  >
+                    <Image source={{ uri: mediaUris[0].uri }} style={styles.mainImage} resizeMode="cover" />
                     <View style={[styles.editBadge, { backgroundColor: theme.brand.primary }]}>
                       <Ionicons name="pencil" size={12} color="#fff" />
                     </View>
@@ -870,30 +1003,6 @@ export default function NewRecipeScreen() {
                   </TouchableOpacity>
                 </View>
 
-                {mediaUris.length > 1 && (
-                  <FlatList
-                    data={mediaUris.slice(1)}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    keyExtractor={(_, i) => i.toString()}
-                    contentContainerStyle={styles.thumbnailStrip}
-                    renderItem={({ item, index }) => (
-                      <View style={styles.thumbnailWrapper}>
-                        <TouchableOpacity onPress={handleMediaUpload} activeOpacity={0.8} style={{ flex: 1 }}>
-                          <Image source={{ uri: item }} style={styles.thumbnail} resizeMode="cover" />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.deleteBtn}
-                          onPress={() => handleDeleteMedia(index + 1)}
-                          accessibilityLabel={`Remove cover photo ${index + 2}`}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                        >
-                          <Ionicons name="close" size={12} color="#fff" />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  />
-                )}
               </View>
             )}
 
