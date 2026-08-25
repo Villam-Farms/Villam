@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/context/auth-context";
-import { getMe, uploadMyAvatar, updateMyDescription, type ProfileRow } from "@/lib/follows";
+import { getMe, uploadMyAvatar, updateMyDescription, type MeResponse, type ProfileRow } from "@/lib/follows";
 import { listNotifications, listThreads } from "@/lib/social";
 import { useFocusEffect } from "@react-navigation/native";
 import { supabase } from "@/lib/supabase";
@@ -30,6 +30,29 @@ import { useSavedItems, useSavedSearches } from "@/hooks/useSaved";
 const RECIPE_BUCKET = "recipes";
 const FALLBACK_RECIPE_IMAGE = "https://images.unsplash.com/photo-1547592180-85f173990554?q=80&w=1200&auto=format&fit=crop";
 const DESCRIPTION_LIMIT = 280;
+const PROFILE_REQUEST_ATTEMPTS = 3;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function isTransientProfileError(error: unknown) {
+  return error instanceof Error && /Request failed \(5\d\d\)|timed out|network request failed/i.test(error.message);
+}
+
+async function getMeWithRetry(accessToken: string): Promise<MeResponse> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < PROFILE_REQUEST_ATTEMPTS; attempt += 1) {
+    try {
+      return await getMe(accessToken);
+    } catch (error) {
+      lastError = error;
+      if (!isTransientProfileError(error) || attempt === PROFILE_REQUEST_ATTEMPTS - 1) break;
+      await wait(500 * (attempt + 1));
+    }
+  }
+
+  throw lastError;
+}
 
 type RecipeRow = {
   id: string;
@@ -103,6 +126,7 @@ export default function ProfileScreen() {
   const accessToken = session?.access_token ?? null;
   const userId = session?.user.id ?? null;
   const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const lastProfileRef = useRef<ProfileRow | null>(null);
   const [counts, setCounts] = useState({ followers: 0, following: 0 });
   const [loading, setLoading] = useState(false);
   const [recipesLoading, setRecipesLoading] = useState(false);
@@ -132,6 +156,7 @@ export default function ProfileScreen() {
     try {
       setSavingDesc(true);
       const next = await updateMyDescription(accessToken, descDraft.trim().length ? descDraft.trim() : null);
+      lastProfileRef.current = next.profile;
       setProfile(next.profile);
       setCounts(next.counts);
       setEditDescOpen(false);
@@ -174,6 +199,7 @@ export default function ProfileScreen() {
         name: "avatar.jpg",
         type: asset.mimeType ?? "image/jpeg",
       });
+      lastProfileRef.current = next.profile;
       setProfile(next.profile);
       setCounts(next.counts);
     } catch (e) {
@@ -194,7 +220,7 @@ export default function ProfileScreen() {
       (async () => {
         try {
           const [meResult, recipesResult, notificationsResult, threadsResult] = await Promise.allSettled([
-            getMe(accessToken),
+            getMeWithRetry(accessToken),
             supabase
               .from("recipes")
               .select(
@@ -213,6 +239,7 @@ export default function ProfileScreen() {
             throw meResult.reason;
           }
 
+          lastProfileRef.current = meResult.value.profile;
           setProfile(meResult.value.profile);
           setCounts(meResult.value.counts);
           setUnreadAlertsCount(
@@ -226,33 +253,32 @@ export default function ProfileScreen() {
               : 0,
           );
 
-          if (recipesResult.status !== "fulfilled") {
-            throw recipesResult.reason;
+          if (recipesResult.status === "fulfilled" && !recipesResult.value.error) {
+            const rows = (recipesResult.value.data ?? []) as RecipeRow[];
+            const hydratedRecipes = await Promise.all(
+              rows.map(async (recipe) => ({
+                id: recipe.id,
+                title: recipe.title,
+                rating: 0,
+                ratingsCount: 0,
+                duration: formatRecipeDuration(recipe.total_time_minutes ?? 0),
+                difficulty: recipe.difficulty?.trim() || undefined,
+                imageUrl: await resolveRecipeImageUrl(recipe),
+              }))
+            );
+
+            if (!isActive) return;
+            setMyRecipes(hydratedRecipes);
+          } else {
+            console.log("Could not load profile recipes", recipesResult);
           }
-
-          if (recipesResult.value.error) {
-            throw recipesResult.value.error;
-          }
-
-          const rows = (recipesResult.value.data ?? []) as RecipeRow[];
-          const hydratedRecipes = await Promise.all(
-            rows.map(async (recipe) => ({
-              id: recipe.id,
-              title: recipe.title,
-              rating: 0,
-              ratingsCount: 0,
-              duration: formatRecipeDuration(recipe.total_time_minutes ?? 0),
-              difficulty: recipe.difficulty?.trim() || undefined,
-              imageUrl: await resolveRecipeImageUrl(recipe),
-            }))
-          );
-
-          if (!isActive) return;
-          setMyRecipes(hydratedRecipes);
         } catch (e) {
           if (!isActive) return;
-          const message = e instanceof Error ? e.message : "Unable to load profile";
-          Alert.alert("Error", message);
+          console.log("Could not refresh profile", e);
+          if (!lastProfileRef.current) {
+            const message = e instanceof Error ? e.message : "Unable to load profile";
+            Alert.alert("Error", message);
+          }
         } finally {
           if (!isActive) return;
           setLoading(false);
