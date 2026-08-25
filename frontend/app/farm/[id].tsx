@@ -297,19 +297,21 @@ export default function FarmDetailScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['bottom']}>
       <Stack.Screen options={{ headerShown: false }} />
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={[styles.hero, !hasFarmImage && { backgroundColor: '#F7E5BF' }]}> 
+        <View style={[styles.hero, !hasFarmImage && { backgroundColor: theme.brand.light }]}>
           {hasFarmImage ? (
             <>
               <Image source={{ uri: farm.imageUrl! }} style={styles.heroImage} contentFit="cover" />
               <View style={styles.heroImageOverlay} />
             </>
-          ) : null}
-          {!hasFarmImage ? (
+          ) : (
             <View style={styles.heroShapes}>
-              <View style={[styles.shape, styles.shapeLarge, { backgroundColor: '#F0C26A' }]} />
-              <View style={[styles.shape, styles.shapeSmall, { backgroundColor: '#DCC16C' }]} />
+              <View style={[styles.shape, styles.shapeLarge, { backgroundColor: theme.brand.secondary }]} />
+              <View style={[styles.shape, styles.shapeSmall, { backgroundColor: theme.brand.tertiary }]} />
+              <View style={styles.farmPlaceholderIcon}>
+                <Ionicons name="leaf" size={42} color={theme.brand.primary} />
+              </View>
             </View>
-          ) : null}
+          )}
 
           <View style={[styles.heroTopRow, { paddingTop: insets.top + theme.spacing.sm }]}>
             <TouchableOpacity
@@ -367,11 +369,11 @@ export default function FarmDetailScreen() {
             </View>
           ) : (
             <View style={styles.heroBody}>
-              <ThemedText style={[styles.eyebrow, { color: hasFarmImage ? 'rgba(255,255,255,0.82)' : '#6E7B37' }]}>Farm profile</ThemedText>
-              <ThemedText style={[styles.heroTitle, { color: hasFarmImage ? theme.neutral.white : '#2E2A1F' }]}>
+              <ThemedText style={[styles.eyebrow, { color: hasFarmImage ? 'rgba(255,255,255,0.82)' : theme.brand.tertiary }]}>Farm profile</ThemedText>
+              <ThemedText style={[styles.heroTitle, { color: hasFarmImage ? theme.neutral.white : colors.text.primary }]}> 
                 {farm?.name ?? 'Farm not found'}
               </ThemedText>
-              <ThemedText style={[styles.heroSubtitle, { color: hasFarmImage ? 'rgba(255,255,255,0.9)' : '#5A564B' }]}>
+              <ThemedText style={[styles.heroSubtitle, { color: hasFarmImage ? 'rgba(255,255,255,0.9)' : colors.text.secondary }]}> 
                 {farm?.description?.trim() || 'Locally grown produce and farm pickup.'}
               </ThemedText>
 
@@ -877,6 +879,18 @@ const styles = StyleSheet.create({
     height: 140,
     left: -30,
     bottom: 10,
+  },
+  farmPlaceholderIcon: {
+    position: 'absolute',
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    left: '50%',
+    top: 82,
+    marginLeft: -38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.68)',
   },
   heroTopRow: {
     flexDirection: 'row',
