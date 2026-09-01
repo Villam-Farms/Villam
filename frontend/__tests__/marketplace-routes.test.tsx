@@ -51,10 +51,13 @@ describe("owned marketplace listings", () => {
     expect(mockPush.mock.calls).toEqual([["/listing/new"], ["/farm/manage"], ["/listing/manage"], ["/listing/manage"]]);
   });
 
-  it("redirects owners without a farm to setup", async () => {
+  it("lets users without a farm choose whether to start setup", async () => {
     farmResult.data = null;
     const screen = await render(<ListingsScreen />);
-    expect(screen.getByText("Opening farm setup…")).toBeTruthy(); expect(mockReplace).toHaveBeenCalledWith("/listing/new");
+    expect(screen.getByText("No farm yet")).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText("Set up your farm"));
+    expect(mockPush).toHaveBeenCalledWith("/listing/new");
   });
 
   it.each([

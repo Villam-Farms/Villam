@@ -73,12 +73,6 @@ export default function ManageFarmScreen() {
   });
 
   useEffect(() => {
-    if (!isLoading && !error && !farm) {
-      router.replace("/listing/new");
-    }
-  }, [error, farm, isLoading]);
-
-  useEffect(() => {
     if (!farm) return;
     setName(farm.name);
     setWebsite(farm.website ?? "");
@@ -221,8 +215,18 @@ export default function ManageFarmScreen() {
     return <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}><ThemedText>Loading farm…</ThemedText></SafeAreaView>;
   }
 
-  if (error || !farm) {
-    return <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}><ThemedText>Opening farm setup…</ThemedText></SafeAreaView>;
+  if (error) {
+    return <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}><ThemedText>Could not load your farm. Please try again.</ThemedText></SafeAreaView>;
+  }
+
+  if (!farm) {
+    return <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
+      <ThemedText style={styles.emptyTitle}>You have not created a farm yet.</ThemedText>
+      <ThemedText style={styles.emptyCopy}>Set up a farm when you are ready to list produce for shoppers.</ThemedText>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="Set up your farm" style={styles.emptyButton} onPress={() => router.replace("/listing/new")}>
+        <ThemedText style={styles.emptyButtonText}>Set up your farm</ThemedText>
+      </TouchableOpacity>
+    </SafeAreaView>;
   }
 
   return (
@@ -287,6 +291,10 @@ function ActionButton({ label, icon, onPress, colors }: { label: string; icon: R
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24 },
+  emptyTitle: { fontSize: 20, fontWeight: "700", textAlign: "center" },
+  emptyCopy: { marginTop: 8, color: "#5A564B", textAlign: "center", lineHeight: 20 },
+  emptyButton: { marginTop: 20, backgroundColor: "#3D6B2F", borderRadius: theme.borderRadius.full, paddingHorizontal: 20, paddingVertical: 13 },
+  emptyButtonText: { color: "#FFFFFF", fontWeight: "700" },
   content: { paddingBottom: theme.spacing.xl },
   hero: { padding: theme.spacing.lg, gap: 6 },
   backButton: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.8)", marginBottom: theme.spacing.sm },

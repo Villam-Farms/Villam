@@ -58,7 +58,8 @@ export default function Login() {
       return;
     }
 
-    router.replace("/(onboarding)/profile");
+    // AuthGate waits for the profile and then routes new users to onboarding
+    // or returning users to the app.
   };
 
   return (

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View, TouchableOpacity } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -66,15 +66,6 @@ export default function ListingsScreen() {
     [listings, activeFilter]
   );
 
-  const shouldOpenFarmSetup =
-    !!session?.user.id && !farmLoading && !farmError && !ownedFarm;
-
-  useEffect(() => {
-    if (shouldOpenFarmSetup) {
-      router.replace("/listing/new");
-    }
-  }, [shouldOpenFarmSetup]);
-
   const getFilterColors = (filter: ListingCategory) => {
     if (filter === "All") {
       return {
@@ -91,14 +82,6 @@ export default function ListingsScreen() {
       textColor: visuals.badgeTextColor,
     };
   };
-
-  if (shouldOpenFarmSetup) {
-    return (
-      <SafeAreaView style={[styles.centered, { backgroundColor: colors.background }]}>
-        <ThemedText style={{ color: colors.text.secondary }}>Opening farm setup…</ThemedText>
-      </SafeAreaView>
-    );
-  }
 
   const refreshListings = async () => {
     setRefreshing(true);
@@ -144,35 +127,27 @@ export default function ListingsScreen() {
 
           <View style={styles.heroInner}>
             <ThemedText style={styles.heroEyebrow}>Your farm</ThemedText>
-            <ThemedText style={styles.heroTitle}>{ownedFarm?.name ?? "My listings"}</ThemedText>
+            <ThemedText style={styles.heroTitle}>{ownedFarm?.name ?? "Your farm"}</ThemedText>
             <ThemedText style={styles.heroSubtitle}>
-              Add produce and keep your availability up to date.
+              {ownedFarm
+                ? "Add produce and keep your availability up to date."
+                : "Set up a farm only when you are ready to sell produce."}
             </ThemedText>
 
             <View style={styles.actionButtonsRow}>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Create listing"
-                style={styles.createListingButton}
-                onPress={() => router.push("/listing/new")}
-                activeOpacity={0.88}
-              >
-                <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
-                <ThemedText style={styles.createListingButtonText}>
-                  List your produce
-                </ThemedText>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Manage farm"
-                style={styles.manageFarmButton}
-                onPress={() => router.push("/farm/manage")}
-                activeOpacity={0.88}
-              >
-                <Ionicons name="leaf-outline" size={18} color="#2E2A1F" />
-                <ThemedText style={styles.manageFarmButtonText}>Manage farm</ThemedText>
-              </TouchableOpacity>
+              {ownedFarm ? <>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Create listing" style={styles.createListingButton} onPress={() => router.push("/listing/new")} activeOpacity={0.88}>
+                  <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                  <ThemedText style={styles.createListingButtonText}>List your produce</ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Manage farm" style={styles.manageFarmButton} onPress={() => router.push("/farm/manage")} activeOpacity={0.88}>
+                  <Ionicons name="leaf-outline" size={18} color="#2E2A1F" />
+                  <ThemedText style={styles.manageFarmButtonText}>Manage farm</ThemedText>
+                </TouchableOpacity>
+              </> : <TouchableOpacity accessibilityRole="button" accessibilityLabel="Set up your farm" style={styles.createListingButton} onPress={() => router.push("/listing/new")} activeOpacity={0.88}>
+                <Ionicons name="leaf-outline" size={18} color="#FFFFFF" />
+                <ThemedText style={styles.createListingButtonText}>Set up your farm</ThemedText>
+              </TouchableOpacity>}
             </View>
 
           </View>
@@ -181,13 +156,15 @@ export default function ListingsScreen() {
         <View style={styles.listHeader}>
           <View>
             <ThemedText style={[styles.listTitle, { color: colors.text.primary }]}>
-              Your listings
+              {ownedFarm ? "Your listings" : "No farm yet"}
             </ThemedText>
             <ThemedText style={[styles.listCount, { color: colors.text.secondary }]}>
-              {listings.length} {listings.length === 1 ? "item" : "items"} listed
+              {ownedFarm
+                ? `${listings.length} ${listings.length === 1 ? "item" : "items"} listed`
+                : "You can still browse farms and recipes without creating one."}
             </ThemedText>
           </View>
-          <TouchableOpacity
+          {ownedFarm ? <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Manage listings"
             style={[styles.manageTextButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
@@ -198,7 +175,7 @@ export default function ListingsScreen() {
               Manage
             </ThemedText>
             <Ionicons name="chevron-forward" size={15} color={colors.text.primary} />
-          </TouchableOpacity>
+          </TouchableOpacity> : null}
         </View>
 
         {filters.length > 1 ? (
