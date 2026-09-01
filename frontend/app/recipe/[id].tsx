@@ -994,4 +994,362 @@ export default function RecipeDetailScreen() {
               )}
             </ScrollView>
           </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
 
+const styles = StyleSheet.create({
+  content: {
+    paddingBottom: theme.spacing["4xl"],
+  },
+  hero: {
+    minHeight: 320,
+    justifyContent: "space-between",
+  },
+  heroImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(17, 24, 28, 0.32)",
+  },
+  heroFallback: {
+    ...StyleSheet.absoluteFillObject,
+    borderBottomWidth: 1,
+  },
+  heroTopRow: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: theme.spacing.lg,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    zIndex: 2,
+  },
+  backButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  heroActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  editButton: {
+    minHeight: 42,
+    borderRadius: 21,
+    paddingHorizontal: theme.spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(17, 24, 28, 0.6)",
+  },
+  editButtonText: {
+    color: theme.neutral.white,
+    fontSize: 14,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  heroContent: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+    gap: theme.spacing.md,
+  },
+  heroTitle: {
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  heroDescription: {
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: theme.typography.fontFamily,
+    maxWidth: "90%",
+  },
+  authorRow: {
+    alignSelf: "flex-start",
+    maxWidth: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+    backgroundColor: "rgba(17, 24, 28, 0.48)",
+  },
+  authorAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
+  authorAvatarFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+  },
+  authorCopy: {
+    flexShrink: 1,
+  },
+  authorEyebrow: {
+    color: "rgba(255, 255, 255, 0.78)",
+    fontSize: 11,
+    lineHeight: 14,
+    fontFamily: theme.typography.fontFamily,
+  },
+  authorName: {
+    color: theme.neutral.white,
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  metaRow: {
+    flexDirection: "row",
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    marginTop: -theme.spacing.lg,
+  },
+  metaCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 22,
+    padding: theme.spacing.md,
+    ...theme.shadows.sm,
+  },
+  recipeDetails: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.lg,
+  },
+  tagPill: {
+    minHeight: 32,
+    borderWidth: 1,
+    borderRadius: theme.borderRadius.full,
+    justifyContent: "center",
+    paddingHorizontal: theme.spacing.sm,
+  },
+  tagText: {
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily,
+  },
+  metaValue: {
+    marginTop: theme.spacing.sm,
+    fontSize: 20,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  metaLabel: {
+    marginTop: 4,
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily,
+  },
+  actionCard: {
+    marginTop: theme.spacing.lg,
+    marginHorizontal: theme.spacing.lg,
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: theme.spacing.lg,
+  },
+  addToListBtn: {
+    minHeight: 48,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  addToListBtnText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  sectionCard: {
+    marginTop: theme.spacing.lg,
+    marginHorizontal: theme.spacing.lg,
+    borderWidth: 1,
+    borderRadius: 24,
+    padding: theme.spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: theme.typography.fontSizes.h2,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  ingredientList: {
+    marginTop: theme.spacing.md,
+    gap: theme.spacing.md,
+  },
+  ingredientRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  ingredientDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: theme.brand.primary,
+  },
+  ingredientCopy: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+    flexWrap: "wrap",
+    flex: 1,
+  },
+  ingredientAmount: {
+    fontSize: 14,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  ingredientName: {
+    fontSize: 16,
+    fontWeight: theme.typography.fontWeights.medium,
+    fontFamily: theme.typography.fontFamily,
+  },
+  stepsList: {
+    marginTop: theme.spacing.md,
+    gap: theme.spacing.md,
+  },
+  stepRow: {
+    flexDirection: "row",
+    gap: theme.spacing.md,
+    alignItems: "flex-start",
+  },
+  stepBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: theme.brand.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+  stepBadgeText: {
+    color: theme.neutral.white,
+    fontSize: 14,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  stepText: {
+    flex: 1,
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: theme.typography.fontFamily,
+  },
+  centerState: {
+    flex: 1,
+    paddingHorizontal: theme.spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stateText: {
+    marginTop: theme.spacing.md,
+    fontSize: 15,
+  },
+  missingTitle: {
+    marginTop: theme.spacing.lg,
+    fontSize: 28,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  missingBody: {
+    marginTop: theme.spacing.sm,
+    textAlign: "center",
+    fontSize: 15,
+    lineHeight: 22,
+    fontFamily: theme.typography.fontFamily,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(17,24,28,0.38)",
+    justifyContent: "center",
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    borderRadius: 24,
+    borderWidth: 1,
+    maxHeight: "75%",
+    padding: 18,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: theme.spacing.md,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  createNewListButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: theme.spacing.md,
+  },
+  createNewListText: {
+    fontSize: 14,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  choiceList: {
+    flexGrow: 0,
+  },
+  choiceListContent: {
+    gap: 10,
+    paddingBottom: 4,
+  },
+  emptyChoiceText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  choiceRow: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  choiceIconWrap: {
+    width: 34,
+    alignItems: "center",
+  },
+  choiceCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  choiceTitle: {
+    fontSize: 15,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  choiceSubtitle: {
+    fontSize: 12,
+    fontFamily: theme.typography.fontFamily,
+  },
+});
