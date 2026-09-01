@@ -27,6 +27,8 @@ interface RecipeCardProps {
   isOwner?: boolean;
   onPress?: () => void;
   onEdit?: () => void;
+  onRate?: (rating: number) => void;
+  isRating?: boolean;
 }
 
 export function RecipeCard({
@@ -42,6 +44,8 @@ export function RecipeCard({
   isOwner = false,
   onPress,
   onEdit,
+  onRate,
+  isRating = false,
 }: RecipeCardProps) {
   const { colors } = useTheme();
   const [imageFailed, setImageFailed] = useState(false);
@@ -137,6 +141,26 @@ export function RecipeCard({
               {metaLabel}
             </ThemedText>
           </View>
+
+          {onRate && (
+            <View style={styles.rateRow}>
+              <ThemedText style={[styles.rateLabel, { color: colors.text.secondary }]}>Rate</ThemedText>
+              <View style={styles.stars}>
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <TouchableOpacity
+                    key={value}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rate ${title} ${value} stars`}
+                    onPress={() => onRate(value)}
+                    disabled={isRating}
+                    hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                  >
+                    <Ionicons name={(currentUserRating ?? 0) >= value ? "star" : "star-outline"} size={18} color="#F59E0B" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
         </View>
       </TouchableOpacity>
 
@@ -231,6 +255,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
+  rateRow: {
+    marginTop: theme.spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  rateLabel: {
+    fontSize: 12,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
+  stars: { flexDirection: "row", gap: 2 },
   editButtonText: {
     color: theme.neutral.white,
     fontSize: 12,

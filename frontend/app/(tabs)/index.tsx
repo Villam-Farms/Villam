@@ -452,7 +452,12 @@ export default function HomeScreen() {
       const recipeIds = rows.map((recipe) => recipe.id);
       const currentUserId = session?.user?.id ?? null;
 
-      const ratingSummaries = await getRecipeRatingSummaries(recipeIds, currentUserId);
+      let ratingSummaries: Record<string, RecipeRatingSummary> = {};
+      try {
+        ratingSummaries = await getRecipeRatingSummaries(recipeIds, currentUserId);
+      } catch (ratingError) {
+        console.warn('Home recipe ratings unavailable:', ratingError);
+      }
 
       const hydratedRecipes = await Promise.all(
         rows.map(async (recipe) => {
