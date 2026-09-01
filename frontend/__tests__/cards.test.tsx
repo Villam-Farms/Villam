@@ -116,6 +116,13 @@ describe("RecipeCard", () => {
     expect(screen.getByText("20 min")).toBeTruthy();
   });
 
+  it("allows a user to select a recipe rating", async () => {
+    const onRate = jest.fn();
+    const screen = await render(<RecipeCard id="r-rate" title="Rateable Soup" duration="20 min" onRate={onRate} />);
+    await fireEvent.press(screen.getByLabelText("Rate Rateable Soup 4 stars"));
+    expect(onRate).toHaveBeenCalledWith(4);
+  });
+
   it("shows unrated placeholders without optional edit and image", async () => {
     const screen = await render(<RecipeCard id="r3" title="Toast" duration="5 min" difficulty="   " isOwner />);
     expect(screen.getByText("No ratings yet")).toBeTruthy();

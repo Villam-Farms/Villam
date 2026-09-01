@@ -44,6 +44,12 @@ type DBStep = {
   }>;
 };
 
+type RecipeRating = {
+  recipe_id: string;
+  user_id: string;
+  rating: number;
+};
+
 type DBRecipe = {
   id: string;
   user_id: string | null;
@@ -176,6 +182,8 @@ export default function RecipeDetailScreen() {
   const [dbRecipe, setDbRecipe] = useState<DBRecipe | null>(null);
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
   const [recipeAuthor, setRecipeAuthor] = useState<RecipeAuthor | null>(null);
+  const [recipeRatings, setRecipeRatings] = useState<RecipeRating[]>([]);
+  const [savingRating, setSavingRating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [choosingList, setChoosingList] = useState(false);
   const [addingToList, setAddingToList] = useState(false);
@@ -252,6 +260,25 @@ export default function RecipeDetailScreen() {
       cancelled = true;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!dbRecipe) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("recipe_ratings")
+          .select("recipe_id,user_id,rating")
+          .eq("recipe_id", dbRecipe.id);
+        if (!cancelled && !error) setRecipeRatings((data ?? []) as RecipeRating[]);
+      } catch {
+        // Ratings are optional; the recipe remains available if they cannot load.
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [dbRecipe]);
 
   const recipe: NormalizedRecipe | null = useMemo(() => {
     if (dbRecipe) {
@@ -340,6 +367,37 @@ export default function RecipeDetailScreen() {
   }, [recipe]);
 
   const canEditRecipe = recipe?.source === "db" && dbRecipe?.user_id === viewerUserId;
+  const ratingSummary = useMemo(() => {
+    const count = recipeRatings.length;
+    const average = count ? recipeRatings.reduce((total, entry) => total + Number(entry.rating || 0), 0) / count : null;
+    const currentUserRating = viewerUserId ? recipeRatings.find((entry) => entry.user_id === viewerUserId)?.rating ?? null : null;
+    return { average, count, currentUserRating };
+  }, [recipeRatings, viewerUserId]);
+
+  const saveRecipeRating = async (rating: number) => {
+    if (!dbRecipe || !viewerUserId) {
+      Alert.alert("Sign in to rate", "Please sign in before rating this recipe.");
+      return;
+    }
+
+    try {
+      setSavingRating(true);
+      const { error } = await supabase
+        .from("recipe_ratings")
+        .upsert({ recipe_id: dbRecipe.id, user_id: viewerUserId, rating }, { onConflict: "recipe_id,user_id" });
+      if (error) throw error;
+      setRecipeRatings((ratings) => {
+        const existing = ratings.findIndex((entry) => entry.user_id === viewerUserId);
+        return existing >= 0
+          ? ratings.map((entry, index) => index === existing ? { ...entry, rating } : entry)
+          : [...ratings, { recipe_id: dbRecipe.id, user_id: viewerUserId, rating }];
+      });
+    } catch (error: any) {
+      Alert.alert("Could not save rating", error?.message ?? "Please try again.");
+    } finally {
+      setSavingRating(false);
+    }
+  };
 
   const loadGroceryListChoices = async () => {
     const localLists = await getLocalGroceryLists();
@@ -917,6 +975,30 @@ export default function RecipeDetailScreen() {
               ))}
             </View>
           </View>
+
+          {recipe.source === "db" && (
+            <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+              <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Rate this recipe</ThemedText>
+              <ThemedText style={[styles.ratingSummary, { color: colors.text.secondary }]}>
+                {ratingSummary.average == null
+                  ? "No ratings yet"
+                  : `${ratingSummary.average.toFixed(1)} average from ${ratingSummary.count} ${ratingSummary.count === 1 ? "rating" : "ratings"}`}
+              </ThemedText>
+              <View style={styles.ratingButtons}>
+                {[1, 2, 3, 4, 5].map((value) => (
+                  <TouchableOpacity
+                    key={value}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rate this recipe ${value} stars`}
+                    onPress={() => saveRecipeRating(value)}
+                    disabled={savingRating}
+                  >
+                    <Ionicons name={(ratingSummary.currentUserRating ?? 0) >= value ? "star" : "star-outline"} size={30} color="#F59E0B" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
         </ScrollView>
       </SafeAreaView>
 
@@ -1253,6 +1335,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     fontFamily: theme.typography.fontFamily,
+  },
+  ratingSummary: {
+    marginTop: theme.spacing.sm,
+    fontSize: 14,
+    fontFamily: theme.typography.fontFamily,
+  },
+  ratingButtons: {
+    marginTop: theme.spacing.md,
+    flexDirection: "row",
+    gap: theme.spacing.sm,
   },
   centerState: {
     flex: 1,
