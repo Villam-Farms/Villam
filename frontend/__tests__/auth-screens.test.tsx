@@ -17,7 +17,7 @@ jest.mock("@/context/auth-context", () => ({ useAuth: () => ({
   signInWithGoogle: (...a: unknown[]) => mockGoogle(...a),
 }) }));
 jest.mock("@/components/ui/input", () => ({ Input: (props: any) => { const React = require("react"); const { TextInput } = require("react-native"); return <TextInput {...props} />; } }));
-jest.mock("@/components/ui/button", () => ({ Button: ({ children, onPress }: any) => { const React = require("react"); const { Pressable, Text } = require("react-native"); return <Pressable accessibilityRole="button" onPress={onPress}><Text>{children}</Text></Pressable>; } }));
+jest.mock("@/components/ui/button", () => ({ Button: ({ children, onPress, disabled }: any) => { const React = require("react"); const { Pressable, Text } = require("react-native"); return <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled}><Text>{children}</Text></Pressable>; } }));
 jest.mock("@/components/ui/typography", () => {
   const React = require("react"); const { Text } = require("react-native");
   const T = ({ children, ...props }: any) => <Text {...props}>{children}</Text>;
@@ -57,12 +57,12 @@ describe("authentication screens", () => {
   it("validates login, reports auth errors, succeeds, and submits from password", async () => {
     const screen = await render(<Login />);
     await fireEvent.press(screen.getByText("Log in"));
-    expect(global.alert).toHaveBeenCalledWith("Please fill in all fields");
+    expect(screen.getByText("Please fill in all fields")).toBeTruthy();
     await fireEvent.changeText(screen.getByPlaceholderText("Email"), "ada@example.com");
     await fireEvent.changeText(screen.getByPlaceholderText("Password"), "secret");
-    mockSignIn.mockResolvedValueOnce("Invalid login");
+    mockSignIn.mockResolvedValueOnce("Invalid login credentials");
     await fireEvent.press(screen.getByText("Log in"));
-    await waitFor(() => expect(global.alert).toHaveBeenCalledWith("Invalid login"));
+    await waitFor(() => expect(screen.getByText("The email or password is incorrect. Please try again.")).toBeTruthy());
     expect(mockReplace).not.toHaveBeenCalled();
     await fireEvent(screen.getByPlaceholderText("Password"), "submitEditing");
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
@@ -73,12 +73,78 @@ describe("authentication screens", () => {
     const screen = await render(<Login />);
     mockGoogle.mockResolvedValueOnce("Google failed");
     await fireEvent.press(screen.getByText("Sign in with Google"));
-    expect(global.alert).toHaveBeenCalledWith("Google failed");
+    expect(screen.getByText("Google failed")).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
     mockGoogle.mockResolvedValueOnce(null);
     await fireEvent.press(screen.getByText("Sign in with Google"));
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/profile"));
     await fireEvent.press(screen.getByText("Create an account"));
     expect(mockPush).toHaveBeenCalledWith("/(auth)/signup");
+  });
+
+  it("shows rejected Google requests and allows a retry", async () => {
+    const screen = await render(<Login />);
+    mockGoogle.mockRejectedValueOnce(new Error("Network request failed"));
+    await fireEvent.press(screen.getByText("Sign in with Google"));
+    await waitFor(() => expect(screen.getByText("Unable to connect. Check your internet connection and try again.")).toBeTruthy());
+    expect(mockReplace).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText("Sign in with Google"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/profile"));
+    expect(screen.queryByText("Unable to connect. Check your internet connection and try again.")).toBeNull();
+  });
+
+  it("validates email before login and handles a network failure", async () => {
+    const screen = await render(<Login />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Email"), "invalid");
+    await fireEvent.changeText(screen.getByPlaceholderText("Password"), "secret");
+    await fireEvent.press(screen.getByText("Log in"));
+    expect(screen.getByText("Enter a valid email address.")).toBeTruthy();
+    expect(mockSignIn).not.toHaveBeenCalled();
+    await fireEvent.changeText(screen.getByPlaceholderText("Email"), " ada@example.com ");
+    mockSignIn.mockRejectedValueOnce(new Error("Network request failed"));
+    await fireEvent.press(screen.getByText("Log in"));
+    await waitFor(() => expect(screen.getByText("Unable to connect. Check your internet connection and try again.")).toBeTruthy());
+    expect(mockReplace).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText("Log in"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
+    expect(mockSignIn).toHaveBeenLastCalledWith("ada@example.com", "secret");
+  });
+
+  it("prevents repeated submissions while login is pending", async () => {
+    let finish!: (value: null) => void;
+    mockSignIn.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const screen = await render(<Login />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Email"), "ada@example.com");
+    await fireEvent.changeText(screen.getByPlaceholderText("Password"), "secret");
+    let submission!: Promise<void>;
+    await act(async () => {
+      submission = fireEvent.press(screen.getByText("Log in"));
+    });
+    await fireEvent(screen.getByPlaceholderText("Password"), "submitEditing");
+    await fireEvent.press(screen.getByText("Signing in…"));
+    expect(mockSignIn).toHaveBeenCalledTimes(1);
+    expect(mockGoogle).not.toHaveBeenCalled();
+    await act(async () => { finish(null); await submission; });
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
+  });
+
+  it("validates signup passwords and recovers from unexpected failures", async () => {
+    const screen = await render(<SignUp />);
+    await fireEvent.changeText(screen.getByPlaceholderText("Email"), "ada@example.com");
+    await fireEvent.changeText(screen.getByPlaceholderText("Password"), "abc");
+    await fireEvent.changeText(screen.getByPlaceholderText("Full Name"), " Ada ");
+    await fireEvent.changeText(screen.getByPlaceholderText("Username"), " ada ");
+    await fireEvent.press(screen.getByText("Sign Up"));
+    expect(screen.getByText("Use a password with at least 6 characters.")).toBeTruthy();
+    expect(mockSignUp).not.toHaveBeenCalled();
+    await fireEvent.changeText(screen.getByPlaceholderText("Password"), "secret");
+    mockSignUp.mockRejectedValueOnce(new Error("Internal failure"));
+    await fireEvent.press(screen.getByText("Sign Up"));
+    await waitFor(() => expect(screen.getByText("Unable to create your account. Please try again.")).toBeTruthy());
+    expect(mockReplace).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText("Sign Up"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/(auth)/login"));
+    expect(mockSignUp).toHaveBeenLastCalledWith("ada@example.com", "secret", { name: "Ada", username: "ada" });
   });
 
   it("reacts to keyboard visibility and removes listeners on login unmount", async () => {
@@ -95,14 +161,14 @@ describe("authentication screens", () => {
   it("validates signup, reports errors, succeeds, and submits from username", async () => {
     const screen = await render(<SignUp />);
     await fireEvent.press(screen.getByText("Sign Up"));
-    expect(global.alert).toHaveBeenCalledWith("Please fill in all fields");
+    expect(screen.getByText("Please fill in all fields")).toBeTruthy();
     await fireEvent.changeText(screen.getByPlaceholderText("Email"), "ada@example.com");
     await fireEvent.changeText(screen.getByPlaceholderText("Password"), "secret");
     await fireEvent.changeText(screen.getByPlaceholderText("Full Name"), "Ada Farmer");
     await fireEvent.changeText(screen.getByPlaceholderText("Username"), "ada");
-    mockSignUp.mockResolvedValueOnce("Username taken");
+    mockSignUp.mockResolvedValueOnce("User already exists");
     await fireEvent.press(screen.getByText("Sign Up"));
-    await waitFor(() => expect(global.alert).toHaveBeenCalledWith("Username taken"));
+    await waitFor(() => expect(screen.getByText("An account with this email already exists. Log in instead.")).toBeTruthy());
     await fireEvent(screen.getByPlaceholderText("Username"), "submitEditing");
     await waitFor(() => expect(global.alert).toHaveBeenCalledWith("Check your email to confirm your account."));
     expect(mockSignUp).toHaveBeenLastCalledWith("ada@example.com", "secret", { name: "Ada Farmer", username: "ada" });
@@ -114,7 +180,7 @@ describe("authentication screens", () => {
     expect(screen.getByTestId("signup-art")).toBeTruthy();
     mockGoogle.mockResolvedValueOnce("No Google");
     await fireEvent.press(screen.getByText("Sign up with Google"));
-    expect(global.alert).toHaveBeenCalledWith("No Google");
+    expect(screen.getByText("No Google")).toBeTruthy();
     await fireEvent.press(screen.getByText("Sign up with Google"));
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/profile"));
     await fireEvent.press(screen.getByText("Log in"));

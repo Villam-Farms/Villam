@@ -7,13 +7,18 @@ import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { AntDesign } from '@expo/vector-icons';
 import { router, Stack } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/context/auth-context";
 
+import { authErrorMessage, validAuthEmail } from "@/lib/auth-errors";
+
 export default function Login() {
+  const requestPending = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
@@ -35,30 +40,54 @@ export default function Login() {
   }, []);
 
   const handleLogin = async () => {
+    if (requestPending.current) return;
     Keyboard.dismiss();
-    
-    if (!email || !password) {
-      alert("Please fill in all fields");
+    setAuthError(null);
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setAuthError("Please fill in all fields");
       return;
     }
-
-    const error = await signInWithPassword(email, password);
-    if (error) {
-      alert(error);
+    if (!validAuthEmail(cleanEmail)) {
+      setAuthError("Enter a valid email address.");
       return;
     }
-
-    router.replace("/");
+    requestPending.current = true;
+    setSubmitting(true);
+    try {
+      const error = await signInWithPassword(cleanEmail, password);
+      if (error) {
+        setAuthError(authErrorMessage(error, "Unable to log in. Please try again."));
+        return;
+      }
+      router.replace("/");
+    } catch (error) {
+      setAuthError(authErrorMessage(error, "Unable to log in. Please try again."));
+    } finally {
+      requestPending.current = false;
+      setSubmitting(false);
+    }
   };
 
   const handleGoogleSignIn = async () => {
-    const error = await signInWithGoogle();
-    if (error) {
-      alert(error);
-      return;
+    if (requestPending.current) return;
+    requestPending.current = true;
+    Keyboard.dismiss();
+    setAuthError(null);
+    setSubmitting(true);
+    try {
+      const error = await signInWithGoogle();
+      if (error) {
+        setAuthError(error);
+        return;
+      }
+      router.replace("/(onboarding)/profile");
+    } catch (error) {
+      setAuthError(authErrorMessage(error, "Unable to sign in with Google. Please try again."));
+    } finally {
+      requestPending.current = false;
+      setSubmitting(false);
     }
-
-    router.replace("/(onboarding)/profile");
   };
 
   return (
@@ -98,6 +127,12 @@ export default function Login() {
               </Typography.H5>
             </Animated.View>
 
+            {authError && (
+              <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ color: theme.semantic.error, marginTop: 12, marginBottom: 12 }}>
+                {authError}
+              </Text>
+            )}
+
             <View style={styles.form}>
               <Input
                 placeholder="Email"
@@ -121,9 +156,10 @@ export default function Login() {
             <Button
               variant="primary"
               onPress={handleLogin}
+              disabled={submitting}
               style={styles.loginButton}
             >
-              Log in
+              {submitting ? "Please wait…" : "Log in"}
             </Button>
 
             <Typography.H5 style={[styles.divider, { color: colors.text.tertiary }]}>
@@ -132,6 +168,9 @@ export default function Login() {
 
             <TouchableOpacity
               onPress={handleGoogleSignIn}
+              disabled={submitting}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: submitting, busy: submitting }}
               style={[
                 styles.googleButton,
                 {
@@ -149,7 +188,7 @@ export default function Login() {
                   style={styles.googleIcon}
                 />
                 <Text style={[styles.googleButtonText, { color: colors.text.primary }]}>
-                  Sign in with Google
+                  {submitting ? "Signing in…" : "Sign in with Google"}
                 </Text>
               </View>
             </TouchableOpacity>
