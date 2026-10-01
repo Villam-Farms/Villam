@@ -7,13 +7,18 @@ import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { AntDesign } from '@expo/vector-icons';
 import { router, Stack } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View } from "react-native";
 import Animated, { FadeInUp } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/context/auth-context";
 
+import { authErrorMessage, validAuthEmail } from "@/lib/auth-errors";
+
 export default function SignUp() {
+  const requestPending = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -37,31 +42,59 @@ export default function SignUp() {
   }, []);
 
   const handleSignUp = async () => {
+    if (requestPending.current) return;
     Keyboard.dismiss();
-    
-    if (!email || !password || !name || !username) {
-      alert("Please fill in all fields");
+    setAuthError(null);
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password || !name.trim() || !username.trim()) {
+      setAuthError("Please fill in all fields");
       return;
     }
-
-    const error = await signUpWithPassword(email, password, { name, username });
-    if (error) {
-      alert(error);
+    if (!validAuthEmail(cleanEmail)) {
+      setAuthError("Enter a valid email address.");
       return;
     }
-
-    alert("Check your email to confirm your account.");
-    router.replace("/(auth)/login");
+    if (password.length < 6) {
+      setAuthError("Use a password with at least 6 characters.");
+      return;
+    }
+    requestPending.current = true;
+    setSubmitting(true);
+    try {
+      const error = await signUpWithPassword(cleanEmail, password, { name: name.trim(), username: username.trim() });
+      if (error) {
+        setAuthError(authErrorMessage(error, "Unable to create your account. Please try again."));
+        return;
+      }
+      alert("Check your email to confirm your account.");
+      router.replace("/(auth)/login");
+    } catch (error) {
+      setAuthError(authErrorMessage(error, "Unable to create your account. Please try again."));
+    } finally {
+      requestPending.current = false;
+      setSubmitting(false);
+    }
   };
 
   const handleGoogleSignIn = async () => {
-    const error = await signInWithGoogle();
-    if (error) {
-      alert(error);
-      return;
+    if (requestPending.current) return;
+    requestPending.current = true;
+    Keyboard.dismiss();
+    setAuthError(null);
+    setSubmitting(true);
+    try {
+      const error = await signInWithGoogle();
+      if (error) {
+        setAuthError(error);
+        return;
+      }
+      router.replace("/(onboarding)/profile");
+    } catch (error) {
+      setAuthError(authErrorMessage(error, "Unable to sign in with Google. Please try again."));
+    } finally {
+      requestPending.current = false;
+      setSubmitting(false);
     }
-
-    router.replace("/(onboarding)/profile");
   };
 
   return (
@@ -103,6 +136,12 @@ export default function SignUp() {
             </Animated.View>
 
             {/* Form */}
+            {authError && (
+              <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={{ color: theme.semantic.error, marginTop: 12, marginBottom: 12 }}>
+                {authError}
+              </Text>
+            )}
+
             <View style={styles.form}>
               <Input
                 placeholder="Email"
@@ -142,9 +181,10 @@ export default function SignUp() {
             <Button
               variant="primary"
               onPress={handleSignUp}
+              disabled={submitting}
               style={styles.signUpButton}
             >
-              Sign Up
+              {submitting ? "Please wait…" : "Sign Up"}
             </Button>
 
             {/* Divider */}
@@ -155,6 +195,9 @@ export default function SignUp() {
             {/* Google Sign In */}
             <TouchableOpacity
               onPress={handleGoogleSignIn}
+              disabled={submitting}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: submitting, busy: submitting }}
               style={[
                 styles.googleButton,
                 {
@@ -172,19 +215,20 @@ export default function SignUp() {
                   style={styles.googleIcon}
                 />
                 <Text style={[styles.googleButtonText, { color: colors.text.primary }]}>
-                  Sign up with Google
+                  {submitting ? "Signing in…" : "Sign up with Google"}
                 </Text>
               </View>
             </TouchableOpacity>
 
             {/* Login Link */}
+
             <View style={styles.footer}>
               <Typography.H5 color={colors.text.secondary}>
                 Already have an account?{' '}
               </Typography.H5>
               <TouchableOpacity onPress={() => router.push("/(auth)/login")}>
                 <Typography.H5 color={theme.brand.primary} style={styles.link}>
-                  Log in
+                  {submitting ? "Please wait…" : "Log in"}
                 </Typography.H5>
               </TouchableOpacity>
             </View>

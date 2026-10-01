@@ -50,7 +50,7 @@ function readCallbackParam(url: URL, name: string) {
   return fragment.get(name);
 }
 
-async function createSessionFromCallbackUrl(url: string): Promise<string | null> {
+async function createSessionFromCallbackUrl(url: string, requireCredentials = false): Promise<string | null> {
   if (completedCallbacks.has(url)) return null;
 
   const existingPromise = callbackPromises.get(url);
@@ -73,7 +73,9 @@ async function createSessionFromCallbackUrl(url: string): Promise<string | null>
 
     const accessToken = readCallbackParam(callbackUrl, "access_token");
     const refreshToken = readCallbackParam(callbackUrl, "refresh_token");
-    if (!accessToken || !refreshToken) return null;
+    if (!accessToken || !refreshToken) {
+      return requireCredentials ? "Google sign-in did not complete. Please try again." : null;
+    }
 
     const { error } = await supabase.auth.setSession({
       access_token: accessToken,
@@ -159,30 +161,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return error?.message ?? null;
       },
       signInWithGoogle: async () => {
-        const redirectTo = getAuthRedirectUrl();
+        try {
+          const redirectTo = getAuthRedirectUrl();
 
-        const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo,
-            skipBrowserRedirect: Platform.OS !== "web",
-          },
-        });
+          const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: "google",
+            options: {
+              redirectTo,
+              skipBrowserRedirect: Platform.OS !== "web",
+            },
+          });
 
-        if (error) return error.message;
-        if (!data?.url) return "Unable to start Google sign-in";
+          if (error) return error.message;
+          if (!data?.url) return "Unable to start Google sign-in";
 
-        if (Platform.OS === "web") {
-          globalThis.location?.assign(data.url);
-          return null;
+          if (Platform.OS === "web") {
+            globalThis.location?.assign(data.url);
+            return null;
+          }
+
+          const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+          if (result.type !== "success" || !("url" in result) || !result.url) {
+            return "Google sign-in cancelled";
+          }
+
+          return await createSessionFromCallbackUrl(result.url, true);
+        } catch {
+          return "Unable to sign in with Google. Check your connection and try again.";
         }
-
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-        if (result.type !== "success" || !("url" in result) || !result.url) {
-          return "Google sign-in cancelled";
-        }
-
-        return createSessionFromCallbackUrl(result.url);
       },
       signOut: async () => {
         try {

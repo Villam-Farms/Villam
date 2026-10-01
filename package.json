@@ -14,12 +14,12 @@
     "test:backend": "PYTHONPATH=backend backend/.venv/bin/python -m unittest discover -s backend/tests -v"
   },
   "dependencies": {
-    "expo": "~55.0.25",
-    "react": "19.2.0",
-    "react-native": "0.83.6"
+    "expo": "^54.0.37",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
   },
   "devDependencies": {
-    "@types/react": "~19.2.10",
+    "@types/react": "~19.1.10",
     "typescript": "~5.9.2"
   }
 }
