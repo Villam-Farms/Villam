@@ -1,5 +1,6 @@
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
+import Constants, { ExecutionEnvironment } from "expo-constants";
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Linking, Platform } from "react-native";
 import type { Session } from "@supabase/supabase-js";
@@ -161,6 +162,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return error?.message ?? null;
       },
       signInWithGoogle: async () => {
+        if (Platform.OS !== "web" && Constants.executionEnvironment === ExecutionEnvironment.StoreClient) {
+          return "Google sign-in is unavailable in Expo Go. Use a Villam development build, or log in with email and password.";
+        }
         try {
           const redirectTo = getAuthRedirectUrl();
 

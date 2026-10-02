@@ -59,6 +59,8 @@ export default function ResetPassword() {
       <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <ScrollView
+            automaticallyAdjustKeyboardInsets
+            keyboardDismissMode="on-drag"
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}

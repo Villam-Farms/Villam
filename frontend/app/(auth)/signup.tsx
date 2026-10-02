@@ -17,6 +17,7 @@ import { authErrorMessage, validAuthEmail } from "@/lib/auth-errors";
 
 export default function SignUp() {
   const requestPending = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -26,6 +27,10 @@ export default function SignUp() {
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const { signUpWithPassword, signInWithGoogle } = useAuth();
   const { colors } = useTheme();
+
+  useEffect(() => {
+    if (authError) scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [authError]);
 
   useEffect(() => {
     const showSubscription = Keyboard.addListener("keyboardDidShow", () => {
@@ -107,6 +112,7 @@ export default function SignUp() {
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
             <ScrollView
+              ref={scrollRef}
               contentContainerStyle={[
                 styles.scrollContent,
                 isKeyboardVisible && styles.scrollContentWithKeyboard,

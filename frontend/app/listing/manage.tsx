@@ -331,7 +331,11 @@ export default function ManageListingsScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: colors.surface, borderColor: colors.border.light }]}
@@ -459,7 +463,11 @@ export default function ManageListingsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              automaticallyAdjustKeyboardInsets
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}>
               <SelectorField
                 label="Produce item"
                 value={selectedProduceItem?.name ?? "Choose a produce item"}
@@ -609,7 +617,11 @@ export default function ManageListingsScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              automaticallyAdjustKeyboardInsets
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}>
               {pickerOptions.map((option) => (
                 <TouchableOpacity
                   key={option.id}

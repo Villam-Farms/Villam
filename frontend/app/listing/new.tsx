@@ -437,7 +437,11 @@ export default function NewListingScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View
           style={[
             styles.hero,
@@ -812,7 +816,11 @@ export default function NewListingScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              automaticallyAdjustKeyboardInsets
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}>
               {pickerOptions.map((option) => (
                 <TouchableOpacity
                   key={option.id}
