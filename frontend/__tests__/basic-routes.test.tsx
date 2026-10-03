@@ -6,6 +6,7 @@ const mockPush = jest.fn();
 const mockBack = jest.fn();
 const mockParams = jest.fn();
 const mockUseOnboarding = jest.fn();
+const mockUseAuth = jest.fn();
 
 jest.mock("expo-router", () => {
   const React = require("react");
@@ -30,6 +31,7 @@ jest.mock("@/context/onboarding-context", () => ({
   },
   useOnboarding: () => mockUseOnboarding(),
 }));
+jest.mock("@/context/auth-context", () => ({ useAuth: () => mockUseAuth() }));
 jest.mock("@/components/onboarding/screen", () => ({
   OnboardingScreen: ({ title, children, next, back, error }: any) => {
     const React = require("react"); const { View, Text, Pressable } = require("react-native");
@@ -62,7 +64,11 @@ import CreateScreen from "@/app/(tabs)/create";
 import Index from "@/app/index";
 
 describe("basic route layouts and redirects", () => {
-  beforeEach(() => { jest.clearAllMocks(); mockParams.mockReturnValue({}); });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockParams.mockReturnValue({});
+    mockUseAuth.mockReturnValue({ session: null, initialized: true });
+  });
 
   it("declares auth screens", async () => {
     const screen = await render(<AuthLayout />);
@@ -90,6 +96,12 @@ describe("basic route layouts and redirects", () => {
     const screen = await render(<Index />);
     await waitFor(() => expect(screen.getByTestId("redirect")).toBeTruthy());
     expect(screen.getByTestId("redirect").props.accessibilityLabel).toBe("/(auth)/login");
+  });
+
+  it("sends a restored signed-in session to the home tabs", async () => {
+    mockUseAuth.mockReturnValue({ session: { user: { id: "user-1" } }, initialized: true });
+    const screen = await render(<Index />);
+    expect(screen.getByTestId("redirect").props.accessibilityLabel).toBe("/(tabs)");
   });
 });
 

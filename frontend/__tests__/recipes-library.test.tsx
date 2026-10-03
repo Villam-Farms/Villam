@@ -27,11 +27,11 @@ describe("recipe library", () => {
   it("loads, hydrates, filters, searches, and opens recipes", async () => {
     const screen = await render(<RecipesScreen />);
     await waitFor(() => expect(screen.getAllByText("Carrot Soup").length).toBeGreaterThan(0));
-    expect(mockSigned).toHaveBeenCalledWith("cover.jpg", 3600); expect(screen.getByText("45 min")).toBeTruthy();
+    expect(mockSigned).toHaveBeenCalledWith("cover.jpg", 3600); expect(screen.getByText("30 min")).toBeTruthy();
     await fireEvent.press(screen.getAllByText("Breakfast")[0]); expect(screen.getAllByText("Toast").length).toBeGreaterThan(0); expect(screen.queryByText("Mystery Dish")).toBeNull();
     await fireEvent.changeText(screen.getByPlaceholderText("Search recipes, tags, ingredients, or steps"), "nothing"); await waitFor(() => expect(screen.getByText("No recipes found")).toBeTruthy());
     await fireEvent.press(screen.getByLabelText("Clear search")); await fireEvent.press(screen.getAllByText("All")[0]); await waitFor(() => expect(screen.getAllByText("Carrot Soup").length).toBeGreaterThan(0));
-    await fireEvent.press(screen.getByText("Open recipe")); expect(mockPush).toHaveBeenCalledWith("/recipe/r1");
+    await fireEvent.press(screen.getByLabelText("Open recipe Carrot Soup")); expect(mockPush).toHaveBeenCalledWith("/recipe/r1");
     await fireEvent.press(screen.getByText("Create")); expect(mockPush).toHaveBeenCalledWith("/recipe/new"); await fireEvent.press(screen.getByLabelText("Go back")); expect(mockBack).toHaveBeenCalled();
   });
 

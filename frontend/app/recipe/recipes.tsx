@@ -312,18 +312,6 @@ export default function RecipesScreen() {
   const heroRecipe = filteredRecipes[0] ?? recipes[0] ?? null;
   const quickPicks = filteredRecipes.slice(0, 3);
 
-  const averageTimeLabel = useMemo(() => {
-    const timedRecipes = filteredRecipes.filter((recipe) => Number(recipe.total_time_minutes || 0) > 0);
-
-    if (timedRecipes.length === 0) return "—";
-
-    const average = Math.round(
-      timedRecipes.reduce((sum, recipe) => sum + Number(recipe.total_time_minutes || 0), 0) / timedRecipes.length
-    );
-
-    return formatMinutes(average);
-  }, [filteredRecipes]);
-
   const renderRecipeImage = (recipe: StoredRecipe, imageStyle: any) => {
     const imageUrl = getCoverImageUrl(recipe);
 
@@ -466,7 +454,17 @@ export default function RecipesScreen() {
           />
         ) : (
           <>
-            {heroRecipe && (
+            <SectionTitle
+              colors={colors}
+              title="Browse all recipes"
+              subtitle={`${filteredRecipes.length} ${filteredRecipes.length === 1 ? "recipe" : "recipes"} available`}
+            />
+
+            {/* The library uses its card grid as the primary view. The older
+                editorial hero and duplicate quick-pick carousel hid the list
+                behind an oversized cover image on mobile. */}
+            {/** The legacy hero remains intentionally disabled; it obscured the library on phones. */}
+            {false && heroRecipe && (
               <View style={[styles.featuredCard, { backgroundColor: colors.card, borderColor: colors.border.light }]}>
                 {renderRecipeImage(heroRecipe, styles.featuredImage)}
                 <View style={styles.featuredOverlay} />
@@ -538,23 +536,7 @@ export default function RecipesScreen() {
               </View>
             )}
 
-            <View style={styles.statsRow}>
-              <View style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
-                <ThemedText style={[styles.statValue, { color: colors.text.primary }]}>
-                  {filteredRecipes.length}
-                </ThemedText>
-                <ThemedText style={[styles.statLabel, { color: colors.text.secondary }]}>recipes showing</ThemedText>
-              </View>
-
-              <View style={[styles.statCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
-                <ThemedText style={[styles.statValue, { color: colors.text.primary }]}>
-                  {averageTimeLabel}
-                </ThemedText>
-                <ThemedText style={[styles.statLabel, { color: colors.text.secondary }]}>average total time</ThemedText>
-              </View>
-            </View>
-
-            {quickPicks.length > 0 && (
+            {false && quickPicks.length > 0 && (
               <>
                 <SectionTitle colors={colors} title="Quick picks" subtitle="The most recent matching recipes." />
 
@@ -590,12 +572,6 @@ export default function RecipesScreen() {
               </>
             )}
 
-            <SectionTitle
-              colors={colors}
-              title="Browse all recipes"
-              subtitle={`Filtered for ${activeCategory.toLowerCase()} and your current search.`}
-            />
-
             <View style={styles.recipeGrid}>
               {filteredRecipes.map((recipe) => {
                 const tags = getTags(recipe);
@@ -603,6 +579,8 @@ export default function RecipesScreen() {
                 return (
                   <TouchableOpacity
                     key={recipe.id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open recipe ${recipe.title}`}
                     style={[styles.recipeTile, { backgroundColor: colors.background, borderColor: colors.border.light }]}
                     activeOpacity={0.88}
                     onPress={() => router.push(`/recipe/${recipe.id}`)}

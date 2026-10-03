@@ -1,21 +1,14 @@
 import { Redirect } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React from "react";
+
+import { useAuth } from "@/context/auth-context";
 
 export default function Index() {
-  // TODO: Replace with actual auth check (AsyncStorage, etc.)
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const { session, initialized } = useAuth();
 
-  useEffect(() => {
-    // Check auth status
-    // For now, just set loading to false
-    setIsLoading(false);
-  }, []);
+  // Wait for Supabase to restore a persisted session before choosing a route.
+  // The AuthGate in _layout handles the profile/onboarding decision afterwards.
+  if (!initialized) return null;
 
-  if (isLoading) {
-    return null; // or a loading screen
-  }
-
-  // Redirect based on auth status
-  return <Redirect href={isAuthenticated ? "/(tabs)" : "/(auth)/login"} />;
+  return <Redirect href={session ? "/(tabs)" : "/(auth)/login"} />;
 }
