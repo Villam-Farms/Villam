@@ -1,7 +1,7 @@
-import { ScrollView, StyleSheet, TouchableOpacity, TextInput, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, TextInput, View } from 'react-native';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from "expo-router/react-navigation";
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -363,6 +363,7 @@ export default function HomeScreen() {
   const [recipesError, setRecipesError] = useState<string | null>(null);
   const [homeRecipes, setHomeRecipes] = useState<HomeRecipeCardData[]>([]);
   const [recipeSearchIndex, setRecipeSearchIndex] = useState<Record<string, string>>({});
+  const [ratingRecipeId, setRatingRecipeId] = useState<string | null>(null);
 
   const [groceryListsLoading, setGroceryListsLoading] = useState(false);
   const [groceryListsError, setGroceryListsError] = useState<string | null>(null);
@@ -586,6 +587,47 @@ export default function HomeScreen() {
 
   const handleRecipePress = (recipeId: string) => {
     router.push(`/recipe/${recipeId}`);
+  };
+
+  const handleRecipeRating = async (recipeId: string, rating: number) => {
+    const userId = session?.user?.id;
+    if (!userId) {
+      Alert.alert('Sign in to rate', 'Please sign in before rating this recipe.');
+      return;
+    }
+
+    try {
+      setRatingRecipeId(recipeId);
+      const { error } = await supabase
+        .from('recipe_ratings')
+        .upsert({ recipe_id: recipeId, user_id: userId, rating }, { onConflict: 'recipe_id,user_id' });
+
+      if (error) throw error;
+
+      setHomeRecipes((recipes) =>
+        recipes.map((recipe) => {
+          if (recipe.id !== recipeId) return recipe;
+
+          const hadRating = recipe.currentUserRating !== null;
+          const previousTotal = (recipe.rating ?? 0) * recipe.ratingsCount;
+          const nextCount = hadRating ? recipe.ratingsCount : recipe.ratingsCount + 1;
+          const nextTotal = hadRating
+            ? previousTotal - (recipe.currentUserRating ?? 0) + rating
+            : previousTotal + rating;
+
+          return {
+            ...recipe,
+            currentUserRating: rating,
+            ratingsCount: nextCount,
+            rating: nextCount > 0 ? nextTotal / nextCount : null,
+          };
+        })
+      );
+    } catch (error: any) {
+      Alert.alert('Could not save rating', error?.message ?? 'Please try again.');
+    } finally {
+      setRatingRecipeId(null);
+    }
   };
 
   const handleProducePress = (produceId: string) => {
@@ -998,6 +1040,8 @@ export default function HomeScreen() {
                   difficulty={recipe.difficulty}
                   imageUrl={recipe.imageUrl}
                   onPress={() => handleRecipePress(recipe.id)}
+                  onRate={(rating) => void handleRecipeRating(recipe.id, rating)}
+                  isRating={ratingRecipeId === recipe.id}
                 />
               ))}
             </ScrollView>

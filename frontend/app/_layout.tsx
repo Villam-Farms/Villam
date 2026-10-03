@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -23,12 +23,11 @@ SplashScreen.preventAutoHideAsync();
 
 function AuthGate() {
   const { session, initialized } = useAuth();
-  const { data: profile, isFetching } = useMyProfile();
+  const { data: profile, isFetching, isError: profileLoadFailed } = useMyProfile();
   const segments = useSegments();
   const router = useRouter();
 
-  const isProfileComplete = Boolean(
-    profile?.onboarding_completed_at &&
+  const hasLegacyCompleteProfile = Boolean(
     profile?.username &&
     profile?.full_name &&
     profile?.avatar_url &&
@@ -37,6 +36,7 @@ function AuthGate() {
     profile?.app_goals?.length &&
     profile?.produce_interests?.length
   );
+  const isProfileComplete = Boolean(profile?.onboarding_completed_at) || hasLegacyCompleteProfile;
 
   useEffect(() => {
     if (!initialized || isFetching) return;
@@ -50,7 +50,7 @@ function AuthGate() {
     }
 
     if (session && inAuthGroup) {
-      if (isProfileComplete) {
+      if (isProfileComplete || profileLoadFailed) {
         debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect auth->tabs', data: { segments: [...segments], isProfileComplete } });
         router.replace('/(tabs)');
       } else {
@@ -60,12 +60,12 @@ function AuthGate() {
       return;
     }
 
-    if (session && !inAuthGroup && !inOnboardingGroup && !isProfileComplete) {
+    if (session && !inAuthGroup && !inOnboardingGroup && !isProfileComplete && !profileLoadFailed) {
       debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect outside onboarding->profile', data: { segments: [...segments], isProfileComplete } });
       router.replace('/(onboarding)/profile');
       return;
     }
-  }, [initialized, isFetching, isProfileComplete, router, segments, session]);
+  }, [initialized, isFetching, isProfileComplete, profileLoadFailed, router, segments, session]);
 
   return null;
 }

@@ -15,7 +15,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { theme } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from "expo-router/react-navigation";
 import { getLocalGroceryLists, deleteLocalGroceryList } from '@/lib/local-grocery-lists';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/auth-context';

@@ -21,7 +21,7 @@ jest.mock("@/lib/debug-log", () => ({ debugLog: jest.fn() }));
 jest.mock("expo-splash-screen", () => ({ preventAutoHideAsync: jest.fn(), hideAsync: () => mockHide() }));
 jest.mock("expo-status-bar", () => ({ StatusBar: () => null }));
 jest.mock("react-native-gesture-handler", () => ({ GestureHandlerRootView: ({ children }: any) => children }));
-jest.mock("@react-navigation/native", () => ({ DarkTheme: {}, DefaultTheme: {}, ThemeProvider: ({ children }: any) => children }));
+jest.mock("expo-router/react-navigation", () => ({ DarkTheme: {}, DefaultTheme: {}, ThemeProvider: ({ children }: any) => children }));
 jest.mock("@tanstack/react-query", () => ({ QueryClient: jest.fn(), QueryClientProvider: ({ children }: any) => children }));
 jest.mock("react-native-reanimated", () => ({}));
 jest.mock("@/hooks/useTheme", () => ({ useTheme: () => ({ colors: { background: "white", border: { light: "gray" } } }) }));

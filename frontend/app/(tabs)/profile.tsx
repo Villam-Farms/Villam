@@ -22,7 +22,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@/context/auth-context";
 import { getMe, uploadMyAvatar, updateMyDescription, type MeResponse, type ProfileRow } from "@/lib/follows";
 import { listNotifications, listThreads } from "@/lib/social";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { supabase } from "@/lib/supabase";
 import { RecipeCard } from "@/components/ui/recipes/recipecard";
 import { useSavedItems, useSavedSearches } from "@/hooks/useSaved";

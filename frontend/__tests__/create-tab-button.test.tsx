@@ -12,7 +12,7 @@ jest.mock("expo-haptics", () => ({
   ImpactFeedbackStyle: { Light: "light", Medium: "medium" },
 }));
 jest.mock("@expo/vector-icons", () => ({ Ionicons: "Ionicons" }));
-jest.mock("@react-navigation/elements", () => ({
+jest.mock("expo-router/react-navigation", () => ({
   PlatformPressable: ({ children, onPress, ...props }: any) => {
     const { Pressable } = require("react-native");
     return <Pressable {...props} onPress={onPress}>{children}</Pressable>;

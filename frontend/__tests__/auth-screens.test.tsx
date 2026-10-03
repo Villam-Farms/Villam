@@ -77,7 +77,7 @@ describe("authentication screens", () => {
     expect(mockReplace).not.toHaveBeenCalled();
     mockGoogle.mockResolvedValueOnce(null);
     await fireEvent.press(screen.getByText("Sign in with Google"));
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/profile"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
     await fireEvent.press(screen.getByText("Create an account"));
     expect(mockPush).toHaveBeenCalledWith("/(auth)/signup");
   });
@@ -182,7 +182,7 @@ describe("authentication screens", () => {
     await fireEvent.press(screen.getByText("Sign up with Google"));
     expect(screen.getByText("No Google")).toBeTruthy();
     await fireEvent.press(screen.getByText("Sign up with Google"));
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/(onboarding)/profile"));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/"));
     await fireEvent.press(screen.getByText("Log in"));
     expect(mockPush).toHaveBeenCalledWith("/(auth)/login");
     await act(async () => mockKeyboardListeners.keyboardDidShow());

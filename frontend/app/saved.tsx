@@ -13,12 +13,10 @@ import { useSavedItems, useSavedSearches } from "@/hooks/useSaved";
 import { useAuth } from "@/context/auth-context";
 import { deleteSavedSearch, renameSavedSearch, setItemSaved, type SavedItem, type SavedItemType, type SavedSearch } from "@/lib/saved";
 import { fetchMarketplaceListings, type MarketplaceListing } from "@/lib/marketplace";
-import { recipes as localRecipes } from "@/lib/recipes";
 import { supabase } from "@/lib/supabase";
 import { Image } from "expo-image";
 
 type SavedDisplay = { type: SavedItemType; id: string; title: string; subtitle: string; route: string; imageUrl?: string | null };
-const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const ITEM_ICONS: Record<SavedItemType, React.ComponentProps<typeof Ionicons>["name"]> = {
   farm: "storefront-outline", produce: "leaf-outline", listing: "pricetag-outline", recipe: "restaurant-outline",
 };
@@ -83,11 +81,10 @@ export default function SavedScreen() {
         const produceIds = items.filter((x) => x.item_type === "produce").map((x) => x.item_id);
         const listingIds = items.filter((x) => x.item_type === "listing").map((x) => x.item_id);
         const recipeIds = items.filter((x) => x.item_type === "recipe").map((x) => x.item_id);
-        const dbRecipeIds = recipeIds.filter(isUuid);
         const [produceResult, listings, recipeResult] = await Promise.all([
           produceIds.length ? supabase.from("produce_items").select("id,name,category").in("id", produceIds) : Promise.resolve({ data: [], error: null }),
           listingIds.length ? fetchMarketplaceListings() : Promise.resolve([] as MarketplaceListing[]),
-          dbRecipeIds.length ? supabase.from("recipes").select("id,title,description,cover_image_url,cover_image_path,cover_media").in("id", dbRecipeIds) : Promise.resolve({ data: [], error: null }),
+          recipeIds.length ? supabase.from("recipes").select("id,title,description,cover_image_url,cover_image_path,cover_media").in("id", recipeIds) : Promise.resolve({ data: [], error: null }),
         ]);
         if (produceResult.error) throw produceResult.error;
         if (recipeResult.error) throw recipeResult.error;
@@ -96,7 +93,6 @@ export default function SavedScreen() {
         const listingMap = new Map(listings.map((item) => [item.id, item]));
         const hydratedRecipes = await Promise.all((recipeResult.data ?? []).map(async (item: any) => ({ ...item, imageUrl: await recipeImage(item) })));
         const recipeMap = new Map(hydratedRecipes.map((item: any) => [item.id, item]));
-        const localMap = new Map(localRecipes.map((item) => [item.id, item]));
         const next = items.flatMap<SavedDisplay>((saved) => {
           if (saved.item_type === "farm") {
             const farm = farmMap.get(saved.item_id); return farm ? [{ type: "farm", id: farm.id, title: farm.name, subtitle: farm.products || "Local farm", route: `/farm/${farm.id}` }] : [];
@@ -107,7 +103,7 @@ export default function SavedScreen() {
           if (saved.item_type === "listing") {
             const item = listingMap.get(saved.item_id); return item ? [{ type: "listing", id: item.id, title: `${item.varietyName} ${item.produceItemName}`, subtitle: `${item.farmName} · ${item.currency} ${item.price}/${item.soldBy}`, route: `/produce/${item.produceItemId}`, imageUrl: item.imageUrl }] : [];
           }
-          const item: any = recipeMap.get(saved.item_id) ?? localMap.get(saved.item_id);
+          const item: any = recipeMap.get(saved.item_id);
           return item ? [{ type: "recipe", id: item.id, title: item.title, subtitle: item.description || "Recipe", route: `/recipe/${item.id}`, imageUrl: item.imageUrl }] : [];
         });
         if (!cancelled) {

@@ -19,7 +19,7 @@ jest.mock("expo-haptics", () => ({
   impactAsync: (...args: unknown[]) => mockImpactAsync(...args),
   ImpactFeedbackStyle: { Light: "light" },
 }));
-jest.mock("@react-navigation/elements", () => ({
+jest.mock("expo-router/react-navigation", () => ({
   PlatformPressable: ({ children, onPressIn, ...props }: any) => {
     const { Pressable } = require("react-native");
     return <Pressable {...props} onPressIn={onPressIn}>{children}</Pressable>;
