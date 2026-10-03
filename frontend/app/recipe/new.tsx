@@ -960,6 +960,8 @@ export default function NewRecipeScreen() {
 
       <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={["bottom"]}>
         <ScrollView
+          automaticallyAdjustKeyboardInsets
+          keyboardDismissMode="on-drag"
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator
