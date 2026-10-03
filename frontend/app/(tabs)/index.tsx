@@ -735,31 +735,16 @@ export default function HomeScreen() {
         </View>
 
         <ThemedView style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <View style={styles.sectionTitleWrap}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-                Your Grocery Lists
-              </ThemedText>
-              {filteredHomeGroceryLists.length > 0 && (
-                <View
-                  style={[
-                    styles.sectionBadge,
-                    { backgroundColor: colors.input.background, borderColor: colors.border.light },
-                  ]}
-                >
-                  <ThemedText style={[styles.sectionBadgeText, { color: colors.text.secondary }]}>
-                    {filteredHomeGroceryLists.length}
-                  </ThemedText>
-                </View>
-              )}
-            </View>
-
-            <TouchableOpacity onPress={() => router.push('/(tabs)/grocerylist')} activeOpacity={0.7}>
-              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>
-                View All
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
+          <HomeSectionHeader
+            colors={colors}
+            icon="cart-outline"
+            eyebrow="Plan your week"
+            title="Your Grocery Lists"
+            subtitle="Keep everything you need in one place."
+            badge={filteredHomeGroceryLists.length}
+            actionLabel="View All"
+            onAction={() => router.push('/(tabs)/grocerylist')}
+          />
 
           {groceryListsLoading ? (
             <ThemedText style={{ color: colors.text.tertiary }}>Loading grocery lists…</ThemedText>
@@ -784,8 +769,8 @@ export default function HomeScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.groceryListsScroll}
-              contentContainerStyle={styles.groceryListsScrollContent}
+              style={styles.horizontalScroll}
+              contentContainerStyle={styles.horizontalScrollContent}
               decelerationRate="fast"
               snapToInterval={292}
               snapToAlignment="start"
@@ -872,25 +857,16 @@ export default function HomeScreen() {
           )}
         </ThemedView>
 
-        <View style={styles.seasonSection}>
-          <View style={styles.seasonHeaderRow}>
-            <View style={styles.seasonTitleRow}>
-              <View style={[styles.seasonIconWrap, { backgroundColor: colors.card }]}>
-                <Ionicons name="sunny-outline" size={20} color="#6E7B37" />
-              </View>
-              <View style={styles.seasonHeadingCopy}>
-                <ThemedText style={styles.seasonEyebrow}>Fresh this month</ThemedText>
-                <ThemedText style={styles.seasonTitle}>In season now</ThemedText>
-              </View>
-            </View>
-            <TouchableOpacity onPress={() => router.push('/produce')} activeOpacity={0.7}>
-              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>View All</ThemedText>
-            </TouchableOpacity>
-          </View>
-
-          <ThemedText style={styles.seasonSubtitle}>
-            Discover what local farms are harvesting at its freshest.
-          </ThemedText>
+        <ThemedView style={styles.section}>
+          <HomeSectionHeader
+            colors={colors}
+            icon="sunny-outline"
+            eyebrow="Fresh this month"
+            title="In Season Now"
+            subtitle="Discover what local farms are harvesting at its freshest."
+            actionLabel="View All"
+            onAction={() => router.push('/produce')}
+          />
 
           {produceLoading ? (
             <View style={styles.produceStateRow}>
@@ -911,8 +887,8 @@ export default function HomeScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.produceScroll}
-              contentContainerStyle={styles.produceScrollContent}
+              style={styles.horizontalScroll}
+              contentContainerStyle={styles.horizontalScrollContent}
               decelerationRate="fast"
               snapToInterval={176}
             >
@@ -953,21 +929,18 @@ export default function HomeScreen() {
               })}
             </ScrollView>
           )}
-        </View>
+        </ThemedView>
 
         <ThemedView style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}> 
-              Close Farms Near You
-            </ThemedText>
-            <TouchableOpacity onPress={() => router.push('/farm')} activeOpacity={0.7}>
-              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>View all</ThemedText>
-            </TouchableOpacity>
-          </View>
-
-          <ThemedText style={{ color: colors.text.tertiary, marginTop: 2, marginBottom: 2 }}>
-            📍 {locationText}
-          </ThemedText>
+          <HomeSectionHeader
+            colors={colors}
+            icon="storefront-outline"
+            eyebrow="From nearby growers"
+            title="Close Farms Near You"
+            subtitle={locationText}
+            actionLabel="View All"
+            onAction={() => router.push('/farm')}
+          />
 
           {farmsLoading ? (
             <ThemedText style={{ color: colors.text.tertiary }}>Loading farms…</ThemedText>
@@ -979,8 +952,8 @@ export default function HomeScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.farmsScroll}
-              contentContainerStyle={styles.farmsScrollContent}
+              style={styles.horizontalScroll}
+              contentContainerStyle={styles.horizontalScrollContent}
             >
               {farmsWithDistance.map((farm) => (
                 <View key={farm.id} style={{ width: 300 }}>
@@ -1003,16 +976,15 @@ export default function HomeScreen() {
         </ThemedView>
 
         <ThemedView style={[styles.section, { marginBottom: 80 }]}>
-          <View style={styles.sectionHeaderRow}>
-            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>
-              Top Recipes of the Week
-            </ThemedText>
-            <TouchableOpacity onPress={() => router.push('/recipe/recipes')} activeOpacity={0.7}>
-              <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>
-                Browse All
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
+          <HomeSectionHeader
+            colors={colors}
+            icon="restaurant-outline"
+            eyebrow="Cook something local"
+            title="Top Recipes of the Week"
+            subtitle="Community recipes made with seasonal ingredients."
+            actionLabel="Browse All"
+            onAction={() => router.push('/recipe/recipes')}
+          />
 
           {recipesLoading ? (
             <ThemedText style={{ color: colors.text.tertiary, marginTop: theme.spacing.sm }}>
@@ -1027,7 +999,12 @@ export default function HomeScreen() {
               No recipes found.
             </ThemedText>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recipesScroll}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.horizontalScroll}
+              contentContainerStyle={styles.horizontalScrollContent}
+            >
               {filteredHomeRecipes.map((recipe) => (
                 <RecipeCard
                   key={recipe.id}
@@ -1049,6 +1026,54 @@ export default function HomeScreen() {
         </ThemedView>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function HomeSectionHeader({
+  colors,
+  icon,
+  eyebrow,
+  title,
+  subtitle,
+  badge,
+  actionLabel,
+  onAction,
+}: {
+  colors: any;
+  icon: keyof typeof Ionicons.glyphMap;
+  eyebrow: string;
+  title: string;
+  subtitle: string;
+  badge?: number;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <>
+      <View style={styles.sectionHeaderRow}>
+        <View style={styles.decoratedSectionTitleRow}>
+          <View style={[styles.sectionIconWrap, { backgroundColor: colors.card }]}>
+            <Ionicons name={icon} size={21} color={theme.brand.tertiary} />
+          </View>
+          <View style={styles.sectionHeadingCopy}>
+            <ThemedText style={[styles.sectionEyebrow, { color: theme.brand.tertiary }]}>{eyebrow}</ThemedText>
+            <View style={styles.sectionTitleWrap}>
+              <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>{title}</ThemedText>
+              {!!badge && (
+                <View style={[styles.sectionBadge, { backgroundColor: colors.input.background, borderColor: colors.border.light }]}>
+                  <ThemedText style={[styles.sectionBadgeText, { color: colors.text.secondary }]}>{badge}</ThemedText>
+                </View>
+              )}
+            </View>
+          </View>
+        </View>
+
+        <TouchableOpacity onPress={onAction} activeOpacity={0.7}>
+          <ThemedText style={[styles.sectionLink, { color: theme.brand.primary }]}>{actionLabel}</ThemedText>
+        </TouchableOpacity>
+      </View>
+      <ThemedText style={[styles.sectionSubtitle, { color: colors.text.secondary }]}>{subtitle}</ThemedText>
+    </>
   );
 }
 
@@ -1117,13 +1142,30 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.fontFamily,
   },
   section: {
-    marginBottom: theme.spacing.lg,
+    marginBottom: theme.spacing.xl,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+  },
+  decoratedSectionTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+  sectionIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionHeadingCopy: {
+    flex: 1,
   },
   sectionTitleWrap: {
     flexDirection: 'row',
@@ -1131,11 +1173,18 @@ const styles = StyleSheet.create({
     gap: 8,
     flex: 1,
   },
+  sectionEyebrow: {
+    fontSize: 10,
+    lineHeight: 14,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
+  },
   sectionTitle: {
     fontSize: theme.typography.fontSizes.h3,
     fontWeight: theme.typography.fontWeights.bold,
     fontFamily: theme.typography.fontFamily,
-    marginBottom: theme.spacing.sm,
   },
   sectionBadge: {
     minWidth: 24,
@@ -1145,7 +1194,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: theme.spacing.sm,
   },
   sectionBadgeText: {
     fontSize: 12,
@@ -1156,6 +1204,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: theme.typography.fontWeights.semibold,
     fontFamily: theme.typography.fontFamily,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: theme.typography.fontFamily,
+    marginTop: -theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  horizontalScroll: {
+    marginHorizontal: -theme.spacing.md,
+  },
+  horizontalScrollContent: {
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 4,
   },
   groceryListsScroll: {
     marginTop: theme.spacing.sm,
