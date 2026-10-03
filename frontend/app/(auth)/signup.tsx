@@ -61,7 +61,7 @@ export default function SignUp() {
       return;
     }
 
-    router.replace("/(onboarding)/profile");
+    router.replace("/");
   };
 
   return (

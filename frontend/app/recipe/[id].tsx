@@ -17,7 +17,6 @@ import { ThemedText } from "@/components/themed-text";
 import { theme } from "@/constants/theme";
 import { SaveButton } from "@/components/save-button";
 import { useTheme } from "@/hooks/useTheme";
-import { recipes as localRecipes } from "@/lib/recipes";
 import { supabase } from "@/lib/supabase";
 import {
   getLocalGroceryListById,
@@ -131,7 +130,7 @@ type GroceryListChoice = {
 
 type NormalizedRecipe = {
   id: string;
-  source: "db" | "local";
+  source: "db";
   title: string;
   description: string;
   imageUrl?: string;
@@ -139,8 +138,6 @@ type NormalizedRecipe = {
   difficulty?: string;
   tags: string[];
   servings?: string;
-  rating?: string;
-  ratingsCount?: string;
   ingredients: Array<{
     id: string;
     quantity: string;
@@ -152,9 +149,6 @@ type NormalizedRecipe = {
     instruction: string;
   }>;
 };
-
-const isUuid = (value: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 const normalizeText = (value?: string | null) => (value ?? "").trim().toLowerCase();
 
@@ -184,15 +178,11 @@ export default function RecipeDetailScreen() {
   const [recipeAuthor, setRecipeAuthor] = useState<RecipeAuthor | null>(null);
   const [recipeRatings, setRecipeRatings] = useState<RecipeRating[]>([]);
   const [savingRating, setSavingRating] = useState(false);
+  const [deletingRecipe, setDeletingRecipe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [choosingList, setChoosingList] = useState(false);
   const [addingToList, setAddingToList] = useState(false);
   const [groceryListChoices, setGroceryListChoices] = useState<GroceryListChoice[]>([]);
-
-  const localRecipe = useMemo(
-    () => localRecipes.find((item) => item.id === id),
-    [id]
-  );
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data, error }) => {
@@ -204,8 +194,9 @@ export default function RecipeDetailScreen() {
     let cancelled = false;
 
     const loadRecipe = async () => {
-      if (!id || !isUuid(id)) {
+      if (!id) {
         setDbRecipe(null);
+        setLoading(false);
         return;
       }
 
@@ -319,40 +310,8 @@ export default function RecipeDetailScreen() {
       };
     }
 
-    if (localRecipe) {
-      const ingredients = localRecipe.produce.map((item, index) => ({
-        id: `${localRecipe.id}-ingredient-${index}`,
-        quantity: index === 0 ? "2" : index === 1 ? "1" : "",
-        unit: index === 0 ? "cups" : index === 1 ? "handful" : "",
-        name: item,
-      }));
-
-      const steps = [
-        `Wash and prep the ${localRecipe.produce.join(", ").toLowerCase()} so everything is ready before cooking.`,
-        `Build the base of the dish and cook for about ${localRecipe.duration.toLowerCase()} while adjusting seasoning as needed.`,
-        `Finish with a fresh garnish and plate immediately for the best texture and flavor.`,
-      ].map((instruction, index) => ({
-        id: `${localRecipe.id}-step-${index}`,
-        instruction,
-      }));
-
-      return {
-        id: localRecipe.id,
-        source: "local",
-        title: localRecipe.title,
-        description: localRecipe.description ?? "",
-        imageUrl: localRecipe.imageUrl,
-        duration: localRecipe.duration,
-        rating: String(localRecipe.rating),
-        ratingsCount: localRecipe.ratingsCount.toLocaleString(),
-        tags: [],
-        ingredients,
-        steps,
-      };
-    }
-
     return null;
-  }, [dbRecipe, localRecipe]);
+  }, [dbRecipe]);
 
   const ingredientRows = useMemo(() => {
     if (!recipe) return [];
@@ -366,7 +325,7 @@ export default function RecipeDetailScreen() {
       }));
   }, [recipe]);
 
-  const canEditRecipe = recipe?.source === "db" && dbRecipe?.user_id === viewerUserId;
+  const isRecipeOwner = Boolean(dbRecipe?.user_id && viewerUserId === dbRecipe.user_id);
   const ratingSummary = useMemo(() => {
     const count = recipeRatings.length;
     const average = count ? recipeRatings.reduce((total, entry) => total + Number(entry.rating || 0), 0) / count : null;
@@ -397,6 +356,39 @@ export default function RecipeDetailScreen() {
     } finally {
       setSavingRating(false);
     }
+  };
+
+  const deleteRecipe = async () => {
+    if (!dbRecipe || !viewerUserId) return;
+
+    try {
+      setDeletingRecipe(true);
+      const { error } = await supabase
+        .from("recipes")
+        .delete()
+        .eq("id", dbRecipe.id)
+        .eq("user_id", viewerUserId);
+
+      if (error) throw error;
+      router.replace("/recipe/my-recipes");
+    } catch (error: any) {
+      Alert.alert("Could not delete recipe", error?.message ?? "Please try again.");
+    } finally {
+      setDeletingRecipe(false);
+    }
+  };
+
+  const confirmDeleteRecipe = () => {
+    if (!dbRecipe) return;
+
+    Alert.alert(
+      "Delete recipe?",
+      `This will permanently delete ${dbRecipe.title}.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => void deleteRecipe() },
+      ]
+    );
   };
 
   const loadGroceryListChoices = async () => {
@@ -637,7 +629,7 @@ export default function RecipeDetailScreen() {
           .insert({
             user_id: user.id,
             title: `${recipe.title} List`,
-            source_recipe_id: isUuid(recipe.id) ? recipe.id : null,
+            source_recipe_id: recipe.id,
           })
           .select("id")
           .single();
@@ -780,20 +772,33 @@ export default function RecipeDetailScreen() {
                 />
               </TouchableOpacity>
               <View style={styles.heroActions}>
-                {canEditRecipe && (
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel="Edit recipe"
-                    style={styles.editButton}
-                    onPress={() => router.push({
-                      pathname: "/recipe/new",
-                      params: { recipeId: recipe.id, ...(recipe.imageUrl ? { coverImageUrl: recipe.imageUrl } : {}) },
-                    })}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="create-outline" size={18} color={theme.neutral.white} />
-                    <ThemedText style={styles.editButtonText}>Edit</ThemedText>
-                  </TouchableOpacity>
+                {isRecipeOwner && (
+                  <>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Edit recipe"
+                      style={styles.editButton}
+                      onPress={() => router.push({
+                        pathname: "/recipe/new",
+                        params: { recipeId: recipe.id, ...(recipe.imageUrl ? { coverImageUrl: recipe.imageUrl } : {}) },
+                      })}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="create-outline" size={18} color={theme.neutral.white} />
+                      <ThemedText style={styles.editButtonText}>Edit</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete recipe"
+                      style={[styles.deleteButton, deletingRecipe && styles.actionButtonDisabled]}
+                      onPress={confirmDeleteRecipe}
+                      disabled={deletingRecipe}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={theme.neutral.white} />
+                      <ThemedText style={styles.editButtonText}>{deletingRecipe ? "Deleting…" : "Delete"}</ThemedText>
+                    </TouchableOpacity>
+                  </>
                 )}
                 <SaveButton type="recipe" itemId={recipe.id} light={Boolean(recipe.imageUrl)} />
               </View>
@@ -822,7 +827,7 @@ export default function RecipeDetailScreen() {
                 </ThemedText>
               )}
 
-              {recipe.source === "db" && dbRecipe?.user_id ? (
+              {dbRecipe?.user_id ? (
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel={`View ${recipeAuthor?.full_name ?? recipeAuthor?.username ?? "recipe author"}'s profile`}
@@ -976,29 +981,27 @@ export default function RecipeDetailScreen() {
             </View>
           </View>
 
-          {recipe.source === "db" && (
-            <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
-              <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Rate this recipe</ThemedText>
-              <ThemedText style={[styles.ratingSummary, { color: colors.text.secondary }]}>
-                {ratingSummary.average == null
-                  ? "No ratings yet"
-                  : `${ratingSummary.average.toFixed(1)} average from ${ratingSummary.count} ${ratingSummary.count === 1 ? "rating" : "ratings"}`}
-              </ThemedText>
-              <View style={styles.ratingButtons}>
-                {[1, 2, 3, 4, 5].map((value) => (
-                  <TouchableOpacity
-                    key={value}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Rate this recipe ${value} stars`}
-                    onPress={() => saveRecipeRating(value)}
-                    disabled={savingRating}
-                  >
-                    <Ionicons name={(ratingSummary.currentUserRating ?? 0) >= value ? "star" : "star-outline"} size={30} color="#F59E0B" />
-                  </TouchableOpacity>
-                ))}
-              </View>
+          <View style={[styles.sectionCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+            <ThemedText style={[styles.sectionTitle, { color: colors.text.primary }]}>Rate this recipe</ThemedText>
+            <ThemedText style={[styles.ratingSummary, { color: colors.text.secondary }]}>
+              {ratingSummary.average == null
+                ? "No ratings yet"
+                : `${ratingSummary.average.toFixed(1)} average from ${ratingSummary.count} ${ratingSummary.count === 1 ? "rating" : "ratings"}`}
+            </ThemedText>
+            <View style={styles.ratingButtons}>
+              {[1, 2, 3, 4, 5].map((value) => (
+                <TouchableOpacity
+                  key={value}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Rate this recipe ${value} stars`}
+                  onPress={() => saveRecipeRating(value)}
+                  disabled={savingRating}
+                >
+                  <Ionicons name={(ratingSummary.currentUserRating ?? 0) >= value ? "star" : "star-outline"} size={30} color="#F59E0B" />
+                </TouchableOpacity>
+              ))}
             </View>
-          )}
+          </View>
         </ScrollView>
       </SafeAreaView>
 
@@ -1087,8 +1090,9 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing["4xl"],
   },
   hero: {
-    minHeight: 320,
+    height: 360,
     justifyContent: "space-between",
+    overflow: "hidden",
   },
   heroImage: {
     ...StyleSheet.absoluteFillObject,
@@ -1134,6 +1138,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 6,
     backgroundColor: "rgba(17, 24, 28, 0.6)",
+  },
+  deleteButton: {
+    minHeight: 42,
+    borderRadius: 21,
+    paddingHorizontal: theme.spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#B42318",
+  },
+  actionButtonDisabled: {
+    opacity: 0.65,
   },
   editButtonText: {
     color: theme.neutral.white,

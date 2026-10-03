@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Image } from 'expo-image';
 
 import { ThemedText } from '@/components/themed-text';
 import { theme } from '@/constants/theme';
@@ -46,6 +45,11 @@ function getStarIcon(value: number, rating: number): IoniconName {
 
 export default function FarmDetailScreen() {
   const { colors } = useTheme();
+  const inputColors = colors.input ?? {
+    text: colors.text.primary,
+    background: colors.background,
+    placeholder: colors.text.tertiary,
+  };
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   const queryClient = useQueryClient();
@@ -61,6 +65,7 @@ export default function FarmDetailScreen() {
   const [messageModalOpen, setMessageModalOpen] = useState(false);
   const [messageDraft, setMessageDraft] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [farmImageFailed, setFarmImageFailed] = useState(false);
   const tabTranslateX = useRef(new Animated.Value(0)).current;
   const previousTab = useRef<'overview' | 'reviews'>('overview');
 
@@ -89,7 +94,7 @@ export default function FarmDetailScreen() {
     () => farmListings.filter((listing) => listing.available),
     [farmListings]
   );
-  const hasFarmImage = !!farm?.imageUrl;
+  const hasFarmImage = !!farm?.imageUrl && !farmImageFailed;
   const address = farm ? formatAddress(farm) : '';
   const ratingsSummary = useMemo(() => summarizeFarmRatings(ratings), [ratings]);
   const displayRating = ratingsSummary.count > 0 ? ratingsSummary.average : 0;
@@ -109,6 +114,10 @@ export default function FarmDetailScreen() {
       setDraftReview('');
     }
   }, [currentUserReview]);
+
+  useEffect(() => {
+    setFarmImageFailed(false);
+  }, [farm?.imageUrl]);
 
   useEffect(() => {
     let isMounted = true;
@@ -300,7 +309,12 @@ export default function FarmDetailScreen() {
         <View style={[styles.hero, !hasFarmImage && { backgroundColor: theme.brand.light }]}>
           {hasFarmImage ? (
             <>
-              <Image source={{ uri: farm.imageUrl! }} style={styles.heroImage} contentFit="cover" />
+              <Image
+                source={{ uri: farm.imageUrl! }}
+                style={styles.heroImage}
+                resizeMode="cover"
+                onError={() => setFarmImageFailed(true)}
+              />
               <View style={styles.heroImageOverlay} />
             </>
           ) : (
@@ -486,7 +500,7 @@ export default function FarmDetailScreen() {
                       >
                         <View style={[styles.produceThumb, { backgroundColor: visuals.color }]}>
                           {item.imageUrl ? (
-                            <Image source={{ uri: item.imageUrl }} style={styles.produceThumbImage} contentFit="cover" />
+                            <Image source={{ uri: item.imageUrl }} style={styles.produceThumbImage} resizeMode="cover" />
                           ) : (
                             <Ionicons name={visuals.icon} size={28} color={theme.brand.tertiary} />
                           )}
@@ -809,13 +823,13 @@ export default function FarmDetailScreen() {
               value={messageDraft}
               onChangeText={setMessageDraft}
               placeholder="Hey, I’m planning to stop by around 4pm..."
-              placeholderTextColor={colors.input.placeholder}
+              placeholderTextColor={inputColors.placeholder}
               multiline
               style={[
                 styles.modalInput,
                 {
-                  color: colors.input.text,
-                  backgroundColor: colors.input.background,
+                  color: inputColors.text,
+                  backgroundColor: inputColors.background,
                   borderColor: colors.border.light,
                 },
               ]}

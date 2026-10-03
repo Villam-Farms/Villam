@@ -49,6 +49,8 @@
     "plugins": [
       "expo-router",
       "expo-splash-screen",
+      "expo-image",
+      "expo-status-bar",
       [
         "expo-image-picker",
         {

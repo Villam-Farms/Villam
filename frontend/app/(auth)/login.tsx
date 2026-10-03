@@ -58,7 +58,7 @@ export default function Login() {
       return;
     }
 
-    router.replace("/(onboarding)/profile");
+    router.replace("/");
   };
 
   return (
