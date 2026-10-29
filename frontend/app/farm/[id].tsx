@@ -335,11 +335,11 @@ export default function FarmDetailScreen() {
               onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
               activeOpacity={0.85}
             >
-              <Ionicons name="arrow-back" size={20} color={colors.text.primary} />
+              <Ionicons name="arrow-back" size={20} color="#1F2A1E" />
             </TouchableOpacity>
 
             <View style={styles.heroActionRow}>
-              {farmId ? <SaveButton type="farm" itemId={farmId} /> : null}
+              {farmId ? <SaveButton type="farm" itemId={farmId} light={hasFarmImage} /> : null}
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel="Share farm"
@@ -347,7 +347,7 @@ export default function FarmDetailScreen() {
                 onPress={handleShareFarm}
                 activeOpacity={0.88}
               >
-                <Ionicons name="share-outline" size={18} color={colors.text.primary} />
+                <Ionicons name="share-outline" size={18} color="#1F2A1E" />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -355,7 +355,7 @@ export default function FarmDetailScreen() {
                 onPress={handleOpenMessageModal}
                 activeOpacity={0.88}
               >
-                <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.text.primary} />
+                <Ionicons name="chatbubble-ellipses-outline" size={18} color="#1F2A1E" />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -910,6 +910,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    position: 'relative',
+    zIndex: 2,
+    elevation: 2,
   },
   iconButton: {
     width: 44,

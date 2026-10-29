@@ -4,6 +4,9 @@ import {
   Alert,
   Animated,
   Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,6 +25,8 @@ import { ThemedView } from "@/components/themed-view";
 import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/lib/supabase";
+import { matchIngredientsToProduce } from "@/lib/ingredient-produce";
+import type { ProduceItemOption } from "@/lib/marketplace";
 
 const STORAGE_BUCKET = "recipes";
 
@@ -30,6 +35,7 @@ interface Ingredient {
   quantity: string;
   unit: string;
   name: string;
+  produce_item_id?: string;
 }
 
 interface Step {
@@ -219,16 +225,19 @@ function IngredientRow({
   item,
   onUpdate,
   onDelete,
+  onChooseProduce,
   colors,
 }: {
   item: Ingredient;
   onUpdate: (id: string, field: "quantity" | "unit" | "name", val: string) => void;
   onDelete: (id: string) => void;
+  onChooseProduce: (ingredient: Ingredient) => void;
   colors: any;
 }) {
   return (
-    <View style={ingStyles.row}>
-      <TextInput
+    <View style={ingStyles.container}>
+      <View style={ingStyles.row}>
+        <TextInput
         value={item.quantity}
         onChangeText={(v) => onUpdate(item.id, "quantity", v)}
         placeholder="1"
@@ -258,18 +267,31 @@ function IngredientRow({
           { backgroundColor: colors.input.background, borderColor: colors.border.default, color: colors.text.primary },
         ]}
       />
-      <TouchableOpacity
+        <TouchableOpacity
         onPress={() => onDelete(item.id)}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         accessibilityLabel={`Remove ingredient ${item.name || ''}`.trim()}
       >
         <Ionicons name="close-circle" size={22} color={colors.text.tertiary} />
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity
+        style={ingStyles.produceLink}
+        onPress={() => onChooseProduce(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.produce_item_id ? "Change" : "Link"} ${item.name || "ingredient"} to produce`}
+      >
+        <Ionicons name={item.produce_item_id ? "leaf" : "leaf-outline"} size={14} color={theme.brand.primary} />
+        <Text style={[ingStyles.produceLinkText, { color: theme.brand.primary }]}>
+          {item.produce_item_id ? "Linked to seasonal produce" : "Link to seasonal produce (optional)"}
+        </Text>
       </TouchableOpacity>
     </View>
   );
 }
 
 const ingStyles = StyleSheet.create({
+  container: { width: "100%", gap: 5 },
   row: { flexDirection: "row", alignItems: "center", gap: 8, width: "100%" },
   qtyInput: {
     width: 54,
@@ -299,6 +321,8 @@ const ingStyles = StyleSheet.create({
     paddingHorizontal: 10,
     fontSize: 14,
   },
+  produceLink: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 4, paddingVertical: 2 },
+  produceLinkText: { fontSize: 12, fontWeight: "600" },
 });
 
 function StepCard({
@@ -498,6 +522,10 @@ export default function NewRecipeScreen() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([
     { id: uid(), quantity: "", unit: "", name: "" },
   ]);
+  const [produceOptions, setProduceOptions] = useState<ProduceItemOption[]>([]);
+  const [isProducePickerOpen, setIsProducePickerOpen] = useState(false);
+  const [ingredientToLink, setIngredientToLink] = useState<Ingredient | null>(null);
+  const [produceSearch, setProduceSearch] = useState("");
 
   const [steps, setSteps] = useState<Step[]>([{ id: uid(), instruction: "", photoUris: [] }]);
 
@@ -555,7 +583,7 @@ export default function NewRecipeScreen() {
         const nextCookTime = String(recipe.cook_time_minutes || "");
         const nextAdditionalTime = String(recipe.additional_time_minutes || "");
         const nextServings = recipe.servings ? String(recipe.servings) : "";
-        const nextIngredients = storedIngredients.length ? storedIngredients.map((item: any) => ({ id: typeof item.id === "string" ? item.id : uid(), quantity: String(item.quantity || ""), unit: String(item.unit || ""), name: String(item.name || "") })) : [{ id: uid(), quantity: "", unit: "", name: "" }];
+        const nextIngredients = storedIngredients.length ? storedIngredients.map((item: any) => ({ id: typeof item.id === "string" ? item.id : uid(), quantity: String(item.quantity || ""), unit: String(item.unit || ""), name: String(item.name || ""), ...(typeof item.produce_item_id === "string" ? { produce_item_id: item.produce_item_id } : {}) })) : [{ id: uid(), quantity: "", unit: "", name: "" }];
         const nextSteps = storedSteps.length ? storedSteps.sort((a: StoredStep, b: StoredStep) => (a.position ?? 0) - (b.position ?? 0)).map((item: any) => ({ id: typeof item.id === "string" ? item.id : uid(), instruction: String(item.instruction || ""), photoUris: (Array.isArray(item.photo_urls) ? item.photo_urls : []).map((url: unknown, index: number) => typeof url === "string" ? ({ uri: url, url, path: Array.isArray(item.photo_paths) ? item.photo_paths[index] : undefined, existing: true }) : null).filter(Boolean) as RecipeImage[] })) : [{ id: uid(), instruction: "", photoUris: [] }];
         setTitle(nextTitle);
         setDescription(nextDescription);
@@ -580,6 +608,24 @@ export default function NewRecipeScreen() {
     loadRecipe();
     return () => { isActive = false; };
   }, [recipeId]);
+
+  useEffect(() => {
+    let isActive = true;
+    const produceQuery: any = supabase.from("produce_items");
+
+    // Keep the form usable if the produce catalog has not been deployed yet.
+    if (typeof produceQuery.select !== "function") return () => { isActive = false; };
+
+    produceQuery
+      .select("id,name,category,description,default_sold_by")
+      .order("name", { ascending: true })
+      .then(({ data, error }) => {
+        if (!isActive || error) return;
+        setProduceOptions((data ?? []) as ProduceItemOption[]);
+      });
+
+    return () => { isActive = false; };
+  }, []);
 
   const totalMins =
     (parseInt(prepTime, 10) || 0) +
@@ -684,7 +730,31 @@ export default function NewRecipeScreen() {
   const addIngredient = () => setIngredients((prev) => [...prev, { id: uid(), quantity: "", unit: "", name: "" }]);
 
   const updateIngredient = (id: string, field: "quantity" | "unit" | "name", val: string) =>
-    setIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, [field]: val } : ing)));
+    setIngredients((prev) => prev.map((ing) => (ing.id === id ? { ...ing, [field]: val, ...(field === "name" ? { produce_item_id: undefined } : {}) } : ing)));
+
+  const openProducePicker = (ingredient: Ingredient) => {
+    setIngredientToLink(ingredient);
+    setProduceSearch(ingredient.name);
+    setIsProducePickerOpen(true);
+  };
+
+  const selectProduce = (produce: ProduceItemOption) => {
+    if (ingredientToLink) {
+      setIngredients((prev) => prev.map((ingredient) => (
+        ingredient.id === ingredientToLink.id
+          ? { ...ingredient, name: produce.name, produce_item_id: produce.id }
+          : ingredient
+      )));
+    }
+    setIsProducePickerOpen(false);
+    setIngredientToLink(null);
+  };
+
+  const filteredProduceOptions = useMemo(() => {
+    const query = produceSearch.trim().toLowerCase();
+    if (!query) return produceOptions;
+    return produceOptions.filter((produce) => `${produce.name} ${produce.category ?? ""}`.toLowerCase().includes(query));
+  }, [produceOptions, produceSearch]);
 
   const deleteIngredient = (id: string) =>
     setIngredients((prev) => (prev.length > 1 ? prev.filter((i) => i.id !== id) : prev));
@@ -740,6 +810,16 @@ export default function NewRecipeScreen() {
         }))
         .filter((ing) => ing.name.length > 0);
 
+      const ingredientProduceMatches = await matchIngredientsToProduce(
+        validIngredients.map((ingredient) => ingredient.name)
+      );
+      const linkedIngredients = validIngredients.map((ingredient) => ({
+        ...ingredient,
+        ...(ingredientProduceMatches.get(ingredient.name)
+          ? { produce_item_id: ingredientProduceMatches.get(ingredient.name)!.id }
+          : {}),
+      }));
+
       const rawSteps = steps
         .map((step, index) => ({
           id: step.id,
@@ -787,7 +867,7 @@ export default function NewRecipeScreen() {
         additional_time_minutes: Number(additionalTime || 0),
         total_time_minutes: Number(prepTime || 0) + Number(cookTime || 0) + Number(additionalTime || 0),
         servings: servings ? Number(servings) : null,
-        ingredients: validIngredients,
+        ingredients: linkedIngredients,
         steps: rawSteps.map((step) => ({
           id: step.id,
           position: step.position,
@@ -1176,7 +1256,7 @@ export default function NewRecipeScreen() {
               </Text>
 
               {ingredients.map((ing) => (
-                <IngredientRow key={ing.id} item={ing} onUpdate={updateIngredient} onDelete={deleteIngredient} colors={colors} />
+                <IngredientRow key={ing.id} item={ing} onUpdate={updateIngredient} onDelete={deleteIngredient} onChooseProduce={openProducePicker} colors={colors} />
               ))}
 
               <TouchableOpacity style={[styles.addRowBtn, { borderColor: theme.brand.primary }]} onPress={addIngredient}>
@@ -1244,6 +1324,56 @@ export default function NewRecipeScreen() {
             <View style={{ height: 40 }} />
           </ThemedView>
         </ScrollView>
+        <Modal
+          visible={isProducePickerOpen}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setIsProducePickerOpen(false)}
+        >
+          <KeyboardAvoidingView
+            style={styles.pickerKeyboardAvoider}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <View style={styles.pickerBackdrop}>
+              <View style={[styles.pickerSheet, { backgroundColor: colors.surface }]}> 
+                <View style={styles.pickerHeader}>
+                  <View>
+                    <Text style={[styles.pickerTitle, { color: colors.text.primary }]}>Link seasonal produce</Text>
+                    <Text style={[styles.pickerSubtitle, { color: colors.text.secondary }]}>This lets people see seasonality and farm availability.</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setIsProducePickerOpen(false)} accessibilityLabel="Close produce picker">
+                    <Ionicons name="close" size={24} color={colors.text.primary} />
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  value={produceSearch}
+                  onChangeText={setProduceSearch}
+                  placeholder="Search produce"
+                  placeholderTextColor={colors.text.tertiary}
+                  style={[styles.pickerSearch, { color: colors.text.primary, backgroundColor: colors.input.background, borderColor: colors.border.default }]}
+                  autoFocus
+                />
+                <ScrollView
+                  style={styles.pickerListScroll}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="interactive"
+                  contentContainerStyle={styles.pickerList}
+                >
+                  {filteredProduceOptions.map((produce) => (
+                    <TouchableOpacity key={produce.id} style={[styles.pickerOption, { borderColor: colors.border.light }]} onPress={() => selectProduce(produce)}>
+                      <View style={[styles.pickerLeaf, { backgroundColor: theme.brand.light }]}><Ionicons name="leaf" size={16} color={theme.brand.primary} /></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pickerOptionName, { color: colors.text.primary }]}>{produce.name}</Text>
+                        {produce.category ? <Text style={[styles.pickerOptionCategory, { color: colors.text.secondary }]}>{produce.category}</Text> : null}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                  {filteredProduceOptions.length === 0 ? <Text style={[styles.pickerEmpty, { color: colors.text.secondary }]}>No matching produce found. You can keep this ingredient unlinked.</Text> : null}
+                </ScrollView>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </SafeAreaView>
     </>
   );
@@ -1503,6 +1633,20 @@ const styles = StyleSheet.create({
   stepsListContent: {
     paddingVertical: theme.spacing.xs,
   },
+  pickerKeyboardAvoider: { flex: 1 },
+  pickerBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.42)" },
+  pickerSheet: { maxHeight: "78%", minHeight: 260, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, gap: 14 },
+  pickerHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
+  pickerTitle: { fontSize: 19, fontWeight: "700" },
+  pickerSubtitle: { fontSize: 13, lineHeight: 18, marginTop: 3, maxWidth: 290 },
+  pickerSearch: { height: 44, borderRadius: 12, borderWidth: 1, paddingHorizontal: 12, fontSize: 15 },
+  pickerListScroll: { flexShrink: 1 },
+  pickerList: { gap: 2, paddingBottom: 12 },
+  pickerOption: { flexDirection: "row", alignItems: "center", gap: 10, borderBottomWidth: StyleSheet.hairlineWidth, paddingVertical: 12 },
+  pickerLeaf: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  pickerOptionName: { fontSize: 15, fontWeight: "700" },
+  pickerOptionCategory: { fontSize: 12, marginTop: 1 },
+  pickerEmpty: { paddingVertical: 28, fontSize: 14, lineHeight: 20, textAlign: "center" },
   publishBtn: {
     minWidth: 92,
     paddingHorizontal: 18,

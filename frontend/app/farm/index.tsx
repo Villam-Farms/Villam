@@ -13,6 +13,7 @@ import { addDistanceAndSort } from '@/lib/location';
 import { formatAddress } from '@/lib/address';
 import { openDirections } from '@/lib/directions';
 import { shareFarm } from '@/lib/share-farm';
+import { StateCard } from '@/components/ui/state-card';
 
 export default function AllFarmsScreen() {
   const { colors } = useTheme();
@@ -94,7 +95,7 @@ export default function AllFarmsScreen() {
           <ThemedText style={[styles.sectionSubtitle, { color: colors.text.secondary }]}>Sorted by distance from you.</ThemedText>
         </View>
 
-        {isLoading ? <StateCard colors={colors} icon="refresh-outline" title="Loading farms…" /> : error ? <StateCard colors={colors} icon="warning-outline" title="Could not load farms" body="Pull down to try again." /> : farms.length === 0 ? <StateCard colors={colors} icon="leaf-outline" title="No farms listed yet" body="Check back soon as local farms join Villam." /> : filteredFarms.length === 0 ? <StateCard colors={colors} icon="search-outline" title="No farms found" body="Try a farm name, produce item, or location." actionLabel="Clear search" onAction={() => setSearchQuery('')} /> : (
+        {isLoading ? <StateCard colors={colors} icon="refresh-outline" title="Loading farms…" loading /> : error ? <StateCard colors={colors} icon="warning-outline" title="Could not load farms" body="Pull down to try again." /> : farms.length === 0 ? <StateCard colors={colors} icon="leaf-outline" title="No farms listed yet" body="Check back soon as local farms join Villam." /> : filteredFarms.length === 0 ? <StateCard colors={colors} icon="search-outline" title="No farms found" body="Try a farm name, produce item, or location." actionLabel="Clear search" onAction={() => setSearchQuery('')} /> : (
           <View style={styles.farmList}>
             {filteredFarms.map((farm) => <FarmCard key={farm.id} id={farm.id} name={farm.name} rating={farm.rating} reviews={farm.reviews} distance={farm.distanceMi != null ? `${farm.distanceMi.toFixed(1)} mi` : 'Distance unavailable'} products={farm.products} imageUrl={farm.imageUrl ?? undefined} onPress={() => router.push(`/farm/${farm.id}`)} onDirectionPress={() => void handleDirections(farm.id)} onSharePress={() => void handleShare(farm.id)} />)}
           </View>
@@ -102,10 +103,6 @@ export default function AllFarmsScreen() {
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-function StateCard({ colors, icon, title, body, actionLabel, onAction }: { colors: ReturnType<typeof useTheme>['colors']; icon: React.ComponentProps<typeof Ionicons>['name']; title: string; body?: string; actionLabel?: string; onAction?: () => void }) {
-  return <View style={[styles.stateCard, { backgroundColor: colors.card, borderColor: colors.border.light }]}><Ionicons name={icon} size={28} color={theme.brand.primary} /><ThemedText style={[styles.stateTitle, { color: colors.text.primary }]}>{title}</ThemedText>{body ? <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>{body}</ThemedText> : null}{actionLabel && onAction ? <TouchableOpacity style={[styles.stateAction, { backgroundColor: theme.brand.primary }]} onPress={onAction}><ThemedText style={styles.stateActionText}>{actionLabel}</ThemedText></TouchableOpacity> : null}</View>;
 }
 
 const styles = StyleSheet.create({
