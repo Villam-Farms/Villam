@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,6 +11,7 @@ import { getListingVisuals } from '@/lib/listing-visuals';
 import { supabase } from '@/lib/supabase';
 import { SaveButton } from '@/components/save-button';
 import { SaveSearchButton } from '@/components/save-search-button';
+import { StateCard } from '@/components/ui/state-card';
 
 type ProduceItem = {
   id: string;
@@ -162,22 +163,11 @@ export default function SeasonalProduceScreen() {
 
         <View style={styles.results}>
           {loading ? (
-            <View style={styles.state}>
-              <ActivityIndicator color={theme.brand.tertiary} />
-              <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>Gathering this month&apos;s harvest…</ThemedText>
-            </View>
+            <StateCard colors={colors} icon="refresh-outline" title="Gathering this month's harvest…" loading />
           ) : error ? (
-            <View style={[styles.state, styles.stateCard, { borderColor: colors.border.light }]}> 
-              <Ionicons name="cloud-offline-outline" size={26} color={colors.text.secondary} />
-              <ThemedText style={[styles.stateTitle, { color: colors.text.primary }]}>Couldn&apos;t load produce</ThemedText>
-              <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>{error}</ThemedText>
-            </View>
+            <StateCard colors={colors} icon="cloud-offline-outline" title="Couldn't load produce" body={error} />
           ) : filteredItems.length === 0 ? (
-            <View style={[styles.state, styles.stateCard, { borderColor: colors.border.light }]}> 
-              <Ionicons name="basket-outline" size={26} color={theme.brand.tertiary} />
-              <ThemedText style={[styles.stateTitle, { color: colors.text.primary }]}>No matches found</ThemedText>
-              <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>Try another search or category.</ThemedText>
-            </View>
+            <StateCard colors={colors} icon="basket-outline" title="No matches found" body="Try another search or category." actionLabel="Clear search" onAction={() => { setQuery(''); setCategory('All'); }} />
           ) : (
             <>
               <View style={styles.resultHeader}>

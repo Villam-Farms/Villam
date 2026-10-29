@@ -1,6 +1,5 @@
 import React, { useCallback, useDeferredValue, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Image,
   RefreshControl,
   ScrollView,
@@ -17,6 +16,7 @@ import { ThemedText } from "@/components/themed-text";
 import { theme } from "@/constants/theme";
 import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/lib/supabase";
+import { StateCard } from "@/components/ui/state-card";
 
 const RECIPE_BUCKET = "recipes";
 
@@ -66,8 +66,6 @@ type StoredRecipe = {
   updated_at: string;
 };
 
-const MEAL_TAGS = ["Breakfast", "Lunch", "Dinner"];
-
 const asArray = <T,>(value: T[] | null | undefined): T[] => {
   return Array.isArray(value) ? value : [];
 };
@@ -80,20 +78,8 @@ const getTags = (recipe: StoredRecipe) => {
   return asArray(recipe.tags).filter(Boolean);
 };
 
-const getMealTags = (recipe: StoredRecipe) => {
-  return getTags(recipe).filter((tag) =>
-    MEAL_TAGS.some((meal) => meal.toLowerCase() === tag.toLowerCase())
-  );
-};
-
-const getOtherTags = (recipe: StoredRecipe) => {
-  return getTags(recipe).filter(
-    (tag) => !MEAL_TAGS.some((meal) => meal.toLowerCase() === tag.toLowerCase())
-  );
-};
-
 const getCategory = (recipe: StoredRecipe) => {
-  return getMealTags(recipe)[0] ?? getTags(recipe)[0] ?? "Recipe";
+  return getTags(recipe)[0] ?? "Recipe";
 };
 
 const getIngredientLabel = (ingredient: StoredIngredient) => {
@@ -309,9 +295,6 @@ export default function RecipesScreen() {
     });
   }, [activeCategory, deferredSearchQuery, recipes]);
 
-  const heroRecipe = filteredRecipes[0] ?? recipes[0] ?? null;
-  const quickPicks = filteredRecipes.slice(0, 3);
-
   const renderRecipeImage = (recipe: StoredRecipe, imageStyle: any) => {
     const imageUrl = getCoverImageUrl(recipe);
 
@@ -426,7 +409,7 @@ export default function RecipesScreen() {
         )}
 
         {isLoading ? (
-          <StateCard colors={colors} icon="refresh-outline" title="Loading recipes..." />
+          <StateCard colors={colors} icon="refresh-outline" title="Loading recipes..." loading />
         ) : errorMessage ? (
           <StateCard
             colors={colors}
@@ -459,118 +442,6 @@ export default function RecipesScreen() {
               title="Browse all recipes"
               subtitle={`${filteredRecipes.length} ${filteredRecipes.length === 1 ? "recipe" : "recipes"} available`}
             />
-
-            {/* The library uses its card grid as the primary view. The older
-                editorial hero and duplicate quick-pick carousel hid the list
-                behind an oversized cover image on mobile. */}
-            {/** The legacy hero remains intentionally disabled; it obscured the library on phones. */}
-            {false && heroRecipe && (
-              <View style={[styles.featuredCard, { backgroundColor: colors.card, borderColor: colors.border.light }]}>
-                {renderRecipeImage(heroRecipe, styles.featuredImage)}
-                <View style={styles.featuredOverlay} />
-
-                <View style={styles.featuredContent}>
-                  <View style={styles.featuredMetaRow}>
-                    <View style={styles.metaPill}>
-                      <Ionicons name="sparkles-outline" size={14} color={theme.brand.tertiary} />
-                      <ThemedText style={styles.metaPillText}>Newest match</ThemedText>
-                    </View>
-
-                    <View style={styles.timePill}>
-                      <Ionicons name="time-outline" size={13} color={theme.brand.primary} />
-                      <ThemedText style={styles.timePillText}>
-                        {formatMinutes(heroRecipe.total_time_minutes)}
-                      </ThemedText>
-                    </View>
-                  </View>
-
-                  <ThemedText style={styles.featuredTitle}>{heroRecipe.title}</ThemedText>
-
-                  <ThemedText style={styles.featuredDescription} numberOfLines={3}>
-                    {heroRecipe.description || "No description added yet."}
-                  </ThemedText>
-
-                  {getMealTags(heroRecipe).length > 0 && (
-                    <View style={styles.featuredMealRow}>
-                      <ThemedText style={styles.featuredMealLabel}>Meal of the day</ThemedText>
-
-                      <View style={styles.featuredTagRow}>
-                        {getMealTags(heroRecipe).map((tag) => (
-                          <View key={tag} style={styles.featuredMealPill}>
-                            <Ionicons name="restaurant-outline" size={12} color={theme.neutral.white} />
-                            <ThemedText style={styles.featuredTagText}>{tag}</ThemedText>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-
-                  {getOtherTags(heroRecipe).length > 0 && (
-                    <View style={styles.featuredTagRow}>
-                      {getOtherTags(heroRecipe).slice(0, 4).map((tag) => (
-                        <View key={tag} style={styles.featuredTagPill}>
-                          <ThemedText style={styles.featuredTagText}>#{tag}</ThemedText>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  <View style={styles.featuredFooter}>
-                    <View>
-                      <ThemedText style={styles.featuredFooterLabel}>Recipe info</ThemedText>
-                      <ThemedText style={styles.featuredFooterValue}>
-                        {heroRecipe.difficulty} •{" "}
-                        {heroRecipe.servings ? `${heroRecipe.servings} servings` : "Servings not set"}
-                      </ThemedText>
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.featuredAction}
-                      onPress={() => router.push(`/recipe/${heroRecipe.id}`)}
-                      activeOpacity={0.85}
-                    >
-                      <ThemedText style={styles.featuredActionText}>Open recipe</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {false && quickPicks.length > 0 && (
-              <>
-                <SectionTitle colors={colors} title="Quick picks" subtitle="The most recent matching recipes." />
-
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickPicksRow}>
-                  {quickPicks.map((recipe) => (
-                    <TouchableOpacity
-                      key={recipe.id}
-                      style={[
-                        styles.quickPickCard,
-                        { backgroundColor: colors.background, borderColor: colors.border.light },
-                      ]}
-                      activeOpacity={0.86}
-                      onPress={() => router.push(`/recipe/${recipe.id}`)}
-                    >
-                      {renderRecipeImage(recipe, styles.quickPickImage)}
-
-                      <View style={styles.quickPickBody}>
-                        <ThemedText style={[styles.quickPickCategory, { color: theme.brand.primary }]} numberOfLines={1}>
-                          {getCategory(recipe)}
-                        </ThemedText>
-
-                        <ThemedText style={[styles.quickPickTitle, { color: colors.text.primary }]} numberOfLines={2}>
-                          {recipe.title}
-                        </ThemedText>
-
-                        <ThemedText style={[styles.quickPickMeta, { color: colors.text.secondary }]}>
-                          {formatMinutes(recipe.total_time_minutes)} • {recipe.difficulty}
-                        </ThemedText>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            )}
 
             <View style={styles.recipeGrid}>
               {filteredRecipes.map((recipe) => {
@@ -674,42 +545,6 @@ function MetaItem({
     <View style={styles.metaItem}>
       <Ionicons name={icon} size={13} color={colors.text.secondary} />
       <ThemedText style={[styles.metaItemText, { color: colors.text.secondary }]}>{label}</ThemedText>
-    </View>
-  );
-}
-
-function StateCard({
-  colors,
-  icon,
-  title,
-  body,
-  actionLabel,
-  onAction,
-}: {
-  colors: any;
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  body?: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <View style={[styles.stateCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
-      {title === "Loading recipes..." ? (
-        <ActivityIndicator size="small" color={theme.brand.primary} />
-      ) : (
-        <Ionicons name={icon} size={28} color={colors.text.tertiary} />
-      )}
-
-      <ThemedText style={[styles.stateTitle, { color: colors.text.primary }]}>{title}</ThemedText>
-
-      {!!body && <ThemedText style={[styles.stateBody, { color: colors.text.secondary }]}>{body}</ThemedText>}
-
-      {!!actionLabel && !!onAction && (
-        <TouchableOpacity style={styles.stateButton} onPress={onAction} activeOpacity={0.85}>
-          <ThemedText style={styles.stateButtonText}>{actionLabel}</ThemedText>
-        </TouchableOpacity>
-      )}
     </View>
   );
 }

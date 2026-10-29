@@ -18,6 +18,7 @@ import { theme } from "@/constants/theme";
 import { SaveButton } from "@/components/save-button";
 import { useTheme } from "@/hooks/useTheme";
 import { supabase } from "@/lib/supabase";
+import { matchIngredientsToProduce } from "@/lib/ingredient-produce";
 import {
   getLocalGroceryListById,
   getLocalGroceryLists,
@@ -30,6 +31,7 @@ type DBIngredient = {
   quantity?: string;
   unit?: string;
   name?: string;
+  produce_item_id?: string;
 };
 
 type DBStep = {
@@ -143,6 +145,7 @@ type NormalizedRecipe = {
     quantity: string;
     unit: string;
     name: string;
+    produceItemId?: string;
   }>;
   steps: Array<{
     id: string;
@@ -183,6 +186,7 @@ export default function RecipeDetailScreen() {
   const [choosingList, setChoosingList] = useState(false);
   const [addingToList, setAddingToList] = useState(false);
   const [groceryListChoices, setGroceryListChoices] = useState<GroceryListChoice[]>([]);
+  const [ingredientProduceIds, setIngredientProduceIds] = useState<Record<string, string>>({});
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data, error }) => {
@@ -271,6 +275,32 @@ export default function RecipeDetailScreen() {
     return () => { cancelled = true; };
   }, [dbRecipe]);
 
+  useEffect(() => {
+    const ingredients = Array.isArray(dbRecipe?.ingredients) ? dbRecipe.ingredients : [];
+    const namedIngredients = ingredients.filter((item) => item?.name?.trim());
+    const storedLinks = namedIngredients.reduce<Record<string, string>>((links, item) => {
+      if (item.id && item.produce_item_id) links[item.id] = item.produce_item_id;
+      return links;
+    }, {});
+    const unmatchedNames = namedIngredients
+      .filter((item) => !item.produce_item_id)
+      .map((item) => item.name!.trim());
+
+    let cancelled = false;
+    void matchIngredientsToProduce(unmatchedNames).then((matches) => {
+      if (cancelled) return;
+      const inferredLinks = namedIngredients.reduce<Record<string, string>>((links, item, index) => {
+        const itemId = item.id ?? `${dbRecipe?.id ?? "recipe"}-ingredient-${index}`;
+        const match = matches.get(item.name?.trim() ?? "");
+        if (match) links[itemId] = match.id;
+        return links;
+      }, {});
+      setIngredientProduceIds({ ...storedLinks, ...inferredLinks });
+    });
+
+    return () => { cancelled = true; };
+  }, [dbRecipe]);
+
   const recipe: NormalizedRecipe | null = useMemo(() => {
     if (dbRecipe) {
       const ingredients = Array.isArray(dbRecipe.ingredients)
@@ -282,6 +312,7 @@ export default function RecipeDetailScreen() {
               quantity: item.quantity?.trim() ?? "",
               unit: item.unit?.trim() ?? "",
               name: item.name?.trim() ?? "",
+              produceItemId: item.produce_item_id || ingredientProduceIds[item.id ?? `${dbRecipe.id}-ingredient-${index}`],
             }))
         : [];
 
@@ -311,7 +342,7 @@ export default function RecipeDetailScreen() {
     }
 
     return null;
-  }, [dbRecipe]);
+  }, [dbRecipe, ingredientProduceIds]);
 
   const ingredientRows = useMemo(() => {
     if (!recipe) return [];
@@ -937,9 +968,19 @@ export default function RecipeDetailScreen() {
             <View style={styles.ingredientList}>
               {recipe.ingredients.map((ingredient) => {
                 const amount = [ingredient.quantity, ingredient.unit].filter(Boolean).join(" ");
+                const isLinkedProduce = Boolean(ingredient.produceItemId);
 
                 return (
-                  <View key={ingredient.id} style={styles.ingredientRow}>
+                  <TouchableOpacity
+                    key={ingredient.id}
+                    style={[styles.ingredientRow, isLinkedProduce && styles.ingredientRowLinked]}
+                    disabled={!isLinkedProduce}
+                    onPress={() => {
+                      if (ingredient.produceItemId) router.push(`/produce/${ingredient.produceItemId}`);
+                    }}
+                    accessibilityRole={isLinkedProduce ? "button" : undefined}
+                    accessibilityLabel={isLinkedProduce ? `View ${ingredient.name} season and farm availability` : undefined}
+                  >
                     <View style={styles.ingredientDot} />
                     <View style={styles.ingredientCopy}>
                       {!!amount && (
@@ -951,7 +992,8 @@ export default function RecipeDetailScreen() {
                         {ingredient.name}
                       </ThemedText>
                     </View>
-                  </View>
+                    {isLinkedProduce && <Ionicons name="chevron-forward" size={17} color={colors.text.tertiary} />}
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -1299,6 +1341,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: theme.spacing.sm,
   },
+  ingredientRowLinked: {
+    paddingVertical: 4,
+  },
   ingredientDot: {
     width: 10,
     height: 10,
@@ -1306,6 +1351,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.brand.primary,
   },
   ingredientCopy: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "baseline",
     gap: 8,

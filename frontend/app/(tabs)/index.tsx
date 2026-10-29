@@ -956,7 +956,7 @@ export default function HomeScreen() {
               contentContainerStyle={styles.horizontalScrollContent}
             >
               {farmsWithDistance.map((farm) => (
-                <View key={farm.id} style={{ width: 300 }}>
+                <View key={farm.id} style={{ width: 190 }}>
                   <FarmCard
                     id={farm.id}
                     name={farm.name}
@@ -965,6 +965,7 @@ export default function HomeScreen() {
                     distance={farm.distanceMi != null ? `${farm.distanceMi.toFixed(1)} mi` : '…'}
                     products={farm.products}
                     imageUrl={farm.imageUrl ?? undefined}
+                    variant="home"
                     onPress={() => handleFarmPress(farm.id)}
                     onDirectionPress={() => handleDirectionPress(farm.id)}
                     onSharePress={() => handleSharePress(farm.id)}

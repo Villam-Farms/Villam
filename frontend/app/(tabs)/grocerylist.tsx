@@ -19,6 +19,7 @@ import { useFocusEffect } from "expo-router/react-navigation";
 import { getLocalGroceryLists, deleteLocalGroceryList } from '@/lib/local-grocery-lists';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/auth-context';
+import { StateCard } from '@/components/ui/state-card';
 
 type DisplayGroceryListItem = {
   id?: string;
@@ -431,33 +432,11 @@ export default function GroceryListScreen() {
         </View>
 
         {isLoading ? (
-          <View style={styles.stateWrap}>
-            <ThemedText style={{ color: colors.text.tertiary }}>Loading grocery lists…</ThemedText>
-          </View>
+          <View style={styles.stateWrap}><StateCard colors={colors} icon="refresh-outline" title="Loading grocery lists…" loading /></View>
         ) : loadError ? (
-          <View style={styles.stateWrap}>
-            <ThemedText style={{ color: colors.text.tertiary }}>{loadError}</ThemedText>
-          </View>
+          <View style={styles.stateWrap}><StateCard colors={colors} icon="warning-outline" title="Could not load grocery lists" body={loadError} actionLabel="Try again" onAction={() => void loadLists()} /></View>
         ) : filteredLists.length === 0 ? (
-          <View style={styles.stateWrap}>
-            <View style={[styles.emptyIconWrap, { backgroundColor: colors.input.background }]}>
-              <Ionicons name="cart-outline" size={30} color={theme.brand.primary} />
-            </View>
-            <ThemedText style={[styles.emptyTitle, { color: colors.text.primary }]}>
-              No grocery lists yet
-            </ThemedText>
-            <ThemedText style={[styles.emptyBody, { color: colors.text.secondary }]}>
-              Start a list for your next market run, recipe plan, or weekly essentials.
-            </ThemedText>
-            <TouchableOpacity
-              style={styles.emptyActionButton}
-              onPress={() => router.push('/grocery-list/new')}
-              activeOpacity={0.86}
-            >
-              <Ionicons name="add" size={20} color={theme.neutral.white} />
-              <ThemedText style={styles.emptyActionText}>New grocery list</ThemedText>
-            </TouchableOpacity>
-          </View>
+          <View style={styles.stateWrap}><StateCard colors={colors} icon="cart-outline" title={searchQuery.trim() ? "No grocery lists found" : "No grocery lists yet"} body={searchQuery.trim() ? "Try another search." : "Start a list for your next market run, recipe plan, or weekly essentials."} actionLabel={searchQuery.trim() ? "Clear search" : "New grocery list"} onAction={() => searchQuery.trim() ? setSearchQuery('') : router.push('/grocery-list/new')} /></View>
         ) : (
           <FlatList
             data={filteredLists}

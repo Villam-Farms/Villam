@@ -21,6 +21,7 @@ interface FarmCardProps {
   onSharePress?: () => void;
   onFavoritePress?: () => void;
   isFavorite?: boolean;
+  variant?: "default" | "home";
 }
 
 const PRODUCTS_LINES = 2;
@@ -39,6 +40,7 @@ export default function FarmCard({
   onSharePress,
   onFavoritePress,
   isFavorite = false,
+  variant = "default",
 }: FarmCardProps) {
   const { colors, isDark } = useTheme();
   const transparentBg = { lightColor: "transparent", darkColor: "transparent" } as const;
@@ -46,12 +48,19 @@ export default function FarmCard({
   const safeProducts = products?.trim().length ? products : " "; // keeps reserved height even if empty
 
   return (
-    <View style={styles.shadowWrapper}>
+    <View style={[styles.shadowWrapper, variant === "home" && styles.homeWrapper]}>
       <TouchableOpacity
         testID={id ? `farm-card-${id}` : undefined}
         accessibilityRole="button"
         accessibilityLabel={`Open ${name}`}
-        style={[styles.farmCard, { backgroundColor: colors.surface }]}
+        style={[
+          styles.farmCard,
+          variant === "home" && styles.homeCard,
+          {
+            backgroundColor: variant === "home" ? colors.background : colors.surface,
+            borderColor: variant === "home" ? colors.border.light : "transparent",
+          },
+        ]}
         onPress={onPress}
         activeOpacity={0.85}
       >
@@ -60,6 +69,7 @@ export default function FarmCard({
           {...transparentBg}
           style={[
             styles.farmImage,
+            variant === "home" && styles.homeImage,
             { backgroundColor: isDark ? colors.border.default : colors.border.light },
           ]}
         >
@@ -74,6 +84,13 @@ export default function FarmCard({
               </View>
             </View>
           )}
+
+          {variant === "home" && reviews > 0 && (
+            <View style={styles.homeRatingBadge}>
+              <Ionicons name="star" size={13} color="#F59E0B" />
+              <ThemedText style={styles.homeRatingBadgeText}>{rating.toFixed(1)}</ThemedText>
+            </View>
+          )}
         </ThemedView>
 
         {/* Info */}
@@ -82,8 +99,8 @@ export default function FarmCard({
           <ThemedView {...transparentBg} style={styles.farmHeader}>
             <ThemedText
               type="defaultSemiBold"
-              style={styles.farmName}
-              numberOfLines={1}
+              style={[styles.farmName, variant === "home" && styles.homeFarmName]}
+              numberOfLines={variant === "home" ? 2 : 1}
               ellipsizeMode="tail"
             >
               {name}
@@ -98,26 +115,34 @@ export default function FarmCard({
             </TouchableOpacity>}
           </ThemedView>
 
-          {/* Rating row (distance clamped too) */}
-          <ThemedView {...transparentBg} style={styles.farmRating}>
-            <IconSymbol name="star.fill" size={14} color="#FFD700" />
-            <ThemedText style={[styles.ratingText, { color: colors.text.secondary }]}>
-              {rating.toFixed(1)} ({reviews})
-            </ThemedText>
+          {variant === "home" ? (
+            <ThemedView {...transparentBg} style={styles.farmRating}>
+              <Ionicons name="location-outline" size={15} color={colors.text.tertiary} />
+              <ThemedText style={[styles.homeMetaText, { color: colors.text.secondary }]} numberOfLines={1}>
+                {distance} away
+              </ThemedText>
+            </ThemedView>
+          ) : (
+            <ThemedView {...transparentBg} style={styles.farmRating}>
+              <IconSymbol name="star.fill" size={14} color="#FFD700" />
+              <ThemedText style={[styles.ratingText, { color: colors.text.secondary }]}>
+                {rating.toFixed(1)} ({reviews})
+              </ThemedText>
 
-            <ThemedText
-              style={[styles.distanceText, { color: colors.text.tertiary }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              📍 {distance}
-            </ThemedText>
-          </ThemedView>
+              <ThemedText
+                style={[styles.distanceText, { color: colors.text.tertiary }]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                📍 {distance}
+              </ThemedText>
+            </ThemedView>
+          )}
 
           {/* Products: reserve exactly 2 lines worth of height */}
           <View style={styles.productsBlock}>
             <ThemedText
-              style={[styles.farmProducts, { color: colors.text.tertiary }]}
+              style={[styles.farmProducts, variant === "home" && styles.homeProducts, { color: colors.text.tertiary }]}
               numberOfLines={PRODUCTS_LINES}
               ellipsizeMode="tail"
             >
@@ -172,15 +197,45 @@ const styles = StyleSheet.create({
     elevation: 4,
     borderRadius: BorderRadius.lg,
   },
+  homeWrapper: {
+    shadowOpacity: 0,
+    elevation: 0,
+    borderRadius: 22,
+  },
 
   farmCard: {
     borderRadius: BorderRadius.lg,
     overflow: "hidden",
   },
+  homeCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+  },
 
   farmImage: {
     height: 110,
     width: "100%",
+  },
+  homeImage: {
+    height: 132,
+  },
+  homeRatingBadge: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(17, 24, 28, 0.78)",
+    borderRadius: theme.borderRadius.full,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  homeRatingBadgeText: {
+    color: theme.neutral.white,
+    fontSize: 12,
+    fontWeight: theme.typography.fontWeights.bold,
+    fontFamily: theme.typography.fontFamily,
   },
 
   farmImageContent: {
@@ -236,6 +291,10 @@ const styles = StyleSheet.create({
     marginRight: Spacing.sm,
     fontSize: theme.typography.fontSizes.h4,
   },
+  homeFarmName: {
+    fontWeight: theme.typography.fontWeights.bold,
+    lineHeight: 22,
+  },
 
   farmRating: {
     flexDirection: "row",
@@ -246,6 +305,13 @@ const styles = StyleSheet.create({
   ratingText: {
     fontSize: 12,
     marginLeft: Spacing.xs,
+  },
+  homeMetaText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: theme.typography.fontWeights.medium,
+    fontFamily: theme.typography.fontFamily,
+    marginLeft: 5,
   },
 
   distanceText: {
@@ -262,6 +328,11 @@ const styles = StyleSheet.create({
   farmProducts: {
     fontSize: 11,
     lineHeight: PRODUCTS_LINE_HEIGHT,
+  },
+  homeProducts: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: theme.typography.fontWeights.medium,
   },
 
   farmActions: {

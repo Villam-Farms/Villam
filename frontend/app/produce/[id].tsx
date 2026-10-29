@@ -161,6 +161,13 @@ export default function ProduceDetailScreen() {
     () => seasonMonths.length ? seasonMonths.map((month) => MONTH_NAMES[month - 1]).join(' · ') : 'Season varies',
     [seasonMonths]
   );
+  const currentMonth = new Date().getMonth() + 1;
+  const isInSeason = seasonMonths.includes(currentMonth);
+  const availability = listings.length > 0
+    ? { label: 'Available now', icon: 'checkmark-circle' as const, color: '#2F6B42' }
+    : isInSeason
+      ? { label: 'In season · no farm listings yet', icon: 'leaf' as const, color: '#6E7B37' }
+      : { label: 'Out of season', icon: 'calendar-outline' as const, color: '#7A6250' };
   const visuals = getListingVisuals(item?.category);
 
   async function handleDirections(farm: Farm) {
@@ -200,6 +207,10 @@ export default function ProduceDetailScreen() {
                 {item.description?.trim() || 'Fresh, locally listed produce from farms near you.'}
               </ThemedText>
               <View style={styles.pillRow}>
+                <View style={[styles.availabilityPill, { borderColor: availability.color }]}> 
+                  <Ionicons name={availability.icon} size={14} color={availability.color} />
+                  <ThemedText style={[styles.availabilityPillText, { color: availability.color }]}>{availability.label}</ThemedText>
+                </View>
                 <View style={styles.infoPill}>
                   <Ionicons name="calendar-outline" size={14} color="#6E7B37" />
                   <ThemedText style={styles.infoPillText}>{seasonText}</ThemedText>
@@ -377,6 +388,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.72)', paddingHorizontal: 12, paddingVertical: 7,
   },
   infoPillText: { fontSize: 12, lineHeight: 17, color: '#5A564B', fontWeight: '600' },
+  availabilityPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: theme.borderRadius.full,
+    backgroundColor: 'rgba(255,255,255,0.82)', borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7,
+  },
+  availabilityPillText: { fontSize: 12, lineHeight: 17, fontWeight: '700' },
   section: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: theme.spacing.md },
   sectionTitle: { fontSize: 21, lineHeight: 27, fontWeight: '700' },
