@@ -1,8 +1,7 @@
 // app/(tabs)/map.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, TextInput, Platform } from "react-native";
+import { Keyboard, View, Text, StyleSheet, Pressable, ScrollView, TextInput, Platform } from "react-native";
 import MapView, { Marker } from "react-native-maps";
-import BottomSheet, { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -30,13 +29,13 @@ type Region = {
 
 export default function MapTab() {
   const { colors } = useTheme();
-  const sheetRef = useRef<BottomSheet>(null);
   const mapRef = useRef<MapView>(null);
 
   const [region, setRegion] = useState<Region | null>(null);
   const [selectedFarmId, setSelectedFarmId] = useState<string | null>(null);
   const [recentFarmIds, setRecentFarmIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isFarmPanelOpen, setIsFarmPanelOpen] = useState(true);
 
   const { coords: userCoords, locationText } = useCurrentLocation();
   const { data: farms = [], isLoading: farmsLoading, error: farmsError } = useFarms();
@@ -109,7 +108,6 @@ export default function MapTab() {
 
     setRegion(next);
     mapRef.current?.animateToRegion(next, 600);
-    sheetRef.current?.snapToIndex(1);
   };
 
   const recenterOnUser = () => {
@@ -228,7 +226,7 @@ export default function MapTab() {
   return (
     <View style={{ flex: 1 }}>
       {/* MAP */}
-      <MapView ref={mapRef} style={{ flex: 1 }} region={region} showsUserLocation>
+      <MapView ref={mapRef} style={{ flex: 1 }} region={region} showsUserLocation onPress={() => Keyboard.dismiss()}>
         {filteredFarms.map((farm) => (
           <Marker
             key={farm.id}
@@ -274,8 +272,11 @@ export default function MapTab() {
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
-          onFocus={() => sheetRef.current?.snapToIndex(1)}
-          onSubmitEditing={handleSearchSubmit}
+          onSubmitEditing={() => {
+            Keyboard.dismiss();
+            handleSearchSubmit();
+          }}
+          blurOnSubmit
           placeholder="Search farms or location…"
           placeholderTextColor={colors.input.placeholder}
           returnKeyType="search"
@@ -283,7 +284,10 @@ export default function MapTab() {
         />
         {searchQuery.trim().length > 0 && (
           <Pressable
-            onPress={() => setSearchQuery("")}
+            onPress={() => {
+              setSearchQuery("");
+              Keyboard.dismiss();
+            }}
             accessibilityLabel="Clear map search"
             hitSlop={8}
             style={styles.clearSearchButton}
@@ -293,107 +297,86 @@ export default function MapTab() {
         )}
       </View>
 
-      {/* BOTTOM SHEET */}
-      <BottomSheet
-        ref={sheetRef}
-        snapPoints={["5%", "60%", "85%"]}
-        index={0}
-        backgroundStyle={{ backgroundColor: colors.background }}
-        handleIndicatorStyle={{ backgroundColor: colors.border.light }}
-      >
-        <BottomSheetScrollView
-          contentContainerStyle={styles.sheetContentContainer}
-          showsVerticalScrollIndicator={false}
-        >
-          {recentFarms.length > 0 && (
-            <>
-              {/* RECENTS */}
-              <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>Recents</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.recentsScroll}
-                contentContainerStyle={styles.recentsScrollContent}
-              >
+      {/* Native fixed panel: unlike the old bottom sheet, this remains visible
+          in Expo Go and in the iOS Maps view. */}
+      <View style={[styles.farmsPanel, !isFarmPanelOpen && styles.farmsPanelCollapsed, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
+        {isFarmPanelOpen ? (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Close Farms Near You"
+              onPress={() => setIsFarmPanelOpen(false)}
+              style={styles.panelHandleTouchTarget}
+            >
+              <View style={styles.panelHandle} />
+            </Pressable>
+            {recentFarms.length > 0 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recentsScrollContent}>
+                <Text style={[styles.recentsLabel, { color: colors.text.secondary }]}>Recents</Text>
                 {recentFarms.map((farm) => (
                   <Pressable
                     key={farm.id}
-                    style={[
-                      styles.recentItem,
-                      {
-                        backgroundColor: colors.surface,
-                        borderColor: colors.border.light,
-                      },
-                    ]}
+                    style={[styles.recentItem, { backgroundColor: colors.surface, borderColor: colors.border.light }]}
                     onPress={() => focusFarm(farm.id)}
                   >
-                    <Text style={[styles.recentTitle, { color: colors.text.primary }]} numberOfLines={1}>
-                      {farm.name}
-                    </Text>
-                    <Text style={[styles.recentSubtitle, { color: colors.text.tertiary }]} numberOfLines={1}>
-                      {farm.products}
-                    </Text>
+                    <Text style={[styles.recentTitle, { color: colors.text.primary }]} numberOfLines={1}>{farm.name}</Text>
                   </Pressable>
                 ))}
               </ScrollView>
-            </>
-          )}
+            ) : null}
+            <View style={styles.panelHeader}>
+              <View style={styles.panelTitleCopy}>
+                <Text style={[styles.sectionTitle, { color: colors.text.primary }]}> 
+                  {normalizedSearchQuery ? "Search Results" : "Farms Near You"}
+                </Text>
+                <Text style={[styles.panelLocation, { color: colors.text.tertiary }]} numberOfLines={1}>📍 {locationText}</Text>
+              </View>
+              <Button variant="primary" onPress={() => router.push("/farm")} style={styles.seeAllButton}>See All</Button>
+            </View>
 
-          {/* FARMS NEAR YOU */}
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text.primary }]}>
-              {normalizedSearchQuery ? "Search Results" : "Farms Near You"}
-            </Text>
-            <Button
-              variant="primary"
-              onPress={() => router.push("/farm")}
-              style={styles.seeAllButton}
-            >
-              See All
-            </Button>
-          </View>
-
-          <Text style={{ color: colors.text.tertiary, marginTop: 2, marginBottom: 8 }}>
-            📍 {locationText}
-          </Text>
-
-          {farmsLoading ? (
-            <Text style={{ color: colors.text.tertiary }}>Loading farms…</Text>
-          ) : farmsError ? (
-            <Text style={{ color: colors.text.tertiary }}>Could not load farms.</Text>
-          ) : filteredFarmsWithDistance.length === 0 ? (
-            <Text style={{ color: colors.text.tertiary }}>
-              No farms matched your search.
-            </Text>
-          ) : (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.farmsScroll}
-              contentContainerStyle={styles.farmsScrollContent}
-            >
-              {filteredFarmsWithDistance.map((farm) => (
-                <View key={farm.id} style={styles.farmCardWrapper}>
-                  <FarmCard
-                    id={farm.id}
-                    name={farm.name}
-                    rating={farm.rating}
-                    reviews={farm.reviews}
-                    distance={farm.distanceMi != null ? `${farm.distanceMi.toFixed(1)} mi` : "…"}
-                    products={farm.products}
-                    imageUrl={farm.imageUrl ?? undefined}
-                    onPress={() => handleFarmPress(farm.id)}
-                    onDirectionPress={() => handleDirectionPress(farm.id)}
-                    onSharePress={() => handleSharePress(farm.id)}
-                  />
-                </View>
-              ))}
-            </ScrollView>
-          )}
-
-          <View style={{ height: 40 }} />
-        </BottomSheetScrollView>
-      </BottomSheet>
+            {farmsLoading ? (
+              <Text style={[styles.panelMessage, { color: colors.text.tertiary }]}>Loading farms…</Text>
+            ) : farmsError ? (
+              <Text style={[styles.panelMessage, { color: colors.text.tertiary }]}>Could not load farms.</Text>
+            ) : filteredFarmsWithDistance.length === 0 ? (
+              <Text style={[styles.panelMessage, { color: colors.text.tertiary }]}>No farms matched your search.</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.farmsScrollContent}>
+                {filteredFarmsWithDistance.map((farm) => (
+                  <View key={farm.id} style={styles.farmCardWrapper}>
+                    <FarmCard
+                      id={farm.id}
+                      name={farm.name}
+                      rating={farm.rating}
+                      reviews={farm.reviews}
+                      distance={farm.distanceMi != null ? `${farm.distanceMi.toFixed(1)} mi` : "…"}
+                      products={farm.products}
+                      imageUrl={farm.imageUrl ?? undefined}
+                      variant="home"
+                      onPress={() => handleFarmPress(farm.id)}
+                      onDirectionPress={() => handleDirectionPress(farm.id)}
+                      onSharePress={() => handleSharePress(farm.id)}
+                    />
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open Farms Near You"
+            onPress={() => setIsFarmPanelOpen(true)}
+            style={styles.collapsedPanelButton}
+          >
+            <View>
+              <Text style={[styles.collapsedPanelTitle, { color: colors.text.primary }]}>Farms Near You</Text>
+              <Text style={[styles.collapsedPanelSubtitle, { color: colors.text.tertiary }]}>{filteredFarmsWithDistance.length} nearby farms</Text>
+            </View>
+            <Ionicons name="chevron-up" size={22} color={colors.text.primary} />
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -436,11 +419,53 @@ const styles = StyleSheet.create({
     zIndex: 21,
   },
 
-  // BottomSheetScrollView padding belongs on contentContainerStyle
-  sheetContentContainer: {
-    paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.md,
+  farmsPanel: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: 1,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+    paddingBottom: theme.spacing.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 12,
+    zIndex: 30,
   },
+  farmsPanelCollapsed: { paddingTop: 0, paddingBottom: 0 },
+  panelHandle: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    backgroundColor: "#B8B8B8",
+  },
+  panelHandleTouchTarget: { alignSelf: "stretch", alignItems: "center", paddingVertical: 8, marginBottom: -4 },
+  panelTitleCopy: { flex: 1, minWidth: 0 },
+  panelHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+  },
+  panelLocation: { fontSize: 12, marginTop: -theme.spacing.xs },
+  panelMessage: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.md },
+  collapsedPanelButton: {
+    minHeight: 62,
+    paddingHorizontal: theme.spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  collapsedPanelTitle: { fontSize: 16, fontWeight: "700" },
+  collapsedPanelSubtitle: { fontSize: 12, marginTop: 2 },
 
   sectionTitle: {
     fontSize: theme.typography.fontSizes.h3,
@@ -460,22 +485,27 @@ const styles = StyleSheet.create({
   },
 
   recentsScrollContent: {
-    paddingVertical: theme.spacing.xs,
+    alignItems: "center",
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.xs,
+    paddingBottom: 0,
     gap: theme.spacing.sm,
   },
 
+  recentsLabel: { fontSize: 12, fontWeight: "700" },
+
   recentItem: {
-    minWidth: 160,
-    borderRadius: theme.borderRadius.lg,
+    maxWidth: 132,
+    borderRadius: theme.borderRadius.full,
     borderWidth: 1,
-    padding: theme.spacing.md,
-    marginRight: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
   },
 
   recentTitle: {
     fontSize: 14,
     fontWeight: "600",
-    marginBottom: theme.spacing.xs,
+    marginBottom: 0,
   },
 
   recentSubtitle: {
@@ -495,21 +525,17 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 
-  // Edge-to-edge scroller: pull to edges; padding on content container
-  farmsScroll: {
-    marginTop: theme.spacing.sm,
-    marginHorizontal: -theme.spacing.md,
-  },
   farmsScrollContent: {
     paddingHorizontal: theme.spacing.md,
-    paddingRight: theme.spacing.md,
-    paddingVertical: 6, // ✅ prevents shadow clipping / “first card looks different”
+    paddingRight: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: 6,
     gap: theme.spacing.md,
   },
 
-  // Parent controls width; FarmCard no longer needs width: 300
+  // Matches the Home tab carousel width and card treatment.
   farmCardWrapper: {
-    width: 300,
+    width: 190,
   },
 
   seeAllButton: {
