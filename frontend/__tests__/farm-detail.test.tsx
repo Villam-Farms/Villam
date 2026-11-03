@@ -1,4 +1,9 @@
-import React from"react";import{Alert}from"react-native";import{fireEvent,render,waitFor}from"@testing-library/react-native";
+import React from"react";import{Alert,StyleSheet}from"react-native";import{fireEvent,render,waitFor}from"@testing-library/react-native";
+jest.mock("react-native/Libraries/Image/Image", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  return { __esModule: true, default: (props: any) => <View {...props} /> };
+});
 const mockParams=jest.fn(),mockQuery=jest.fn(),mockRatings=jest.fn(),mockSave=jest.fn(),mockShare=jest.fn(),mockDirections=jest.fn(),mockInvalidate=jest.fn(),mockBack=jest.fn();let mockSession:any;
 jest.mock("expo-router",()=>{const React=require("react");const{View}=require("react-native");return{Stack:{Screen:()=> <View/>},router:{canGoBack:()=>true,back:(...a:any[])=>mockBack(...a),replace:jest.fn()},useLocalSearchParams:()=>mockParams()}});jest.mock("react-native-safe-area-context",()=>({SafeAreaView:({children}:any)=>children,useSafeAreaInsets:()=>({top:0})}));jest.mock("@expo/vector-icons",()=>({Ionicons:"Ionicons"}));jest.mock("expo-image",()=>({Image:"Image"}));
 jest.mock("@tanstack/react-query",()=>({useQuery:(o:any)=>mockQuery(o),useQueryClient:()=>({invalidateQueries:(...a:any[])=>mockInvalidate(...a)})}));jest.mock("@/context/auth-context",()=>({useAuth:()=>({session:mockSession})}));jest.mock("@/hooks/useCurrentLocation",()=>({useCurrentLocation:()=>({coords:{latitude:1,longitude:2}})}));jest.mock("@/hooks/useTheme",()=>({useTheme:()=>({colors:{background:"white",card:"#eee",border:{light:"gray"},text:{primary:"black",secondary:"gray",tertiary:"gray"}}})}));jest.mock("@/components/save-button",()=>({SaveButton:()=>null}));
@@ -15,5 +20,17 @@ it("loads and updates the current user review",async()=>{mockRatings.mockResolve
 it("reports review save failures",async()=>{mockSave.mockRejectedValue(new Error("save failed"));const s=await render(<FarmDetailScreen/>);await fireEvent.press(s.getByText("Reviews"));await fireEvent.changeText(s.getByPlaceholderText("Share what stood out about the produce, pickup, or farm visit."),"Review");await fireEvent.press(s.getByText("Save review"));await waitFor(()=>expect(alert).toHaveBeenCalledWith("Review not saved","save failed"));});
 it("uses coordinate fallbacks and handles action failures",async()=>{const bare={...farm,imageUrl:null,description:" ",street:"",city:"",postal_code:""};mockQuery.mockImplementation(({queryKey}:any)=>queryKey[0]==="farm"?{data:bare,isLoading:false,error:null}:{data:[],isLoading:false});mockShare.mockRejectedValue(new Error("share"));mockDirections.mockRejectedValue(new Error("directions"));const s=await render(<FarmDetailScreen/>);expect(s.getByText("Locally grown produce and farm pickup.")).toBeTruthy();await fireEvent.press(s.getByLabelText("Share farm"));expect(mockShare).toHaveBeenCalledWith(expect.objectContaining({location:"1, 2"}));await fireEvent.press(s.getByText("Get Directions"));expect(mockDirections).toHaveBeenCalledWith("1,2");});
 it("shows the farm loading state",async()=>{mockQuery.mockImplementation(({queryKey}:any)=>queryKey[0]==="farm"?{data:null,isLoading:true,error:null}:{data:[],isLoading:true});const s=await render(<FarmDetailScreen/>);expect(s.getByText("Loading farm…")).toBeTruthy();});
-it("shows listing loading and empty states",async()=>{mockQuery.mockImplementation(({queryKey}:any)=>queryKey[0]==="farm"?{data:farm,isLoading:false,error:null}:{data:[],isLoading:true});let s=await render(<FarmDetailScreen/>);expect(s.getByText("Loading available produce…")).toBeTruthy();s.unmount();mockQuery.mockImplementation(({queryKey}:any)=>queryKey[0]==="farm"?{data:farm,isLoading:false,error:null}:{data:[{...listing,available:false}],isLoading:false});s=await render(<FarmDetailScreen/>);expect(s.getByText("This farm has not added any available produce yet.")).toBeTruthy();});
+it("shows listing loading and empty states",async()=>{mockQuery.mockImplementation(({queryKey}:any)=>queryKey[0]==="farm"?{data:farm,isLoading:false,error:null}:{data:[],isLoading:true});let s=await render(<FarmDetailScreen/>);expect(s.getByText("Loading available produce…")).toBeTruthy();await s.unmount();mockQuery.mockImplementation(({queryKey}:any)=>queryKey[0]==="farm"?{data:farm,isLoading:false,error:null}:{data:[{...listing,available:false}],isLoading:false});s=await render(<FarmDetailScreen/>);expect(s.getByText("This farm has not added any available produce yet.")).toBeTruthy();});
+it("fills the farm header with its photo and falls back when loading fails", async () => {
+  const screen = await render(<FarmDetailScreen />);
+  const photo = screen.getByTestId("farm-hero-image", { includeHiddenElements: true });
+  expect(photo.props.source).toEqual({ uri: "farm.jpg" });
+  expect(StyleSheet.flatten(photo.props.style)).toMatchObject({
+    position: "absolute", top: 0, right: 0, bottom: 0, left: 0,
+  });
+  await fireEvent(photo, "error", { nativeEvent: { error: "Image unavailable" } });
+  expect(screen.queryByTestId("farm-hero-image", { includeHiddenElements: true })).toBeNull();
+  expect(screen.getByText("Sunny Farm")).toBeTruthy();
+});
+
 });

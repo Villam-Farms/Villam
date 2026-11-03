@@ -193,3 +193,9 @@ describe("authentication screens", () => {
     expect(mockKeyboardRemovers.every((remove) => remove.mock.calls.length === 1)).toBe(true);
   });
 });
+
+it("opens password recovery from the login screen", async () => {
+  const screen = await render(<Login />);
+  await fireEvent.press(screen.getByText("Forgot password?"));
+  expect(mockPush).toHaveBeenCalledWith("/(auth)/forgot-password");
+});

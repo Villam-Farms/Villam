@@ -34,6 +34,7 @@ export default function MapTab() {
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
   const panelDragY = useRef(new Animated.Value(0)).current;
+  const farmCardsRef = useRef<ScrollView>(null);
 
   const [region, setRegion] = useState<Region | null>(null);
   const [selectedFarmId, setSelectedFarmId] = useState<string | null>(null);
@@ -114,6 +115,17 @@ export default function MapTab() {
     [farmsWithDistance, filteredFarmIds]
   );
 
+  const previewFarms = useMemo(() => {
+    const selected = filteredFarmsWithDistance.find((farm) => farm.id === selectedFarmId);
+    return selected
+      ? [selected, ...filteredFarmsWithDistance.filter((farm) => farm.id !== selectedFarmId)]
+      : filteredFarmsWithDistance;
+  }, [filteredFarmsWithDistance, selectedFarmId]);
+
+  useEffect(() => {
+    if (isFarmPanelOpen) farmCardsRef.current?.scrollTo({ x: 0, animated: false });
+  }, [selectedFarmId, isFarmPanelOpen, normalizedSearchQuery]);
+
   const fallbackCenter = useMemo(() => {
     if (userCoords) return userCoords;
     if (farms.length > 0) return { latitude: farms[0].latitude, longitude: farms[0].longitude };
@@ -137,6 +149,8 @@ export default function MapTab() {
 
     addRecentFarm(farmId);
     setSelectedFarmId(farmId);
+    setIsFarmPanelOpen(true);
+    farmCardsRef.current?.scrollTo({ x: 0, animated: false });
 
     const next: Region = {
       latitude: farm.latitude,
@@ -386,8 +400,8 @@ export default function MapTab() {
             ) : filteredFarmsWithDistance.length === 0 ? (
               <Text style={[styles.panelMessage, { color: colors.text.tertiary }]}>No farms matched your search.</Text>
             ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.farmsScrollContent}>
-                {filteredFarmsWithDistance.map((farm) => (
+              <ScrollView ref={farmCardsRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.farmsScrollContent}>
+                {previewFarms.map((farm) => (
                   <View key={farm.id} style={styles.farmCardWrapper}>
                     <FarmCard
                       id={farm.id}

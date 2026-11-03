@@ -1242,18 +1242,29 @@ def create_thread(body: CreateThreadIn, user_id: str = Depends(get_current_user_
 def get_thread(thread_id: str, user_id: str = Depends(get_current_user_id)) -> ConversationThreadDetailOut:
     thread = _ensure_thread_participant(thread_id, user_id)
 
-    supabase.table("conversation_messages").update({"read_at": _utc_now_iso()}).eq("thread_id", thread_id).eq("recipient_user_id", user_id).is_("read_at", "null").execute()
-    supabase.table("notifications").update({"is_read": True}).eq("user_id", user_id).eq("type", "message").eq("entity_type", "thread").eq("entity_id", thread_id).eq("is_read", False).execute()
-
+    # Fetch the latest window, then display it in chronological order.
     messages_resp = (
         supabase.table("conversation_messages")
         .select("id,thread_id,sender_user_id,recipient_user_id,body,created_at,read_at")
         .eq("thread_id", thread_id)
-        .order("created_at", desc=False)
+        .order("created_at", desc=True)
+        .order("id", desc=True)
         .limit(500)
         .execute()
     )
-    rows = getattr(messages_resp, "data", []) or []
+    rows = list(reversed(getattr(messages_resp, "data", []) or []))
+    unread_ids = [
+        row["id"] for row in rows
+        if row.get("recipient_user_id") == user_id and not row.get("read_at")
+    ]
+    if unread_ids:
+        read_at = _utc_now_iso()
+        supabase.table("conversation_messages").update({"read_at": read_at}).eq("thread_id", thread_id).eq("recipient_user_id", user_id).in_("id", unread_ids).is_("read_at", "null").execute()
+        for row in rows:
+            if row["id"] in unread_ids:
+                row["read_at"] = read_at
+    supabase.table("notifications").update({"is_read": True}).eq("user_id", user_id).eq("type", "message").eq("entity_type", "thread").eq("entity_id", thread_id).eq("is_read", False).execute()
+
     sender_ids = [str(row.get("sender_user_id")) for row in rows if row.get("sender_user_id")]
     profile_map = _get_profile_map(sender_ids)
 
