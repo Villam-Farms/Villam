@@ -310,6 +310,9 @@ export default function FarmDetailScreen() {
           {hasFarmImage ? (
             <>
               <Image
+                testID="farm-hero-image"
+                accessible
+                accessibilityLabel={`${farm.name} farm photo`}
                 source={{ uri: farm.imageUrl! }}
                 style={styles.heroImage}
                 resizeMode="cover"
@@ -868,14 +871,26 @@ const styles = StyleSheet.create({
     marginHorizontal: -theme.spacing.lg,
   },
   heroImage: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   heroImageOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
     backgroundColor: 'rgba(26, 35, 20, 0.35)',
   },
   heroShapes: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   shape: {
     position: 'absolute',
@@ -1059,7 +1074,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   produceThumbImage: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
   },
   produceListingBody: {
     flex: 1,

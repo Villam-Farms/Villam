@@ -262,7 +262,7 @@ async function getRecipeRatingSummaries(
 }
 
 async function loadHomeGroceryLists(userId: string | null): Promise<HomeGroceryList[]> {
-  const localLists = await getLocalGroceryLists();
+  const localLists = await getLocalGroceryLists(userId);
 
   if (!userId) {
     return localLists.map((list) => ({

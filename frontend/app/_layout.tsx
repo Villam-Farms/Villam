@@ -49,6 +49,9 @@ function AuthGate() {
       return;
     }
 
+    // Recovery links establish a session before the user chooses a password.
+    if (inAuthGroup && segments[1] === 'reset-password') return;
+
     if (session && inAuthGroup) {
       if (isProfileComplete || profileLoadFailed) {
         debugLog({ runId: 'pre-fix', hypothesisId: 'C', location: '_layout.tsx:AuthGate', message: 'AuthGate redirect auth->tabs', data: { segments: [...segments], isProfileComplete } });
