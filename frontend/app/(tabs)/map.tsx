@@ -1,6 +1,6 @@
 // app/(tabs)/map.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Keyboard, View, Text, StyleSheet, Pressable, ScrollView, TextInput, Platform } from "react-native";
+import { Animated, Keyboard, PanResponder, View, Text, StyleSheet, Pressable, ScrollView, TextInput, Platform } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -27,9 +27,13 @@ type Region = {
   longitudeDelta: number;
 };
 
+const PANEL_DRAG_LIMIT = 280;
+const PANEL_COLLAPSE_THRESHOLD = 130;
+
 export default function MapTab() {
   const { colors } = useTheme();
   const mapRef = useRef<MapView>(null);
+  const panelDragY = useRef(new Animated.Value(0)).current;
 
   const [region, setRegion] = useState<Region | null>(null);
   const [selectedFarmId, setSelectedFarmId] = useState<string | null>(null);
@@ -39,6 +43,41 @@ export default function MapTab() {
 
   const { coords: userCoords, locationText } = useCurrentLocation();
   const { data: farms = [], isLoading: farmsLoading, error: farmsError } = useFarms();
+
+  const openPanelPanResponder = useMemo(
+    () => PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      onPanResponderMove: (_, gesture) => {
+        panelDragY.setValue(Math.min(Math.max(gesture.dy, 0), PANEL_DRAG_LIMIT));
+      },
+      onPanResponderRelease: (_, gesture) => {
+        const shouldCollapse = gesture.dy > PANEL_COLLAPSE_THRESHOLD || gesture.vy > 0.8;
+        Animated.timing(panelDragY, {
+          toValue: shouldCollapse ? PANEL_DRAG_LIMIT : 0,
+          duration: 180,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (finished && shouldCollapse) {
+            panelDragY.setValue(0);
+            setIsFarmPanelOpen(false);
+          }
+        });
+      },
+    }),
+    []
+  );
+
+  const collapsedPanelPanResponder = useMemo(
+    () => PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dy) > 4 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy < -36) setIsFarmPanelOpen(true);
+      },
+    }),
+    []
+  );
 
   const farmsWithDistance = useMemo(
     () => addDistanceAndSort(farms, userCoords),
@@ -299,17 +338,23 @@ export default function MapTab() {
 
       {/* Native fixed panel: unlike the old bottom sheet, this remains visible
           in Expo Go and in the iOS Maps view. */}
-      <View style={[styles.farmsPanel, !isFarmPanelOpen && styles.farmsPanelCollapsed, { backgroundColor: colors.background, borderColor: colors.border.light }]}> 
+      <Animated.View
+        style={[
+          styles.farmsPanel,
+          !isFarmPanelOpen && styles.farmsPanelCollapsed,
+          { backgroundColor: colors.background, borderColor: colors.border.light, transform: [{ translateY: panelDragY }] },
+        ]}
+      >
         {isFarmPanelOpen ? (
           <>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Close Farms Near You"
-              onPress={() => setIsFarmPanelOpen(false)}
+            <View
+              accessible
+              accessibilityLabel="Swipe down to close Farms Near You"
               style={styles.panelHandleTouchTarget}
+              {...openPanelPanResponder.panHandlers}
             >
               <View style={styles.panelHandle} />
-            </Pressable>
+            </View>
             {recentFarms.length > 0 ? (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recentsScrollContent}>
                 <Text style={[styles.recentsLabel, { color: colors.text.secondary }]}>Recents</Text>
@@ -363,20 +408,22 @@ export default function MapTab() {
             )}
           </>
         ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Open Farms Near You"
-            onPress={() => setIsFarmPanelOpen(true)}
+          <View
+            accessible
+            accessibilityLabel="Swipe up to open Farms Near You"
             style={styles.collapsedPanelButton}
+            {...collapsedPanelPanResponder.panHandlers}
           >
-            <View>
+            <View style={styles.panelHandle} />
+            <View style={styles.collapsedPanelCopy}>
               <Text style={[styles.collapsedPanelTitle, { color: colors.text.primary }]}>Farms Near You</Text>
-              <Text style={[styles.collapsedPanelSubtitle, { color: colors.text.tertiary }]}>{filteredFarmsWithDistance.length} nearby farms</Text>
+              <Text style={[styles.collapsedPanelSubtitle, { color: colors.text.tertiary }]}>
+                {filteredFarmsWithDistance.length} nearby farms · Swipe up to browse
+              </Text>
             </View>
-            <Ionicons name="chevron-up" size={22} color={colors.text.primary} />
-          </Pressable>
+          </View>
         )}
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -444,7 +491,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     backgroundColor: "#B8B8B8",
   },
-  panelHandleTouchTarget: { alignSelf: "stretch", alignItems: "center", paddingVertical: 8, marginBottom: -4 },
+  panelHandleTouchTarget: { alignSelf: "stretch", alignItems: "center", paddingVertical: 10, marginBottom: theme.spacing.sm },
   panelTitleCopy: { flex: 1, minWidth: 0 },
   panelHeader: {
     flexDirection: "row",
@@ -460,10 +507,11 @@ const styles = StyleSheet.create({
   collapsedPanelButton: {
     minHeight: 62,
     paddingHorizontal: theme.spacing.lg,
-    flexDirection: "row",
+    paddingTop: 8,
+    paddingBottom: theme.spacing.sm,
     alignItems: "center",
-    justifyContent: "space-between",
   },
+  collapsedPanelCopy: { alignItems: "center", marginTop: theme.spacing.md },
   collapsedPanelTitle: { fontSize: 16, fontWeight: "700" },
   collapsedPanelSubtitle: { fontSize: 12, marginTop: 2 },
 
