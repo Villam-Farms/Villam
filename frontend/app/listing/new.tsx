@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -27,13 +29,17 @@ import { createFarm, fetchOwnedFarmByUserId, uploadFarmImage } from "@/lib/farms
 import { hasGoogleMapsApiKey } from "@/lib/maps";
 import {
   createFarmListing,
+  createProduceRequest,
+  autoApproveProduceVariety,
   CURRENCY_OPTIONS,
   fetchProduceCatalog,
+  PRODUCE_CATEGORY_OPTIONS,
   SOLD_BY_OPTIONS,
   uploadFarmListingImage,
 } from "@/lib/marketplace";
 
 type PickerField = "produceItem" | "variety" | "soldBy" | "currency" | null;
+type ProduceRequestKind = "new_item" | "new_variety";
 
 type AddressParts = {
   city: string | null;
@@ -54,6 +60,13 @@ const DEFAULT_REGION = {
   latitudeDelta: 0.08,
   longitudeDelta: 0.08,
 };
+
+const SEASON_MONTHS = [
+  { number: 1, label: "Jan" }, { number: 2, label: "Feb" }, { number: 3, label: "Mar" },
+  { number: 4, label: "Apr" }, { number: 5, label: "May" }, { number: 6, label: "Jun" },
+  { number: 7, label: "Jul" }, { number: 8, label: "Aug" }, { number: 9, label: "Sep" },
+  { number: 10, label: "Oct" }, { number: 11, label: "Nov" }, { number: 12, label: "Dec" },
+] as const;
 
 function formatLocationSummary(address: AddressParts) {
   return [address.city, address.state, address.postal_code, address.country]
@@ -89,6 +102,14 @@ export default function NewListingScreen() {
     useState<(typeof CURRENCY_OPTIONS)[number]>("USD");
   const [available, setAvailable] = useState(true);
   const [activePicker, setActivePicker] = useState<PickerField>(null);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [isProduceRequestOpen, setIsProduceRequestOpen] = useState(false);
+  const [produceRequestKind, setProduceRequestKind] = useState<ProduceRequestKind>("new_item");
+  const [requestedProduceName, setRequestedProduceName] = useState("");
+  const [requestedVarietyName, setRequestedVarietyName] = useState("");
+  const [requestedCategory, setRequestedCategory] = useState("");
+  const [requestedSeasonMonths, setRequestedSeasonMonths] = useState<number[]>([]);
+  const [submittingProduceRequest, setSubmittingProduceRequest] = useState(false);
   const [submittingFarm, setSubmittingFarm] = useState(false);
   const [submittingListing, setSubmittingListing] = useState(false);
   const [farmImage, setFarmImage] = useState<PickedListingImage | null>(null);
@@ -125,15 +146,6 @@ export default function NewListingScreen() {
     });
   }, [userCoords]);
 
-  useEffect(() => {
-    if (selectedProduceItemId) return;
-
-    const firstItem = produceCatalog?.items[0];
-    if (!firstItem) return;
-
-    setSelectedProduceItemId(firstItem.id);
-  }, [produceCatalog?.items, selectedProduceItemId]);
-
   const availableVarieties = useMemo(
     () =>
       (produceCatalog?.varieties ?? []).filter(
@@ -143,15 +155,8 @@ export default function NewListingScreen() {
   );
 
   useEffect(() => {
-    if (!availableVarieties.length) {
-      setSelectedVarietyId(null);
-      return;
-    }
-
     const stillValid = availableVarieties.some((variety) => variety.id === selectedVarietyId);
-    if (!stillValid) {
-      setSelectedVarietyId(availableVarieties[0].id);
-    }
+    if (!stillValid) setSelectedVarietyId(null);
   }, [availableVarieties, selectedVarietyId]);
 
   const selectedProduceItem = useMemo(
@@ -298,6 +303,11 @@ export default function NewListingScreen() {
       return;
     }
 
+    if (!selectedProduceItemId) {
+      Alert.alert("Produce item required", "Choose the produce item you want to list.");
+      return;
+    }
+
     if (!selectedVarietyId) {
       Alert.alert("Variety required", "Choose a produce variety for this listing.");
       return;
@@ -345,6 +355,83 @@ export default function NewListingScreen() {
     }
   };
 
+  const openProduceRequest = (requestKind: ProduceRequestKind) => {
+    setActivePicker(null);
+    setPickerSearch("");
+    setProduceRequestKind(requestKind);
+    setRequestedProduceName(requestKind === "new_variety" ? selectedProduceItem?.name ?? "" : "");
+    setRequestedVarietyName("");
+    setRequestedCategory(requestKind === "new_variety" ? selectedProduceItem?.category ?? "" : "");
+    setRequestedSeasonMonths([]);
+    setIsProduceRequestOpen(true);
+  };
+
+  const handleSubmitProduceRequest = async () => {
+    if (!session?.user.id || !ownedFarm) {
+      Alert.alert("Farm required", "Create your farm before requesting a new produce item.");
+      return;
+    }
+    if (!requestedProduceName.trim()) {
+      Alert.alert("Produce name required", "Enter the produce item you want to add.");
+      return;
+    }
+    if (produceRequestKind === "new_variety" && !requestedVarietyName.trim()) {
+      Alert.alert("Variety name required", "Enter the variety you want to add.");
+      return;
+    }
+
+    setSubmittingProduceRequest(true);
+    try {
+      if (produceRequestKind === "new_variety") {
+        if (!selectedProduceItemId) {
+          Alert.alert("Produce item required", "Choose the produce item before adding a variety.");
+          return;
+        }
+
+        const varietyId = await autoApproveProduceVariety({
+          farm_id: ownedFarm.id,
+          produce_item_id: selectedProduceItemId,
+          variety_name: requestedVarietyName,
+          default_sold_by: selectedSoldBy,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["produce-catalog"] });
+        setSelectedVarietyId(varietyId);
+        setIsProduceRequestOpen(false);
+        Alert.alert("Variety added", "It is ready to use in this listing.");
+        return;
+      }
+
+      await createProduceRequest({
+        user_id: session.user.id,
+        farm_id: ownedFarm.id,
+        request_kind: produceRequestKind,
+        requested_name: requestedProduceName,
+        requested_variety: requestedVarietyName,
+        category: requestedCategory,
+        requested_season_months: requestedSeasonMonths,
+        default_sold_by: selectedSoldBy,
+      });
+      setIsProduceRequestOpen(false);
+      Alert.alert("Request submitted", "We will review it before adding it to the shared catalog.");
+    } catch (error) {
+      console.log("Could not submit produce request", error);
+      const message = error instanceof Error && error.message.trim()
+        ? error.message
+        : "Could not submit your produce request right now.";
+      Alert.alert("Request failed", message);
+    } finally {
+      setSubmittingProduceRequest(false);
+    }
+  };
+
+  const toggleRequestedSeasonMonth = (month: number) => {
+    setRequestedSeasonMonths((current) =>
+      current.includes(month)
+        ? current.filter((selectedMonth) => selectedMonth !== month)
+        : [...current, month].sort((left, right) => left - right)
+    );
+  };
+
   const handlePickListingImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -382,6 +469,8 @@ export default function NewListingScreen() {
         subtitle: item.category?.trim() || "Produce item",
         onPress: () => {
           setSelectedProduceItemId(item.id);
+          setSelectedVarietyId(null);
+          setPickerSearch("");
           setActivePicker(null);
         },
       }));
@@ -394,6 +483,7 @@ export default function NewListingScreen() {
         subtitle: variety.description?.trim() || "Produce variety",
         onPress: () => {
           setSelectedVarietyId(variety.id);
+          setPickerSearch("");
           setActivePicker(null);
         },
       }));
@@ -426,6 +516,22 @@ export default function NewListingScreen() {
     return [];
   }, [activePicker, availableVarieties, produceCatalog?.items]);
 
+  const visiblePickerOptions = useMemo(() => {
+    const query = pickerSearch.trim().toLocaleLowerCase();
+    if (!query || (activePicker !== "produceItem" && activePicker !== "variety")) {
+      return pickerOptions;
+    }
+
+    return pickerOptions.filter((option) =>
+      `${option.title} ${option.subtitle}`.toLocaleLowerCase().includes(query)
+    );
+  }, [activePicker, pickerOptions, pickerSearch]);
+
+  const openPicker = (picker: Exclude<PickerField, null>) => {
+    setPickerSearch("");
+    setActivePicker(picker);
+  };
+
   const mapRegion = {
     latitude: pickedCoords.latitude,
     longitude: pickedCoords.longitude,
@@ -437,11 +543,17 @@ export default function NewListingScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["bottom"]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView
-        automaticallyAdjustKeyboardInsets
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={styles.formKeyboardAvoiding}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
         <View
           style={[
             styles.hero,
@@ -659,18 +771,28 @@ export default function NewListingScreen() {
               <SelectorField
                 label="Produce item"
                 value={selectedProduceItem?.name ?? "Choose a produce item"}
-                onPress={() => setActivePicker("produceItem")}
+                onPress={() => openPicker("produceItem")}
                 disabled={!produceCatalog?.items.length || !ownedFarm}
                 colors={colors}
               />
 
-              <SelectorField
-                label="Variety"
-                value={selectedVariety?.name ?? "Choose a variety"}
-                onPress={() => setActivePicker("variety")}
-                disabled={!availableVarieties.length || !ownedFarm}
-                colors={colors}
-              />
+              {!selectedProduceItemId ? (
+                <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>
+                  Choose a produce item first.
+                </ThemedText>
+              ) : availableVarieties.length ? (
+                <SelectorField
+                  label="Variety"
+                  value={selectedVariety?.name ?? "Choose a variety"}
+                  onPress={() => openPicker("variety")}
+                  disabled={!ownedFarm}
+                  colors={colors}
+                />
+              ) : !availableVarieties.length ? (
+                <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>
+                  This produce item does not have a catalog variety yet, so it cannot be listed.
+                </ThemedText>
+              ) : null}
 
               <View style={styles.fieldGroup}>
                 <ThemedText style={[styles.fieldLabel, { color: colors.text.primary }]}>
@@ -797,7 +919,8 @@ export default function NewListingScreen() {
             </>
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <Modal
         animationType="slide"
@@ -805,8 +928,12 @@ export default function NewListingScreen() {
         visible={activePicker !== null}
         onRequestClose={() => setActivePicker(null)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardAvoiding}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
             <View style={styles.modalHeader}>
               <ThemedText style={[styles.modalTitle, { color: colors.text.primary }]}>
                 Choose an option
@@ -816,12 +943,29 @@ export default function NewListingScreen() {
               </TouchableOpacity>
             </View>
 
+            {(activePicker === "produceItem" || activePicker === "variety") ? (
+              <TextInput
+                value={pickerSearch}
+                onChangeText={setPickerSearch}
+                placeholder={`Search ${activePicker === "produceItem" ? "produce" : "varieties"}`}
+                placeholderTextColor={colors.input.placeholder}
+                style={[
+                  styles.pickerSearchInput,
+                  {
+                    backgroundColor: colors.input.background,
+                    borderColor: colors.border.light,
+                    color: colors.input.text,
+                  },
+                ]}
+              />
+            ) : null}
+
             <ScrollView
               automaticallyAdjustKeyboardInsets
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
               showsVerticalScrollIndicator={false}>
-              {pickerOptions.map((option) => (
+              {visiblePickerOptions.map((option) => (
                 <TouchableOpacity
                   key={option.id}
                   style={[styles.optionRow, { borderColor: colors.border.light }]}
@@ -839,9 +983,173 @@ export default function NewListingScreen() {
                   <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
                 </TouchableOpacity>
               ))}
+              {!visiblePickerOptions.length ? (
+                <ThemedText style={[styles.emptyPickerText, { color: colors.text.secondary }]}>
+                  No matching options found.
+                </ThemedText>
+              ) : null}
+              {activePicker === "produceItem" ? (
+                <TouchableOpacity
+                  style={[styles.requestProduceButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
+                  onPress={() => openProduceRequest("new_item")}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={colors.text.primary} />
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={[styles.requestProduceTitle, { color: colors.text.primary }]}>Can't find the produce item?</ThemedText>
+                    <ThemedText style={[styles.requestProduceCopy, { color: colors.text.secondary }]}>Request a new item for the catalog</ThemedText>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+              {activePicker === "variety" && selectedProduceItem ? (
+                <TouchableOpacity
+                  style={[styles.requestProduceButton, { borderColor: colors.border.light, backgroundColor: colors.card }]}
+                  onPress={() => openProduceRequest("new_variety")}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="add-circle-outline" size={18} color={colors.text.primary} />
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={[styles.requestProduceTitle, { color: colors.text.primary }]}>Can't find the variety?</ThemedText>
+                    <ThemedText style={[styles.requestProduceCopy, { color: colors.text.secondary }]}>Request a variety for {selectedProduceItem.name}</ThemedText>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
             </ScrollView>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        animationType="slide"
+        transparent
+        visible={isProduceRequestOpen}
+        onRequestClose={() => setIsProduceRequestOpen(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardAvoiding}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalCard, { backgroundColor: colors.background, borderColor: colors.border.light }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1, paddingRight: theme.spacing.md }}>
+                <ThemedText style={[styles.modalTitle, { color: colors.text.primary }]}>
+                  {produceRequestKind === "new_item" ? "Request a produce item" : "Request a variety"}
+                </ThemedText>
+                <ThemedText style={[styles.requestIntro, { color: colors.text.secondary }]}>
+                  {produceRequestKind === "new_item"
+                    ? "Use this when the produce item itself is missing from the catalog."
+                    : `This will add a variety under ${requestedProduceName}.`}
+                </ThemedText>
+              </View>
+              <TouchableOpacity onPress={() => setIsProduceRequestOpen(false)} hitSlop={8}>
+                <Ionicons name="close" size={22} color={colors.text.primary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              automaticallyAdjustKeyboardInsets
+              contentContainerStyle={styles.requestFormContent}
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {produceRequestKind === "new_item" ? (
+                <View style={styles.fieldGroup}>
+                  <ThemedText style={[styles.fieldLabel, { color: colors.text.primary }]}>New produce item</ThemedText>
+                  <TextInput value={requestedProduceName} onChangeText={setRequestedProduceName} placeholder="Romanesco broccoli" placeholderTextColor={colors.input.placeholder} style={[styles.input, { backgroundColor: colors.input.background, borderColor: colors.border.light, color: colors.input.text }]} />
+                </View>
+              ) : (
+                <View style={[styles.selectedProduceCard, { backgroundColor: colors.card, borderColor: colors.border.light }]}>
+                  <ThemedText style={[styles.selectedProduceLabel, { color: colors.text.secondary }]}>Adding a variety for</ThemedText>
+                  <ThemedText style={[styles.selectedProduceName, { color: colors.text.primary }]}>{requestedProduceName}</ThemedText>
+                </View>
+              )}
+              <View style={styles.fieldGroup}>
+                <ThemedText style={[styles.fieldLabel, { color: colors.text.primary }]}>Variety {produceRequestKind === "new_item" ? <ThemedText style={[styles.optionalLabel, { color: colors.text.secondary }]}>(optional)</ThemedText> : null}</ThemedText>
+                <TextInput value={requestedVarietyName} onChangeText={setRequestedVarietyName} placeholder="Veronica" placeholderTextColor={colors.input.placeholder} style={[styles.input, { backgroundColor: colors.input.background, borderColor: colors.border.light, color: colors.input.text }]} />
+              </View>
+              {produceRequestKind === "new_item" ? <View style={styles.fieldGroup}>
+                <ThemedText style={[styles.fieldLabel, { color: colors.text.primary }]}>Produce category <ThemedText style={[styles.optionalLabel, { color: colors.text.secondary }]}>(optional)</ThemedText></ThemedText>
+                <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>Choose the closest category to keep browsing and filters consistent.</ThemedText>
+                <View style={styles.categoryGrid}>
+                  {PRODUCE_CATEGORY_OPTIONS.map((category) => {
+                    const isSelected = requestedCategory === category;
+                    return (
+                      <TouchableOpacity
+                        key={category}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected }}
+                        style={[styles.categoryChip, { borderColor: isSelected ? theme.brand.primary : colors.border.light, backgroundColor: isSelected ? theme.brand.primary : colors.card }]}
+                        onPress={() => setRequestedCategory(category)}
+                        activeOpacity={0.85}
+                      >
+                        <ThemedText style={[styles.categoryChipText, { color: isSelected ? "#FFFFFF" : colors.text.primary }]}>{category}</ThemedText>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: !requestedCategory }}
+                    style={[styles.categoryChip, { borderColor: !requestedCategory ? theme.brand.primary : colors.border.light, backgroundColor: !requestedCategory ? theme.brand.primary : colors.card }]}
+                    onPress={() => setRequestedCategory("")}
+                    activeOpacity={0.85}
+                  >
+                    <ThemedText style={[styles.categoryChipText, { color: !requestedCategory ? "#FFFFFF" : colors.text.primary }]}>Not sure</ThemedText>
+                  </TouchableOpacity>
+                </View>
+              </View> : null}
+              {produceRequestKind === "new_item" ? (
+                <View style={styles.fieldGroup}>
+                  <ThemedText style={[styles.fieldLabel, { color: colors.text.primary }]}>In-season months <ThemedText style={[styles.optionalLabel, { color: colors.text.secondary }]}>(optional)</ThemedText></ThemedText>
+                  <ThemedText style={[styles.helperText, { color: colors.text.secondary }]}>Choose the months this produce is usually available.</ThemedText>
+                  <View style={styles.seasonShortcutRow}>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: requestedSeasonMonths.length === SEASON_MONTHS.length }}
+                      style={[styles.seasonShortcut, { borderColor: requestedSeasonMonths.length === SEASON_MONTHS.length ? theme.brand.primary : colors.border.light, backgroundColor: requestedSeasonMonths.length === SEASON_MONTHS.length ? theme.brand.primary : colors.card }]}
+                      onPress={() => setRequestedSeasonMonths(SEASON_MONTHS.map((month) => month.number))}
+                      activeOpacity={0.85}
+                    >
+                      <ThemedText style={[styles.seasonShortcutText, { color: requestedSeasonMonths.length === SEASON_MONTHS.length ? "#FFFFFF" : colors.text.primary }]}>Year-round</ThemedText>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: requestedSeasonMonths.length === 0 }}
+                      style={[styles.seasonShortcut, { borderColor: requestedSeasonMonths.length === 0 ? theme.brand.primary : colors.border.light, backgroundColor: requestedSeasonMonths.length === 0 ? theme.brand.primary : colors.card }]}
+                      onPress={() => setRequestedSeasonMonths([])}
+                      activeOpacity={0.85}
+                    >
+                      <ThemedText style={[styles.seasonShortcutText, { color: requestedSeasonMonths.length === 0 ? "#FFFFFF" : colors.text.primary }]}>? Unknown</ThemedText>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.monthGrid}>
+                    {SEASON_MONTHS.map((month) => {
+                      const isSelected = requestedSeasonMonths.includes(month.number);
+                      return (
+                        <TouchableOpacity
+                          key={month.number}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isSelected }}
+                          style={[styles.monthChip, { borderColor: isSelected ? theme.brand.primary : colors.border.light, backgroundColor: isSelected ? theme.brand.primary : colors.card }]}
+                          onPress={() => toggleRequestedSeasonMonth(month.number)}
+                          activeOpacity={0.85}
+                        >
+                          <ThemedText style={[styles.monthChipText, { color: isSelected ? "#FFFFFF" : colors.text.primary }]}>{month.label}</ThemedText>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : null}
+              <TouchableOpacity style={[styles.primaryButton, submittingProduceRequest && styles.buttonDisabled]} onPress={handleSubmitProduceRequest} disabled={submittingProduceRequest} activeOpacity={0.88}>
+                <ThemedText style={styles.primaryButtonText}>{submittingProduceRequest ? "Submitting…" : "Submit request"}</ThemedText>
+              </TouchableOpacity>
+            </ScrollView>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
@@ -889,6 +1197,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: theme.spacing.xl,
+  },
+  formKeyboardAvoiding: {
+    flex: 1,
   },
   hero: {
     paddingHorizontal: theme.spacing.lg,
@@ -1067,6 +1378,9 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.35)",
     justifyContent: "flex-end",
   },
+  modalKeyboardAvoiding: {
+    flex: 1,
+  },
   modalCard: {
     maxHeight: "70%",
     borderTopLeftRadius: 24,
@@ -1082,9 +1396,21 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: theme.spacing.md,
   },
+  requestFormContent: {
+    gap: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+  },
   modalTitle: {
     fontSize: 18,
     fontWeight: "700",
+  },
+  pickerSearchInput: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    marginBottom: theme.spacing.md,
   },
   optionRow: {
     borderWidth: 1,
@@ -1098,6 +1424,95 @@ const styles = StyleSheet.create({
   },
   optionTitle: {
     fontSize: 15,
+    fontWeight: "600",
+  },
+  emptyPickerText: {
+    textAlign: "center",
+    paddingVertical: theme.spacing.xl,
+    fontSize: 14,
+  },
+  requestProduceButton: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginTop: theme.spacing.xs,
+  },
+  requestProduceTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  requestProduceCopy: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  requestIntro: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  optionalLabel: {
+    fontSize: 12,
+    fontWeight: "400",
+  },
+  selectedProduceCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 14,
+    gap: 3,
+  },
+  selectedProduceLabel: {
+    fontSize: 12,
+  },
+  selectedProduceName: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  monthGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  seasonShortcutRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  categoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  categoryChip: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  categoryChipText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  seasonShortcut: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  seasonShortcutText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  monthChip: {
+    width: "23%",
+    borderWidth: 1,
+    borderRadius: 12,
+    alignItems: "center",
+    paddingVertical: 9,
+  },
+  monthChipText: {
+    fontSize: 13,
     fontWeight: "600",
   },
   optionSubtitle: {
