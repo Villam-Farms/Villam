@@ -423,7 +423,7 @@ export default function RecipeDetailScreen() {
   };
 
   const loadGroceryListChoices = async () => {
-    const localLists = await getLocalGroceryLists();
+    const localLists = await getLocalGroceryLists(viewerUserId);
     const localChoices: GroceryListChoice[] = localLists.map((list) => ({
       id: list.id,
       title: list.title,
@@ -561,7 +561,7 @@ export default function RecipeDetailScreen() {
   };
 
   const addIngredientsToLocalList = async (listId: string) => {
-    const localList = await getLocalGroceryListById(listId);
+    const localList = await getLocalGroceryListById(listId, viewerUserId);
 
     if (!localList) {
       Alert.alert("List not found", "That local grocery list could not be found.");
@@ -592,7 +592,7 @@ export default function RecipeDetailScreen() {
       date: localList.date,
       isPinned: localList.isPinned,
       items: [...(localList.items ?? []), ...newItems] as any,
-    });
+    }, viewerUserId);
 
     const skippedCount = ingredientRows.length - newItems.length;
 
@@ -705,7 +705,7 @@ export default function RecipeDetailScreen() {
           sortOrder: index,
           textStyle: {},
         })) as any,
-      });
+      }, viewerUserId);
 
       Alert.alert("Grocery list created", "A new local grocery list was created for this recipe.");
       router.push(`/grocery-list/${savedLocalList.id}`);

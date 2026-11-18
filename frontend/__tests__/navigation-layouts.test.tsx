@@ -63,6 +63,15 @@ describe("root navigation", () => {
     expect(mockReplace).toHaveBeenCalledWith(destination);
   });
 
+  it("keeps authenticated recovery users on the reset screen", async () => {
+    mockReplace.mockClear();
+    mockUseAuth.mockReturnValue({ session: { user: { id: "u" } }, initialized: true });
+    mockUseProfile.mockReturnValue({ data: completeProfile, isFetching: false });
+    mockSegments.mockReturnValue(["(auth)", "reset-password"]);
+    await mount();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
   it("does not redirect while authentication is initializing", async () => {
     mockUseAuth.mockReturnValue({ session: null, initialized: false });
     await mount();

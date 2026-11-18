@@ -3,6 +3,8 @@ import { Text, Pressable } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 
 const mockOAuth = jest.fn();
+const mockReset = jest.fn();
+const mockUpdate = jest.fn();
 const mockBrowser = jest.fn();
 const mockConstants = { executionEnvironment: "storeClient" };
 jest.mock("expo-constants", () => ({
@@ -10,7 +12,7 @@ jest.mock("expo-constants", () => ({
   default: { get executionEnvironment() { return mockConstants.executionEnvironment; } },
   ExecutionEnvironment: { StoreClient: "storeClient" },
 }));
-jest.mock("expo-auth-session", () => ({ makeRedirectUri: () => "villam://" }));
+jest.mock("expo-auth-session", () => ({ makeRedirectUri: (options: any) => `villam://${options?.path ?? ""}` }));
 jest.mock("expo-web-browser", () => ({
   maybeCompleteAuthSession: jest.fn(),
   openAuthSessionAsync: (...args: unknown[]) => mockBrowser(...args),
@@ -20,6 +22,8 @@ jest.mock("@/lib/supabase", () => ({
   supabase: { auth: {
     getSession: async () => ({ data: { session: null }, error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: jest.fn() } } }),
+    resetPasswordForEmail: (...args: unknown[]) => mockReset(...args),
+    updateUser: (...args: unknown[]) => mockUpdate(...args),
     signInWithOAuth: (...args: unknown[]) => mockOAuth(...args),
   } },
 }));
@@ -48,4 +52,24 @@ it("starts OAuth in a development build and reports cancellation", async () => {
   await fireEvent.press(screen.getByText("Google"));
   await waitFor(() => expect(screen.getByText("Google sign-in cancelled")).toBeTruthy());
   expect(mockBrowser).toHaveBeenCalledWith("https://example.com/auth", "villam://");
+});
+
+function Recovery() {
+  const { sendPasswordResetEmail, updatePassword } = useAuth();
+  const [result, setResult] = React.useState<string | null>(null);
+  return <>
+    <Pressable onPress={async () => setResult(await sendPasswordResetEmail("user@example.com"))}><Text>Reset</Text></Pressable>
+    <Pressable onPress={async () => setResult(await updatePassword("new-password"))}><Text>Update</Text></Pressable>
+    <Text>{result}</Text>
+  </>;
+}
+it("sends recovery emails and updates passwords through Supabase", async () => {
+  mockReset.mockResolvedValue({ error: null });
+  mockUpdate.mockResolvedValue({ error: { message: "Password rejected" } });
+  const screen = await render(<AuthProvider><Recovery /></AuthProvider>);
+  await fireEvent.press(screen.getByText("Reset"));
+  expect(mockReset).toHaveBeenCalledWith("user@example.com", { redirectTo: "villam://reset-password" });
+  await fireEvent.press(screen.getByText("Update"));
+  expect(mockUpdate).toHaveBeenCalledWith({ password: "new-password" });
+  await waitFor(() => expect(screen.getByText("Password rejected")).toBeTruthy());
 });

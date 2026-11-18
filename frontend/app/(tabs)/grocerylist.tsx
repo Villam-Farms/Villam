@@ -86,7 +86,7 @@ export default function GroceryListScreen() {
       setIsLoading(true);
       setLoadError(null);
 
-      const localLists = await getLocalGroceryLists();
+      const localLists = await getLocalGroceryLists(session?.user.id);
 
       const normalizedLocalLists: DisplayGroceryList[] = localLists.map((list) => ({
         id: list.id,
@@ -226,7 +226,7 @@ export default function GroceryListScreen() {
 
                 if (error) throw error;
               } else {
-                await deleteLocalGroceryList(list.id);
+                await deleteLocalGroceryList(list.id, session?.user.id);
               }
 
               setLists((prev) => prev.filter((item) => !(item.id === list.id && item.source === list.source)));

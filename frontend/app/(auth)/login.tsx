@@ -268,6 +268,16 @@ export default function Login() {
                   </Typography.H5>
                 </TouchableOpacity>
               </View>
+              <View style={styles.forgotPasswordFooter}>
+              <TouchableOpacity
+                accessibilityRole="link"
+                onPress={() => router.push("/(auth)/forgot-password")}
+                style={styles.forgotPasswordLink}
+              >
+                <Text style={[styles.link, { color: theme.brand.primary }]}>Forgot password?</Text>
+              </TouchableOpacity>
+
+              </View>
             </ScrollView>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
@@ -316,6 +326,17 @@ const styles = StyleSheet.create({
   form: {
     gap: theme.spacing.md,
     marginBottom: theme.spacing.md,
+  },
+  forgotPasswordFooter: {
+    flexGrow: 1,
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingTop: theme.spacing.lg,
+  },
+  forgotPasswordLink: {
+    minHeight: 44,
+    justifyContent: "center",
+    alignItems: "center",
   },
   loginButton: {
     marginBottom: theme.spacing.sm,

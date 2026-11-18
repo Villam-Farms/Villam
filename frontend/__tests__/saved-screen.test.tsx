@@ -95,7 +95,7 @@ describe("SavedScreen favorites", () => {
     const dbId = "123e4567-e89b-12d3-a456-426614174000";
     mockUseSavedItems.mockReturnValue({ data: [
       saved("s1", "farm", "f1"), saved("s2", "produce", "p1"), saved("s3", "listing", "l1"),
-      saved("s4", "recipe", "1"), saved("s5", "recipe", dbId), saved("s6", "farm", "missing"),
+      saved("s5", "recipe", dbId), saved("s6", "farm", "missing"),
     ], isLoading: false });
     mockFrom.mockImplementation((table: string) => query({
       data: table === "produce_items" ? [{ id: "p1", name: "Kale", category: "Vegetables" }]
@@ -121,8 +121,9 @@ describe("SavedScreen favorites", () => {
     expect(mockPush).toHaveBeenCalledWith("/produce/p1");
 
     await fireEvent.press(screen.getByText("Recipes"));
-    await waitFor(() => expect(screen.getByText("Banana Blueberry")).toBeTruthy());
-    expect(screen.getByText("DB Soup")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("DB Soup")).toBeTruthy());
+    await fireEvent.press(screen.getByLabelText("Open DB Soup"));
+    expect(mockPush).toHaveBeenCalledWith(`/recipe/${dbId}`);
     expect(mockCreateSignedUrl).toHaveBeenCalledWith("cover/path", 3600);
 
     await fireEvent.press(screen.getByText("Farms"));

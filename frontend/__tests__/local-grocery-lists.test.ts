@@ -40,3 +40,16 @@ describe("local grocery lists", () => {
     expect(updated).toMatchObject({ date: "Yesterday", isPinned: true, items: [] });
   });
 });
+
+it("isolates guest and account lists, including lookups and deletion", async () => {
+  await AsyncStorage.clear();
+  await saveLocalGroceryList({ id: "same", title: "Guest", items: [] });
+  await saveLocalGroceryList({ id: "same", title: "Alice", items: [] }, "alice");
+  expect(await getLocalGroceryLists("bob")).toEqual([]);
+  expect(await getLocalGroceryListById("same", "bob")).toBeNull();
+  await saveLocalGroceryList({ id: "same", title: "Bob", items: [] }, "bob");
+  await deleteLocalGroceryList("same", "bob");
+  expect((await getLocalGroceryLists("alice"))[0].title).toBe("Alice");
+  expect((await getLocalGroceryLists())[0].title).toBe("Guest");
+  expect(await getLocalGroceryLists("bob")).toEqual([]);
+});

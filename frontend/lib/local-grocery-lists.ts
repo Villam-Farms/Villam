@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = '@farm_app/grocery_lists_v1';
+// Legacy lists have no owner: retain them for guest use, never assign them to an account.
+const storageKey = (userId?: string | null) => userId
+  ? `${STORAGE_KEY}:user:${userId}`
+  : STORAGE_KEY;
 
 type TextStyle = {
   bold?: boolean;
@@ -94,8 +98,8 @@ const normalizeList = (list: unknown): LocalGroceryList => {
   };
 };
 
-const readAll = async (): Promise<LocalGroceryList[]> => {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
+const readAll = async (userId?: string | null): Promise<LocalGroceryList[]> => {
+  const raw = await AsyncStorage.getItem(storageKey(userId));
   if (!raw) return [];
 
   try {
@@ -107,24 +111,25 @@ const readAll = async (): Promise<LocalGroceryList[]> => {
   }
 };
 
-const writeAll = async (lists: LocalGroceryList[]) => {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(lists));
+const writeAll = async (lists: LocalGroceryList[], userId?: string | null) => {
+  await AsyncStorage.setItem(storageKey(userId), JSON.stringify(lists));
 };
 
-export async function getLocalGroceryLists(): Promise<LocalGroceryList[]> {
-  const lists = await readAll();
+export async function getLocalGroceryLists(userId?: string | null): Promise<LocalGroceryList[]> {
+  const lists = await readAll(userId);
   return sortLists(lists);
 }
 
-export async function getLocalGroceryListById(id: string): Promise<LocalGroceryList | null> {
-  const lists = await readAll();
+export async function getLocalGroceryListById(id: string, userId?: string | null): Promise<LocalGroceryList | null> {
+  const lists = await readAll(userId);
   return lists.find((list: LocalGroceryList) => list.id === id) ?? null;
 }
 
 export async function saveLocalGroceryList(
-  input: SaveLocalGroceryListInput
+  input: SaveLocalGroceryListInput,
+  userId?: string | null
 ): Promise<LocalGroceryList> {
-  const lists = await readAll();
+  const lists = await readAll(userId);
   const existing = input.id
     ? lists.find((list: LocalGroceryList) => list.id === input.id)
     : undefined;
@@ -153,12 +158,12 @@ export async function saveLocalGroceryList(
     ? lists.map((list: LocalGroceryList) => (list.id === id ? saved : list))
     : [...lists, saved];
 
-  await writeAll(nextLists);
+  await writeAll(nextLists, userId);
   return saved;
 }
 
-export async function deleteLocalGroceryList(id: string): Promise<void> {
-  const lists = await readAll();
+export async function deleteLocalGroceryList(id: string, userId?: string | null): Promise<void> {
+  const lists = await readAll(userId);
   const nextLists = lists.filter((list: LocalGroceryList) => list.id !== id);
-  await writeAll(nextLists);
+  await writeAll(nextLists, userId);
 }

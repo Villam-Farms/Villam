@@ -24,6 +24,8 @@ type AuthContextValue = {
     metadata?: SignUpMetadata
   ) => Promise<string | null>;
   signInWithGoogle: () => Promise<string | null>;
+  sendPasswordResetEmail: (email: string) => Promise<string | null>;
+  updatePassword: (password: string) => Promise<string | null>;
   signOut: () => Promise<string | null>;
 };
 
@@ -34,9 +36,9 @@ function isInvalidRefreshTokenError(message?: string | null) {
   return message.toLowerCase().includes("invalid refresh token");
 }
 
-function getAuthRedirectUrl() {
+function getAuthRedirectUrl(path?: string) {
   return AuthSession.makeRedirectUri(
-    Platform.OS === "web" ? undefined : { scheme: "villam" }
+    { ...(Platform.OS === "web" ? {} : { scheme: "villam" }), path }
   );
 }
 
@@ -193,6 +195,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return await createSessionFromCallbackUrl(result.url, true);
         } catch {
           return "Unable to sign in with Google. Check your connection and try again.";
+        }
+      },
+      sendPasswordResetEmail: async (email) => {
+        try {
+          const { error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: getAuthRedirectUrl("reset-password"),
+          });
+          return error?.message ?? null;
+        } catch {
+          return "Unable to send reset email. Check your connection and try again.";
+        }
+      },
+      updatePassword: async (password) => {
+        try {
+          const { error } = await supabase.auth.updateUser({ password });
+          return error?.message ?? null;
+        } catch {
+          return "Unable to update password. Check your connection and try again.";
         }
       },
       signOut: async () => {
