@@ -4,6 +4,16 @@ import { supabase } from "@/lib/supabase";
 
 export const SOLD_BY_OPTIONS = ["lb", "pint", "bunch", "each"] as const;
 export const CURRENCY_OPTIONS = ["USD", "CAD", "EUR"] as const;
+export const PRODUCE_CATEGORY_OPTIONS = [
+  "Fruit",
+  "Vegetables",
+  "Leafy greens",
+  "Herbs",
+  "Mushrooms",
+  "Eggs & dairy",
+  "Nuts, seeds & grains",
+  "Other",
+] as const;
 
 export type SoldByOption = (typeof SOLD_BY_OPTIONS)[number];
 export type CurrencyOption = (typeof CURRENCY_OPTIONS)[number];
@@ -26,6 +36,17 @@ export type ProduceVarietyOption = {
 export type ProduceCatalog = {
   items: ProduceItemOption[];
   varieties: ProduceVarietyOption[];
+};
+
+export type CreateProduceRequestInput = {
+  user_id: string;
+  farm_id?: string | null;
+  request_kind: "new_item" | "new_variety";
+  requested_name: string;
+  requested_variety?: string | null;
+  category?: string | null;
+  requested_season_months?: number[];
+  default_sold_by?: SoldByOption | null;
 };
 
 export type MarketplaceListing = {
@@ -183,6 +204,38 @@ export async function fetchProduceCatalog(): Promise<ProduceCatalog> {
     items: (items ?? []) as ProduceItemOption[],
     varieties: (varieties ?? []) as ProduceVarietyOption[],
   };
+}
+
+export async function createProduceRequest(input: CreateProduceRequestInput) {
+  const { error } = await supabase.from("produce_requests").insert({
+    user_id: input.user_id,
+    farm_id: input.farm_id ?? null,
+    request_kind: input.request_kind,
+    requested_name: input.requested_name.trim(),
+    requested_variety: input.requested_variety?.trim() || null,
+    category: input.category?.trim() || null,
+    requested_season_months: input.requested_season_months ?? [],
+    default_sold_by: input.default_sold_by ?? null,
+  });
+
+  if (error) throw new Error(formatSupabaseError(error));
+}
+
+export async function autoApproveProduceVariety(input: {
+  farm_id: string;
+  produce_item_id: string;
+  variety_name: string;
+  default_sold_by?: SoldByOption | null;
+}) {
+  const { data, error } = await supabase.rpc("approve_requested_produce_variety", {
+    p_farm_id: input.farm_id,
+    p_produce_item_id: input.produce_item_id,
+    p_variety_name: input.variety_name.trim(),
+    p_default_sold_by: input.default_sold_by ?? null,
+  });
+
+  if (error) throw new Error(formatSupabaseError(error));
+  return data as string;
 }
 
 export async function fetchMarketplaceListings(): Promise<MarketplaceListing[]> {
